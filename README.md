@@ -63,3 +63,7 @@ The self-test generates screenshots and validates:
 - visual Markdown styling
 - aligned multi-row Markdown tables using AppKit layout coordinates
 - three distinct Markdown samples covering the main supported syntax
+
+## UI Reference
+
+The `ui/` directory contains the original HTML design reference files used during interface iteration.

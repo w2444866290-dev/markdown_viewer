@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <style>
+    html, body { height: 100%; }
+    body { margin: 0; background: #F2F2F4; -webkit-font-smoothing: antialiased; }
+    @keyframes dsLayer { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes dsLand { 0% { background: rgba(232,163,61,0); } 28% { background: rgba(232,163,61,0.16); } 100% { background: rgba(232,163,61,0); } }
+  </style>
+</helmet>
+
+<div data-screen-label="Design System" style="min-height: 100vh; background: #F2F2F4; font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif; color: #1d1d1f;">
+  <div style="max-width: 1040px; margin: 0 auto; padding: 72px 28px 120px;">
+
+    <!-- ===== Masthead ===== -->
+    <div style="margin-bottom: 56px;">
+      <div style="font-size: 11px; letter-spacing: 2px; color: #aeaeb2; margin-bottom: 16px;">DESIGN SYSTEM · v1.1</div>
+      <h1 style="margin: 0 0 14px; font-size: 38px; font-weight: 600; letter-spacing: -0.6px; color: #111;">Markdown Viewer</h1>
+      <p style="margin: 0 0 28px; font-size: 16px; line-height: 1.7; color: #6e6e73; max-width: 640px; text-wrap: pretty;">一套为「安静的 macOS 本地阅读器」服务的设计语言。它的全部决策都服务于一句话 —— 读起来像一页纸，而不是一个应用。新功能请先在这里取材，再落到代码。</p>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <div style="display: inline-flex; align-items: center; gap: 8px; background: #fff; border-radius: 99px; padding: 7px 14px; font-size: 12.5px; color: #3f3f46; box-shadow: 0 0 0 1px rgba(0,0,0,0.05);"><span style="width: 8px; height: 8px; border-radius: 50%; background: #E8A33D;"></span>单一强调色</div>
+        <div style="display: inline-flex; align-items: center; gap: 8px; background: #fff; border-radius: 99px; padding: 7px 14px; font-size: 12.5px; color: #3f3f46; box-shadow: 0 0 0 1px rgba(0,0,0,0.05);">默认安静 · 按需展开</div>
+        <div style="display: inline-flex; align-items: center; gap: 8px; background: #fff; border-radius: 99px; padding: 7px 14px; font-size: 12.5px; color: #3f3f46; box-shadow: 0 0 0 1px rgba(0,0,0,0.05);">鼠标 + 键盘双路径</div>
+      </div>
+    </div>
+
+    <!-- ===== 01 原则 ===== -->
+    <div style="margin-bottom: 56px;">
+      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">01 — PRINCIPLES</div>
+      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">设计原则</h2>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+        <div style="background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px;">像一页纸</div>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.7; color: #6e6e73; text-wrap: pretty;">内容区是一张纸：540px 单栏、行高 1.7、无边框无卡片。容器噪音越少越好。</p>
+        </div>
+        <div style="background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px;">默认安静，按需展开</div>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.7; color: #6e6e73; text-wrap: pretty;">复杂度藏在交互后面 —— 目录是几根短横、查找/命令面板按需唤起。首屏只留必要之物。</p>
+        </div>
+        <div style="background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px;">双路径可达</div>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.7; color: #6e6e73; text-wrap: pretty;">每个功能都有键盘快捷键 + 鼠标可发现入口。界面上看不见的，⌘K 里全找得到；⌘K 永远看得见。</p>
+        </div>
+        <div style="background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px;">强调色克制</div>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.7; color: #6e6e73; text-wrap: pretty;">琥珀 <span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px;">#E8A33D</span> 只承担三件事：未保存点、查找命中、当前目录项。其余一律中性灰。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 02 色彩 ===== -->
+    <div style="margin-bottom: 56px;">
+      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">02 — COLOR</div>
+      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">色彩</h2>
+
+      <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04); margin-bottom: 14px;">
+        <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">表面 SURFACES</div>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;">
+          <div><div style="height: 64px; border-radius: 10px; background: #FFFFFF; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">纸面 / 内容</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#FFFFFF</div></div>
+          <div><div style="height: 64px; border-radius: 10px; background: #F7F7F8; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">侧栏</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#F7F7F8</div></div>
+          <div><div style="height: 64px; border-radius: 10px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">应用底</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#F2F2F4</div></div>
+          <div><div style="height: 64px; border-radius: 10px; background: #FAFAFA; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">代码块</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#FAFAFA</div></div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; margin-bottom: 14px;">
+        <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">文字阶梯 TEXT</div>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #1d1d1f; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #1d1d1f;">主文字 / 标题</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#1d1d1f</span></div>
+            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #333336; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #333336;">正文</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#333336</span></div>
+            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #6e6e73; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #6e6e73;">次要 / 引用</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#6e6e73</span></div>
+            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #86868b; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #86868b;">三级</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#86868b</span></div>
+            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #aeaeb2; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #aeaeb2;">标签 / 占位符</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#aeaeb2</span></div>
+            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #c7c7cc; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #c7c7cc;">极淡 / 禁用</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#c7c7cc</span></div>
+          </div>
+        </div>
+        <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">系统色 SYSTEM</div>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #007AFF; flex: none;"></span><span style="flex: 1; font-size: 13.5px;">系统蓝（访达选中）</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#007AFF</span></div>
+            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #2A6FDB; flex: none;"></span><span style="flex: 1; font-size: 13.5px;">链接</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#2A6FDB</span></div>
+            <div style="display: flex; align-items: center; gap: 12px;"><span style="display: flex; gap: 5px; flex: none;"><span style="width: 13px; height: 13px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span><span style="width: 13px; height: 13px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span><span style="width: 13px; height: 13px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span></span><span style="flex: 1; font-size: 13.5px; color: #6e6e73;">红绿灯 仅窗口控制</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2;">FF5F57·FEBC2E·28C840</span></div>
+          </div>
+          <p style="margin: 16px 0 0; font-size: 12px; line-height: 1.6; color: #aeaeb2; text-wrap: pretty;">系统蓝不参与品牌叙事，仅借用于「访达」等系统语境。</p>
+        </div>
+      </div>
+
+      <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04); margin-bottom: 14px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px;">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2;">强调色 ACCENT — 仅此一色</div>
+          <div style="font-size: 11.5px; color: #c0392b;">不得他用</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+          <div><div style="height: 56px; border-radius: 10px; background: #E8A33D;"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">琥珀 实色</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#E8A33D · 未保存点 / 当前目录项</div></div>
+          <div><div style="height: 56px; border-radius: 10px; background: rgba(232,163,61,0.55);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">当前命中</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">rgba(…,0.55)</div></div>
+          <div><div style="height: 56px; border-radius: 10px; background: rgba(232,163,61,0.22);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">其余命中</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">rgba(…,0.22)</div></div>
+        </div>
+      </div>
+
+      <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+        <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">交互态 · 描边 STATES &amp; LINES</div>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;">
+          <div><div style="height: 48px; border-radius: 9px; background: rgba(0,0,0,0.05);"></div><div style="margin-top: 8px; font-size: 12px;">悬停底</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2;">rgba(0,0,0,.05)</div></div>
+          <div><div style="height: 48px; border-radius: 9px; background: rgba(0,0,0,0.08);"></div><div style="margin-top: 8px; font-size: 12px;">按下底</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2;">rgba(0,0,0,.08)</div></div>
+          <div><div style="height: 48px; border-radius: 9px; background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);"></div><div style="margin-top: 8px; font-size: 12px;">发丝描边</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2;">rgba(0,0,0,.06)</div></div>
+          <div><div style="height: 48px; border-radius: 9px; background: #fff; box-shadow: inset 0 0 0 1px #F0F0F1;"></div><div style="margin-top: 8px; font-size: 12px;">分隔线</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2;">#F0F0F1</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 03 字体 ===== -->
+    <div style="margin-bottom: 56px;">
+      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">03 — TYPOGRAPHY</div>
+      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">字体</h2>
+      <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04); margin-bottom: 14px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+          <div><div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 8px;">界面 / 正文</div><div style="font-size: 15px; color: #1d1d1f;">系统无衬线</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; margin-top: 4px;">-apple-system, 'PingFang SC', 'Helvetica Neue'</div></div>
+          <div><div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 8px;">代码 / 数字</div><div style="font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 15px; color: #1d1d1f;">等宽 · tabular-nums</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; margin-top: 4px;">ui-monospace, 'SF Mono', Menlo</div></div>
+        </div>
+      </div>
+      <div style="background: #fff; border-radius: 14px; padding: 12px 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.2px; color: #111; flex: 1;">标题 H1 Dependencies</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; white-space: nowrap;">26 / 600 / -0.2</div></div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.3px; color: #111; flex: 1;">小节 H2 — 英文 UPPERCASE</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; white-space: nowrap;">18 / 600 / +0.3</div></div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="margin: 0; font-size: 15.5px; line-height: 1.7; color: #333336; flex: 1;">正文 Body — 行高 1.7，读起来像一页纸。</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; white-space: nowrap;">15.5 / 1.7 / 540px</div></div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="margin: 0; font-size: 13px; color: #3f3f46; flex: 1;">界面文字 UI — 侧栏、标签、菜单</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; white-space: nowrap;">13 / 400</div></div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 16px 0;"><div style="margin: 0; font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; flex: 1;">标签 LABEL — 全大写字距</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; white-space: nowrap;">11 / +1.5</div></div>
+      </div>
+      <p style="margin: 14px 2px 0; font-size: 12.5px; line-height: 1.6; color: #86868b; text-wrap: pretty;">H2 的全大写 + 字距只对纯英文标题生效；中文标题不加字距，避免拉伸变形。所有数字（计数、进度、字数）使用 <span style="font-family: ui-monospace, Menlo, monospace;">tabular-nums</span> 防抖。</p>
+    </div>
+
+    <!-- ===== 04 间距 · 圆角 · 投影 ===== -->
+    <div style="margin-bottom: 56px;">
+      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">04 — SPACE · RADIUS · ELEVATION</div>
+      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">间距 · 圆角 · 投影</h2>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+        <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 18px;">圆角 RADIUS</div>
+          <div style="display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">
+            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 4px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">4 chip</div></div>
+            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 6px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">6 控件</div></div>
+            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 8px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">8 行/标签</div></div>
+            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 10px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">10 浮层</div></div>
+            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 14px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">14 弹窗</div></div>
+            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 99px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">99 pill</div></div>
+          </div>
+        </div>
+        <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 18px;">间距节奏 SPACE · 8pt 网格</div>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 12px;"><div style="height: 8px; width: 8px; background: #E8A33D; border-radius: 2px;"></div><span style="font-size: 12px; color: #6e6e73;">4 · 6 — 图标与文字、列表项间</span></div>
+            <div style="display: flex; align-items: center; gap: 12px;"><div style="height: 8px; width: 16px; background: #d8b27a; border-radius: 2px;"></div><span style="font-size: 12px; color: #6e6e73;">8 · 12 — 控件内边距</span></div>
+            <div style="display: flex; align-items: center; gap: 12px;"><div style="height: 8px; width: 28px; background: #cdb88f; border-radius: 2px;"></div><span style="font-size: 12px; color: #6e6e73;">16 · 22 — 段落间距</span></div>
+            <div style="display: flex; align-items: center; gap: 12px;"><div style="height: 8px; width: 44px; background: #c7c7cc; border-radius: 2px;"></div><span style="font-size: 12px; color: #6e6e73;">40 · 56 — 标题上方留白</span></div>
+          </div>
+          <p style="margin: 16px 0 0; font-size: 12px; line-height: 1.6; color: #aeaeb2;">命中区底线：列表行 ≥ 28px，标签 32px，触控目标尽量 44px。</p>
+        </div>
+      </div>
+
+      <div style="background: #fff; border-radius: 14px; padding: 30px 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04); margin-bottom: 14px;">
+        <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 22px;">投影 ELEVATION — 仅两档</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 28px;">
+          <div style="text-align: center;"><div style="height: 80px; border-radius: 10px; background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #6e6e73;">浮层 · 查找 / 目录</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2; margin-top: 12px;">0 6px 24px /.12 + ring</div></div>
+          <div style="text-align: center;"><div style="height: 80px; border-radius: 14px; background: #fff; box-shadow: 0 24px 60px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #6e6e73;">弹窗 · ⌘K / 访达</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2; margin-top: 12px;">0 24px 60px /.22 + ring</div></div>
+        </div>
+      </div>
+
+      <div style="background: #fff; border-radius: 14px; padding: 30px 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+        <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 22px;">材质 MATERIAL — 浮层二选一</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 28px;">
+          <div style="background: linear-gradient(120deg, #E8A33D22, #2A6FDB22), #ECECEE; border-radius: 12px; padding: 22px;">
+            <div style="background: rgba(255,255,255,0.92); border-radius: 12px; padding: 16px 18px; box-shadow: 0 12px 34px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.05); backdrop-filter: blur(14px);"><div style="font-size: 13px; font-weight: 500; color: #1d1d1f;">浅色玻璃</div><div style="font-size: 11.5px; color: #86868b; margin-top: 4px;">查找 · ⌘K · 悬浮目录</div></div>
+          </div>
+          <div style="background: linear-gradient(120deg, #1d1d1f, #3a3a3c); border-radius: 12px; padding: 22px; display: flex; align-items: center; justify-content: center;">
+            <div style="background: rgba(28,28,30,0.9); color: #fff; border-radius: 99px; padding: 8px 16px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); backdrop-filter: blur(10px);">✓ 已复制代码</div>
+          </div>
+        </div>
+        <p style="margin: 18px 0 0; font-size: 12px; line-height: 1.6; color: #aeaeb2; text-wrap: pretty;">浅色玻璃用于所有常驻浮层；深色 pill 仅留给瞬时反馈的 toast —— 它是界面里唯一的深色对比点。</p>
+      </div>
+    </div>
+
+    <!-- ===== 05 动效 ===== -->
+    <div style="margin-bottom: 56px;">
+      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">05 — MOTION</div>
+      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">动效</h2>
+      <div style="background: #fff; border-radius: 14px; padding: 12px 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="width: 96px; flex: none;"><div data-demo-layer="1" style="background: rgba(255,255,255,0.97); border-radius: 8px; padding: 8px 10px; font-size: 11px; color: #6e6e73; box-shadow: 0 6px 18px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.06); animation: dsLayer 0.12s ease both;">浮层</div></div><div style="flex: 1;"><div style="font-size: 13.5px; font-weight: 500;">浮层入场</div><div style="font-size: 12px; color: #86868b;">120ms fade + 4px slide-down · 查找 / ⌘K / 目录</div></div></div>
+        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="width: 96px; flex: none;"><span data-demo-land="1" style="display: inline-block; padding: 4px 8px; border-radius: 5px; font-size: 12px; color: #1d1d1f; animation: dsLand 0.9s ease infinite;">落点</span></div><div style="flex: 1;"><div style="font-size: 13.5px; font-weight: 500;">跳转落点微洗</div><div style="font-size: 12px; color: #86868b;">900ms 琥珀 wash · 目录/查找跳转后告诉你「落在这」</div></div></div>
+        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="width: 96px; flex: none; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #6e6e73;">120–200ms</div><div style="flex: 1;"><div style="font-size: 13.5px; font-weight: 500;">悬停 / 切换过渡</div><div style="font-size: 12px; color: #86868b;">浮层背景 / 颜色 / 短横宽度 120–200ms ease；侧栏列表行 hover 即时无过渡（求利落）</div></div></div>
+        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="width: 96px; flex: none; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #6e6e73;">180 / 240ms</div><div style="flex: 1;"><div style="font-size: 13.5px; font-weight: 500;">悬浮目录展开</div><div style="font-size: 12px; color: #86868b;">标题浮现 180ms、行高 240ms（easeOutQuint），逐行 12ms 错落；收起统一无错落</div></div></div>
+        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 0;"><div style="width: 96px; flex: none; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #6e6e73;">≈ 0ms</div><div style="flex: 1;"><div style="font-size: 13.5px; font-weight: 500;">prefers-reduced-motion</div><div style="font-size: 12px; color: #86868b;">尊重系统设置，所有动效退化为瞬切</div></div></div>
+      </div>
+    </div>
+
+    <!-- ===== 06 组件 ===== -->
+    <div style="margin-bottom: 24px;">
+      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">06 — COMPONENTS</div>
+      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">组件</h2>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+
+        <!-- 按钮 -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">按钮 BUTTONS</div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 6px; color: #6e6e73; background: rgba(0,0,0,0.05);"><svg width="14" height="14" viewBox="0 0 14 14"><circle cx="6" cy="6" r="4.3" fill="none" stroke="currentColor" stroke-width="1.4"></circle><line x1="9.2" y1="9.2" x2="12.5" y2="12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></line></svg></span>
+            <span style="padding: 5px 12px; border-radius: 6px; font-size: 12.5px; color: #1d1d1f; background: rgba(0,0,0,0.05);">打开</span>
+            <span style="padding: 6px 16px; border-radius: 7px; background: #007AFF; color: #fff; font-size: 13px; font-weight: 500;">确认</span>
+          </div>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">图标钮 / 幽灵钮默认透明，hover 才显 5% 底；主操作用系统蓝。</p>
+        </div>
+
+        <!-- toggle chips -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">开关芯片 TOGGLES</div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; font-size: 11px; font-weight: 600; font-family: ui-monospace, Menlo, monospace; background: rgba(0,122,255,0.14); color: #007AFF;">Aa</span>
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; font-size: 11px; font-weight: 600; font-family: ui-monospace, Menlo, monospace; color: #aeaeb2;">W</span>
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; font-size: 12px; font-weight: 600; font-family: ui-monospace, Menlo, monospace; color: #aeaeb2;">.*</span>
+          </div>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">区分大小写 / 全词 / 正则。激活态用系统蓝 14% 底。</p>
+        </div>
+
+        <!-- 侧栏行 -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">侧栏行 SIDEBAR ROW</div>
+          <div style="background: #F7F7F8; border-radius: 8px; padding: 6px;">
+            <div style="display: flex; align-items: center; gap: 7px; height: 28px; border-radius: 6px; font-size: 13px; padding: 0 8px; color: #aeaeb2;"><span style="font-size: 9px; width: 9px; flex: none;">▾</span><svg width="13" height="11" viewBox="0 0 14 12" style="flex: none;"><path d="M1 3 Q1 1.5 2.5 1.5 L5 1.5 L6.5 3 L11.5 3 Q13 3 13 4.5 L13 9.5 Q13 11 11.5 11 L2.5 11 Q1 11 1 9.5 Z" fill="#C7C7CC"></path></svg><span style="flex: 1;">agents</span></div>
+            <div style="display: flex; align-items: center; gap: 7px; height: 28px; border-radius: 6px; font-size: 13px; padding: 0 8px 0 24px; color: #3f3f46;"><svg width="10" height="12" viewBox="0 0 11 13" style="flex: none;"><rect x="0.7" y="0.7" width="9.6" height="11.6" rx="1.6" fill="#fff" stroke="#c2c2c8" stroke-width="1"></rect><line x1="3" y1="4" x2="8" y2="4" stroke="#c2c2c8" stroke-width="1"></line><line x1="3" y1="6.5" x2="8" y2="6.5" stroke="#c2c2c8" stroke-width="1"></line></svg><span style="flex: 1;">README.md</span></div>
+            <div style="display: flex; align-items: center; gap: 7px; height: 28px; border-radius: 6px; font-size: 13px; padding: 0 8px; color: #1d1d1f; font-weight: 600; background: rgba(0,0,0,0.06);"><svg width="10" height="12" viewBox="0 0 11 13" style="flex: none;"><rect x="0.7" y="0.7" width="9.6" height="11.6" rx="1.6" fill="#fff" stroke="#c2c2c8" stroke-width="1"></rect><line x1="3" y1="4" x2="8" y2="4" stroke="#c2c2c8" stroke-width="1"></line><line x1="3" y1="6.5" x2="8" y2="6.5" stroke="#c2c2c8" stroke-width="1"></line></svg><span style="flex: 1;">SKILL.md</span><span style="width: 7px; height: 7px; border-radius: 50%; background: #E8A33D;"></span></div>
+          </div>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">选中态 6% 底；右侧琥珀点 = 未保存。文件夹点击折叠 ▾/▸；行 hover 即时显底、无过渡。</p>
+        </div>
+
+        <!-- 标签 -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">标签页 TABS</div>
+          <div style="display: flex; align-items: center; gap: 2px;">
+            <span style="display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; color: #1d1d1f; font-weight: 600; background: rgba(0,0,0,0.06);">SKILL.md<span style="width: 7px; height: 7px; border-radius: 50%; background: #E8A33D;"></span></span>
+            <span style="display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; color: #86868b;">README.md<span style="color: #aeaeb2;">×</span></span>
+          </div>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">未保存点与关闭 × 同位：hover 时点变 ×。</p>
+        </div>
+
+        <!-- 命令面板行 -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">命令面板 ⌘K</div>
+          <div style="border-radius: 10px; box-shadow: 0 0 0 1px rgba(0,0,0,0.05); overflow: hidden;">
+            <div style="font-size: 10.5px; letter-spacing: 0.5px; color: #aeaeb2; padding: 10px 12px 4px;">命令</div>
+            <div style="display: flex; align-items: center; height: 38px; padding: 0 12px; background: rgba(0,0,0,0.06); font-size: 13.5px;"><span style="flex: 1;">查找 / 替换</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">⌘F</span></div>
+            <div style="display: flex; align-items: center; height: 38px; padding: 0 12px; font-size: 13.5px;"><span style="flex: 1;">新建文档</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">⌘N</span></div>
+          </div>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">分段（命令 / 文档），右侧常驻快捷键，↑↓ Enter 导航。</p>
+        </div>
+
+        <!-- 目录 rail -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">悬浮目录 OUTLINE</div>
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+              <span style="height: 2px; width: 22px; border-radius: 1px; background: #E8A33D;"></span>
+              <span style="height: 2px; width: 14px; border-radius: 1px; background: #CACACE;"></span>
+              <span style="height: 2px; width: 22px; border-radius: 1px; background: #CACACE;"></span>
+              <span style="height: 2px; width: 14px; border-radius: 1px; background: #CACACE;"></span>
+            </div>
+            <span style="color: #c7c7cc; font-size: 13px;">→</span>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right;">
+              <div style="font-size: 13px; color: #E8A33D; font-weight: 600;">Dependencies</div>
+              <div style="font-size: 12px; color: #86868b;">Installation</div>
+              <div style="font-size: 13px; color: #86868b; font-weight: 600;">Phase 1</div>
+            </div>
+          </div>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">默认几根短横（当前项琥珀），悬停约 180ms「化」为右对齐标题文字、逐行 12ms 错落。</p>
+        </div>
+
+        <!-- 代码块 -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">代码块 CODE</div>
+          <div style="background: #FAFAFA; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.045); overflow: hidden;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 14px 2px;"><span style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; letter-spacing: 0.6px; color: #b3b3b8; text-transform: uppercase;">bash</span><span style="font-size: 11px; color: #b3b3b8;">复制</span></div>
+            <pre style="margin: 0; background: transparent; padding: 4px 16px 16px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.7; color: #444;"><span style="color: #aaa;"># latest</span>
+npx -y @dev/cli@latest</pre>
+          </div>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">极细内描边定边界；语言可改、复制按钮 hover 浮现。</p>
+        </div>
+
+        <!-- 表格 / 引用 -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">表格 · 引用 TABLE / QUOTE</div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 12.5px;"><thead><tr><th style="text-align: left; padding: 6px 10px 6px 0; font-size: 10px; font-weight: 600; letter-spacing: 0.4px; color: #aeaeb2; border-bottom: 1px solid #ECECEE;">字段</th><th style="text-align: left; padding: 6px 0; font-size: 10px; font-weight: 600; letter-spacing: 0.4px; color: #aeaeb2; border-bottom: 1px solid #ECECEE;">说明</th></tr></thead><tbody><tr><td style="padding: 7px 10px 7px 0; border-bottom: 1px solid #F4F4F5; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;">alarm_id</td><td style="padding: 7px 0; border-bottom: 1px solid #F4F4F5; color: #6e6e73;">唯一标识</td></tr></tbody></table>
+          <blockquote style="margin: 14px 0 0; padding-left: 0; color: #86868b; font-size: 13px; text-wrap: pretty;">— 设计原则：读起来像一页纸。</blockquote>
+        </div>
+
+        <!-- 状态 / toast -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">反馈 FEEDBACK</div>
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <span style="background: rgba(28,28,30,0.9); color: #fff; border-radius: 99px; padding: 7px 16px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);">✓ 已保存</span>
+            <span style="font-size: 11px; color: #8e8e93; font-variant-numeric: tabular-nums;">10,485 字 · 261 行 · 42%</span>
+          </div>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">toast 瞬时浮现；右下状态条滚动淡出、静止淡入。</p>
+        </div>
+
+        <!-- 窗口红绿灯 -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">窗口控制 TRAFFIC LIGHTS</div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span>
+            <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span>
+            <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span>
+          </div>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">12px 圆点、间距 8，距窗角左 14 / 上 16；hover 浮现 × − + 符号。收起侧栏时顶栏左移避让。</p>
+        </div>
+
+        <!-- 侧栏拖拽 -->
+        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
+          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">侧栏宽度 RESIZE</div>
+          <div style="display: flex; align-items: stretch; height: 56px; border-radius: 8px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);">
+            <div style="width: 96px; background: #F7F7F8; flex: none;"></div>
+            <div style="width: 9px; background: #fff; flex: none; display: flex; justify-content: center; cursor: col-resize;"><span style="width: 1px; background: rgba(0,0,0,0.18);"></span></div>
+            <div style="flex: 1; background: #fff;"></div>
+          </div>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">右缘拖拽手柄（col-resize），范围 176–440px，默认 216；hover 灰线 / 拖拽蓝线，宽度记忆到会话。</p>
+        </div>
+
+      </div>
+    </div>
+
+    <div style="margin-top: 40px; padding-top: 24px; border-top: 1px solid rgba(0,0,0,0.07); font-size: 12px; color: #aeaeb2;">Markdown Viewer Design System · 取材后再落代码，新增 token 前先回到这里。</div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
