@@ -1,6 +1,329 @@
 import AppKit
 import UniformTypeIdentifiers
 
+enum DesignTokens {
+    static let paper = NSColor(hex: 0xFFFFFF)
+    static let sidebar = NSColor(hex: 0xF7F7F8)
+    static let appBackground = NSColor(hex: 0xF2F2F4)
+    static let codeBackground = NSColor(hex: 0xFAFAFA)
+    static let titleText = NSColor(hex: 0x1D1D1F)
+    static let bodyText = NSColor(hex: 0x333336)
+    static let secondaryText = NSColor(hex: 0x6E6E73)
+    static let tertiaryText = NSColor(hex: 0x86868B)
+    static let placeholderText = NSColor(hex: 0xAEAEB2)
+    static let disabledText = NSColor(hex: 0xC7C7CC)
+    static let divider = NSColor(hex: 0xF0F0F1)
+    static let line = NSColor(hex: 0xF4F4F5)
+    static let accent = NSColor(hex: 0xE8A33D)
+    static let link = NSColor(hex: 0x2A6FDB)
+
+    static let hover = NSColor.black.withAlphaComponent(0.05)
+    static let sidebarHover = NSColor.black.withAlphaComponent(0.045)
+    static let pressed = NSColor.black.withAlphaComponent(0.08)
+    static let selected = NSColor.black.withAlphaComponent(0.06)
+    static let ring = NSColor.black.withAlphaComponent(0.05)
+
+    static let sidebarWidth: CGFloat = 216
+    static let paperWidth: CGFloat = 540
+    static let tabBarHeight: CGFloat = 44
+}
+
+extension NSColor {
+    convenience init(hex: Int, alpha: CGFloat = 1) {
+        self.init(
+            calibratedRed: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: alpha
+        )
+    }
+}
+
+final class PaperTextView: NSTextView {
+    override func layout() {
+        super.layout()
+        updatePaperGeometry()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        updatePaperGeometry()
+    }
+
+    private func updatePaperGeometry() {
+        let availableWidth = max(bounds.width, 1)
+        let paperWidth = min(DesignTokens.paperWidth, max(240, availableWidth - 140))
+        textContainer?.widthTracksTextView = false
+        textContainer?.containerSize = NSSize(width: paperWidth, height: CGFloat.greatestFiniteMagnitude)
+        textContainerInset = NSSize(width: max(70, (availableWidth - paperWidth) / 2), height: 44)
+    }
+}
+
+final class SidebarRowView: NSTableRowView {
+    private var mouseInside = false
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeInKeyWindow, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        mouseInside = true
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        mouseInside = false
+        needsDisplay = true
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+        DesignTokens.selected.setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6).fill()
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        super.drawBackground(in: dirtyRect)
+        if !isSelected && mouseInside {
+            DesignTokens.sidebarHover.setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6).fill()
+        }
+    }
+}
+
+struct PaletteCommand {
+    let id: String
+    let title: String
+    let shortcut: String
+    let keywords: String
+}
+
+final class CommandPaletteSearchField: NSSearchField {
+    weak var paletteView: CommandPaletteView?
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 125:
+            paletteView?.moveSelection(delta: 1)
+        case 126:
+            paletteView?.moveSelection(delta: -1)
+        case 36, 76:
+            paletteView?.runSelected()
+        case 53:
+            paletteView?.cancel()
+        default:
+            super.keyDown(with: event)
+        }
+    }
+}
+
+final class CommandPaletteView: NSView, NSSearchFieldDelegate {
+    private let commands: [PaletteCommand]
+    private var filteredCommands: [PaletteCommand]
+    private var selectedIndex = 0
+    private let runCommand: (String) -> Void
+    private let cancelCommand: () -> Void
+    private let searchField = CommandPaletteSearchField()
+    private let stack = NSStackView()
+
+    init(commands: [PaletteCommand], runCommand: @escaping (String) -> Void, cancel: @escaping () -> Void) {
+        self.commands = commands
+        self.filteredCommands = commands
+        self.runCommand = runCommand
+        self.cancelCommand = cancel
+        super.init(frame: NSRect(x: 0, y: 0, width: 460, height: 306))
+        build()
+        renderCommandRows()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    func focusSearch(in window: NSWindow?) {
+        window?.makeFirstResponder(searchField)
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        applyFilter(searchField.stringValue)
+    }
+
+    func moveSelection(delta: Int) {
+        guard !filteredCommands.isEmpty else { return }
+        selectedIndex = (selectedIndex + delta + filteredCommands.count) % filteredCommands.count
+        renderCommandRows()
+    }
+
+    func runSelected() {
+        guard filteredCommands.indices.contains(selectedIndex) else { return }
+        runCommand(filteredCommands[selectedIndex].id)
+    }
+
+    func cancel() {
+        cancelCommand()
+    }
+
+    func setQueryForTesting(_ query: String) {
+        searchField.stringValue = query
+        applyFilter(query)
+    }
+
+    func moveSelectionForTesting(delta: Int) {
+        moveSelection(delta: delta)
+    }
+
+    var visibleCommandIdentifiersForTesting: [String] {
+        filteredCommands.map(\.id)
+    }
+
+    var selectedCommandIdentifierForTesting: String? {
+        guard filteredCommands.indices.contains(selectedIndex) else { return nil }
+        return filteredCommands[selectedIndex].id
+    }
+
+    private func build() {
+        wantsLayer = true
+        layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.92).cgColor
+        layer?.cornerRadius = 14
+        layer?.borderWidth = 1
+        layer?.borderColor = DesignTokens.ring.cgColor
+
+        searchField.paletteView = self
+        searchField.placeholderString = "搜索命令..."
+        searchField.font = NSFont.systemFont(ofSize: 14)
+        searchField.isBordered = false
+        searchField.isBezeled = false
+        searchField.drawsBackground = false
+        searchField.delegate = self
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+
+        let divider = NSView()
+        divider.wantsLayer = true
+        divider.layer?.backgroundColor = DesignTokens.divider.cgColor
+        divider.translatesAutoresizingMaskIntoConstraints = false
+
+        let label = NSTextField(labelWithString: "命令")
+        label.font = NSFont.systemFont(ofSize: 10.5)
+        label.textColor = DesignTokens.placeholderText
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        stack.orientation = .vertical
+        stack.spacing = 2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(searchField)
+        addSubview(divider)
+        addSubview(label)
+        addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            searchField.topAnchor.constraint(equalTo: topAnchor),
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            searchField.heightAnchor.constraint(equalToConstant: 46),
+
+            divider.topAnchor.constraint(equalTo: searchField.bottomAnchor),
+            divider.leadingAnchor.constraint(equalTo: leadingAnchor),
+            divider.trailingAnchor.constraint(equalTo: trailingAnchor),
+            divider.heightAnchor.constraint(equalToConstant: 1),
+
+            label.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 12),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
+
+            stack.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 6),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8)
+        ])
+    }
+
+    private func applyFilter(_ rawQuery: String) {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty {
+            filteredCommands = commands
+        } else {
+            filteredCommands = commands.filter { command in
+                let haystack = "\(command.title) \(command.shortcut) \(command.keywords)"
+                return haystack.localizedCaseInsensitiveContains(query)
+            }
+        }
+        selectedIndex = filteredCommands.isEmpty ? 0 : min(selectedIndex, filteredCommands.count - 1)
+        renderCommandRows()
+    }
+
+    private func renderCommandRows() {
+        stack.arrangedSubviews.forEach {
+            stack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+
+        if filteredCommands.isEmpty {
+            let empty = NSTextField(labelWithString: "没有匹配命令")
+            empty.font = NSFont.systemFont(ofSize: 13)
+            empty.textColor = DesignTokens.placeholderText
+            empty.alignment = .center
+            empty.translatesAutoresizingMaskIntoConstraints = false
+            stack.addArrangedSubview(empty)
+            empty.heightAnchor.constraint(equalToConstant: 64).isActive = true
+            return
+        }
+
+        for (index, command) in filteredCommands.enumerated() {
+            stack.addArrangedSubview(commandRow(command, isSelected: index == selectedIndex))
+        }
+    }
+
+    private func commandRow(_ command: PaletteCommand, isSelected: Bool) -> NSButton {
+        let button = NSButton(title: "", target: self, action: #selector(runCommandButton(_:)))
+        button.identifier = NSUserInterfaceItemIdentifier(command.id)
+        button.isBordered = false
+        button.bezelStyle = .regularSquare
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 6
+        button.layer?.backgroundColor = isSelected ? DesignTokens.hover.cgColor : NSColor.clear.cgColor
+        button.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleLabel = NSTextField(labelWithString: command.title)
+        titleLabel.font = NSFont.systemFont(ofSize: 13.5)
+        titleLabel.textColor = DesignTokens.titleText
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let shortcutLabel = NSTextField(labelWithString: command.shortcut)
+        shortcutLabel.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        shortcutLabel.textColor = DesignTokens.placeholderText
+        shortcutLabel.alignment = .right
+        shortcutLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        button.addSubview(titleLabel)
+        button.addSubview(shortcutLabel)
+
+        NSLayoutConstraint.activate([
+            button.heightAnchor.constraint(equalToConstant: 36),
+            titleLabel.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 12),
+            titleLabel.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: shortcutLabel.leadingAnchor, constant: -12),
+            shortcutLabel.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -12),
+            shortcutLabel.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            shortcutLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 44)
+        ])
+
+        return button
+    }
+
+    @objc private func runCommandButton(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue else { return }
+        runCommand(id)
+    }
+}
+
 final class FileTreeNode: NSObject {
     let url: URL
     let name: String
@@ -202,6 +525,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         saveAsItem.target = target
         fileMenu.addItem(saveAsItem)
 
+        let viewItem = NSMenuItem()
+        mainMenu.addItem(viewItem)
+
+        let viewMenu = NSMenu(title: "查看")
+        viewItem.submenu = viewMenu
+
+        let commandItem = NSMenuItem(title: "命令面板", action: #selector(MarkdownWindowController.showCommandPalette(_:)), keyEquivalent: "k")
+        commandItem.target = target
+        viewMenu.addItem(commandItem)
+
+        let sidebarItem = NSMenuItem(title: "显示/隐藏侧栏", action: #selector(MarkdownWindowController.toggleSidebar(_:)), keyEquivalent: "\\")
+        sidebarItem.target = target
+        viewMenu.addItem(sidebarItem)
+
         let editItem = NSMenuItem()
         mainMenu.addItem(editItem)
 
@@ -223,7 +560,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSSearchFieldDelegate, NSTextViewDelegate, NSWindowDelegate {
     private let window: NSWindow
     private let rootView = NSView()
-    private let sidebarView = NSVisualEffectView()
+    private let sidebarView = NSView()
     private let directoryLabel = NSTextField(labelWithString: "未选择目录")
     private let searchField = NSSearchField()
     private let outlineView = NSOutlineView()
@@ -231,9 +568,16 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private let documentTitleLabel = NSTextField(labelWithString: "未命名.md")
     private let documentMetaLabel = NSTextField(labelWithString: "0 字 · 0 行")
     private let statusLabel = NSTextField(labelWithString: "就绪")
+    private let tabBarView = NSView()
+    private let dirtyDotView = NSView()
+    private let commandButton = NSButton(title: "⌘K  全部命令", target: nil, action: nil)
     private let editorScrollView = NSScrollView()
-    private let editorTextView = NSTextView()
+    private let editorTextView = PaperTextView(frame: .zero)
 
+    private var bodySplitView: NSSplitView?
+    private var sidebarWidthConstraint: NSLayoutConstraint?
+    private var tabBarLeftPaddingConstraint: NSLayoutConstraint?
+    private var commandPanel: NSPanel?
     private var currentDirectoryURL: URL?
     private var fileTreeRoots: [FileTreeNode] = []
     private var filteredTreeRoots: [FileTreeNode] = []
@@ -256,6 +600,11 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         window.title = "Markdown 编辑器"
         window.minSize = NSSize(width: 860, height: 560)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = DesignTokens.paper
         window.center()
         let initialContentSize = window.contentView?.bounds.size ?? NSSize(width: 1180, height: 760)
         rootView.frame = NSRect(origin: .zero, size: initialContentSize)
@@ -374,6 +723,50 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         return success
     }
 
+    @objc func showCommandPalette(_ sender: Any?) {
+        if let commandPanel, commandPanel.isVisible {
+            commandPanel.close()
+            self.commandPanel = nil
+            return
+        }
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 306),
+            styleMask: [.titled, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = true
+        panel.backgroundColor = DesignTokens.paper.withAlphaComponent(0.92)
+        panel.isOpaque = false
+        panel.hasShadow = true
+        let paletteView = buildCommandPaletteView()
+        panel.contentView = paletteView
+
+        let windowFrame = window.frame
+        let panelOrigin = NSPoint(
+            x: windowFrame.midX - panel.frame.width / 2,
+            y: windowFrame.maxY - 122 - panel.frame.height
+        )
+        panel.setFrameOrigin(panelOrigin)
+        window.addChildWindow(panel, ordered: .above)
+        panel.makeKeyAndOrderFront(nil)
+        paletteView.focusSearch(in: panel)
+        commandPanel = panel
+    }
+
+    @objc func toggleSidebar(_ sender: Any?) {
+        guard let sidebarWidthConstraint else { return }
+        let shouldHide = !sidebarView.isHidden
+        sidebarView.isHidden = shouldHide
+        sidebarWidthConstraint.constant = shouldHide ? 0 : DesignTokens.sidebarWidth
+        tabBarLeftPaddingConstraint?.constant = shouldHide ? 84 : 12
+        statusLabel.stringValue = shouldHide ? "侧栏已隐藏" : "侧栏已显示"
+    }
+
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         guard let node = item as? FileTreeNode else {
             return filteredTreeRoots.count
@@ -396,6 +789,40 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     func outlineView(_ outlineView: NSOutlineView, objectValueFor tableColumn: NSTableColumn?, byItem item: Any?) -> Any? {
         guard let node = item as? FileTreeNode else { return nil }
         return node.name
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        SidebarRowView()
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+        guard let node = item as? FileTreeNode else { return nil }
+
+        let identifier = NSUserInterfaceItemIdentifier("FileTreeCell")
+        let cell = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView ?? NSTableCellView()
+        cell.identifier = identifier
+
+        let textField: NSTextField
+        if let existing = cell.textField {
+            textField = existing
+        } else {
+            textField = NSTextField(labelWithString: "")
+            textField.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(textField)
+            cell.textField = textField
+            NSLayoutConstraint.activate([
+                textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+                textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+            ])
+        }
+
+        textField.stringValue = node.name
+        textField.font = node.isDirectory ? NSFont.systemFont(ofSize: 13, weight: .regular) : NSFont.systemFont(ofSize: 13)
+        textField.textColor = node.isDirectory ? DesignTokens.placeholderText : DesignTokens.bodyText
+        textField.lineBreakMode = .byTruncatingMiddle
+
+        return cell
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -437,37 +864,65 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         updateDocumentState(status: "正在编辑")
     }
 
+    private func buildCommandPaletteView() -> CommandPaletteView {
+        CommandPaletteView(commands: paletteCommands) { [weak self] id in
+            self?.runPaletteCommand(id)
+        } cancel: { [weak self] in
+            self?.closeCommandPalette()
+        }
+    }
+
+    private var paletteCommands: [PaletteCommand] {
+        [
+            PaletteCommand(id: "new", title: "新建文档", shortcut: "⌘N", keywords: "new 新建 markdown"),
+            PaletteCommand(id: "openFile", title: "打开文件", shortcut: "⌘O", keywords: "open file 打开 文件"),
+            PaletteCommand(id: "openDirectory", title: "打开目录", shortcut: "⇧⌘O", keywords: "open folder directory 目录 文件夹"),
+            PaletteCommand(id: "save", title: "保存", shortcut: "⌘S", keywords: "save 保存"),
+            PaletteCommand(id: "saveAs", title: "另存为", shortcut: "⇧⌘S", keywords: "save as 另存"),
+            PaletteCommand(id: "sidebar", title: "显示 / 隐藏侧栏", shortcut: "⌘\\", keywords: "sidebar toggle 侧栏 目录")
+        ]
+    }
+
+    private func closeCommandPalette() {
+        commandPanel?.close()
+        commandPanel = nil
+    }
+
+    private func runPaletteCommand(_ id: String) {
+        closeCommandPalette()
+        switch id {
+        case "new":
+            newDocument(self)
+        case "openFile":
+            openFile(self)
+        case "openDirectory":
+            openDirectory(self)
+        case "save":
+            _ = saveDocument(self)
+        case "saveAs":
+            _ = saveDocumentAs(self)
+        case "sidebar":
+            toggleSidebar(self)
+        default:
+            break
+        }
+    }
+
     private func buildInterface() {
         rootView.translatesAutoresizingMaskIntoConstraints = true
         rootView.wantsLayer = true
-        rootView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        rootView.layer?.backgroundColor = DesignTokens.paper.cgColor
 
-        let topBar = buildTopBar()
         let bodySplitView = buildBodySplitView()
+        self.bodySplitView = bodySplitView
 
-        rootView.addSubview(topBar)
         rootView.addSubview(bodySplitView)
-        rootView.addSubview(statusLabel)
-
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.font = NSFont.systemFont(ofSize: 12)
-        statusLabel.textColor = .secondaryLabelColor
 
         NSLayoutConstraint.activate([
-            topBar.topAnchor.constraint(equalTo: rootView.topAnchor),
-            topBar.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
-            topBar.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-            topBar.heightAnchor.constraint(equalToConstant: 64),
-
-            bodySplitView.topAnchor.constraint(equalTo: topBar.bottomAnchor),
+            bodySplitView.topAnchor.constraint(equalTo: rootView.topAnchor),
             bodySplitView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
             bodySplitView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-            bodySplitView.bottomAnchor.constraint(equalTo: statusLabel.topAnchor),
-
-            statusLabel.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: 16),
-            statusLabel.trailingAnchor.constraint(equalTo: rootView.trailingAnchor, constant: -16),
-            statusLabel.bottomAnchor.constraint(equalTo: rootView.bottomAnchor, constant: -8),
-            statusLabel.heightAnchor.constraint(equalToConstant: 18)
+            bodySplitView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor)
         ])
 
         DispatchQueue.main.async { [weak self] in
@@ -535,28 +990,34 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         bodySplitView.addArrangedSubview(sidebar)
         bodySplitView.addArrangedSubview(editorPane)
 
-        sidebar.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        let widthConstraint = sidebar.widthAnchor.constraint(equalToConstant: DesignTokens.sidebarWidth)
+        widthConstraint.isActive = true
+        sidebarWidthConstraint = widthConstraint
         return bodySplitView
     }
 
     private func buildSidebar() -> NSView {
-        sidebarView.material = .sidebar
-        sidebarView.blendingMode = .withinWindow
         sidebarView.translatesAutoresizingMaskIntoConstraints = false
-
-        let titleLabel = NSTextField(labelWithString: "文档目录")
-        titleLabel.font = NSFont.boldSystemFont(ofSize: 18)
+        sidebarView.wantsLayer = true
+        sidebarView.layer?.backgroundColor = DesignTokens.sidebar.cgColor
 
         directoryLabel.font = NSFont.systemFont(ofSize: 12)
-        directoryLabel.textColor = .secondaryLabelColor
+        directoryLabel.textColor = DesignTokens.secondaryText
         directoryLabel.lineBreakMode = .byTruncatingMiddle
 
         searchField.placeholderString = "筛选文档"
         searchField.delegate = self
+        searchField.font = NSFont.systemFont(ofSize: 12.5)
+        searchField.isBordered = false
+        searchField.isBezeled = false
+        searchField.drawsBackground = true
+        searchField.backgroundColor = NSColor.black.withAlphaComponent(0.04)
+        searchField.wantsLayer = true
+        searchField.layer?.cornerRadius = 6
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("FileTreeColumn"))
         column.title = "文件"
-        column.width = 250
+        column.width = 188
         column.minWidth = 160
         column.resizingMask = .autoresizingMask
         outlineView.addTableColumn(column)
@@ -565,42 +1026,64 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         outlineView.headerView = nil
         outlineView.rowHeight = 28
         outlineView.style = .sourceList
+        outlineView.backgroundColor = DesignTokens.sidebar
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.allowsEmptySelection = true
         outlineView.usesAlternatingRowBackgroundColors = false
         outlineView.autosaveExpandedItems = false
+        outlineView.selectionHighlightStyle = .regular
 
         outlineScrollView.documentView = outlineView
         outlineScrollView.hasVerticalScroller = true
         outlineScrollView.drawsBackground = false
         outlineScrollView.setContentHuggingPriority(.defaultLow, for: .vertical)
 
+        commandButton.target = self
+        commandButton.action = #selector(showCommandPalette(_:))
+        commandButton.bezelStyle = .regularSquare
+        commandButton.isBordered = false
+        commandButton.alignment = .left
+        commandButton.font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
+        commandButton.contentTintColor = DesignTokens.tertiaryText
+
+        let topSpacer = NSView()
+        topSpacer.translatesAutoresizingMaskIntoConstraints = false
+
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.distribution = .fill
-        stack.spacing = 10
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.addArrangedSubview(titleLabel)
+        stack.addArrangedSubview(topSpacer)
         stack.addArrangedSubview(directoryLabel)
         stack.addArrangedSubview(searchField)
         stack.addArrangedSubview(outlineScrollView)
+        stack.addArrangedSubview(commandButton)
 
+        topSpacer.translatesAutoresizingMaskIntoConstraints = false
         searchField.translatesAutoresizingMaskIntoConstraints = false
         outlineScrollView.translatesAutoresizingMaskIntoConstraints = false
+        commandButton.translatesAutoresizingMaskIntoConstraints = false
 
         sidebarView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: sidebarView.topAnchor, constant: 18),
-            stack.leadingAnchor.constraint(equalTo: sidebarView.leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -14),
-            stack.bottomAnchor.constraint(equalTo: sidebarView.bottomAnchor, constant: -14),
+            stack.topAnchor.constraint(equalTo: sidebarView.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: sidebarView.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -12),
+            stack.bottomAnchor.constraint(equalTo: sidebarView.bottomAnchor, constant: -8),
 
+            topSpacer.heightAnchor.constraint(equalToConstant: DesignTokens.tabBarHeight),
+            topSpacer.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            directoryLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             searchField.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            searchField.heightAnchor.constraint(equalToConstant: 28),
             outlineScrollView.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            outlineScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240)
+            outlineScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240),
+            commandButton.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            commandButton.heightAnchor.constraint(equalToConstant: 38)
         ])
 
         return sidebarView
@@ -613,21 +1096,124 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         editorScrollView.hasVerticalScroller = true
         editorScrollView.hasHorizontalScroller = false
         editorScrollView.drawsBackground = true
-        editorScrollView.backgroundColor = .textBackgroundColor
+        editorScrollView.backgroundColor = DesignTokens.paper
 
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
+        container.wantsLayer = true
+        container.layer?.backgroundColor = DesignTokens.paper.cgColor
+
+        let tabBar = buildTabBar()
         container.addSubview(editorScrollView)
+        container.addSubview(tabBar)
+        container.addSubview(statusLabel)
+
+        tabBar.translatesAutoresizingMaskIntoConstraints = false
         editorScrollView.translatesAutoresizingMaskIntoConstraints = false
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+        statusLabel.font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
+        statusLabel.textColor = DesignTokens.tertiaryText
+        statusLabel.alignment = .right
 
         NSLayoutConstraint.activate([
-            editorScrollView.topAnchor.constraint(equalTo: container.topAnchor),
+            tabBar.topAnchor.constraint(equalTo: container.topAnchor),
+            tabBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tabBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tabBar.heightAnchor.constraint(equalToConstant: DesignTokens.tabBarHeight),
+
+            editorScrollView.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
             editorScrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             editorScrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            editorScrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            editorScrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+
+            statusLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+            statusLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14),
+            statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
+            statusLabel.heightAnchor.constraint(equalToConstant: 18)
         ])
 
         return container
+    }
+
+    private func buildTabBar() -> NSView {
+        tabBarView.translatesAutoresizingMaskIntoConstraints = false
+        tabBarView.wantsLayer = true
+        tabBarView.layer?.backgroundColor = DesignTokens.paper.cgColor
+
+        let toggleButton = makeGhostIconButton(symbol: "sidebar.left", title: "显示 / 隐藏侧栏", action: #selector(toggleSidebar(_:)))
+        toggleButton.toolTip = "显示 / 隐藏侧栏 · ⌘\\"
+
+        let tabCapsule = NSView()
+        tabCapsule.translatesAutoresizingMaskIntoConstraints = false
+        tabCapsule.wantsLayer = true
+        tabCapsule.layer?.backgroundColor = DesignTokens.hover.cgColor
+        tabCapsule.layer?.cornerRadius = 6
+
+        documentTitleLabel.font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
+        documentTitleLabel.textColor = DesignTokens.titleText
+        documentTitleLabel.lineBreakMode = .byTruncatingMiddle
+        documentTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        dirtyDotView.translatesAutoresizingMaskIntoConstraints = false
+        dirtyDotView.wantsLayer = true
+        dirtyDotView.layer?.backgroundColor = DesignTokens.accent.cgColor
+        dirtyDotView.layer?.cornerRadius = 3.5
+
+        tabCapsule.addSubview(documentTitleLabel)
+        tabCapsule.addSubview(dirtyDotView)
+
+        let newButton = makeGhostButton(title: "＋", action: #selector(newDocument(_:)))
+        newButton.toolTip = "新建文档 · ⌘N"
+        let openButton = makeGhostButton(title: "打开", action: #selector(openFile(_:)))
+        openButton.toolTip = "打开文件 · ⌘O"
+        let commandTopButton = makeGhostButton(title: "⌘K", action: #selector(showCommandPalette(_:)))
+        commandTopButton.toolTip = "所有命令与文档 · ⌘K"
+
+        [toggleButton, tabCapsule, newButton, openButton, commandTopButton].forEach {
+            tabBarView.addSubview($0)
+            $0.translatesAutoresizingMaskIntoConstraints = false
+        }
+        let toggleLeading = toggleButton.leadingAnchor.constraint(equalTo: tabBarView.leadingAnchor, constant: 12)
+        tabBarLeftPaddingConstraint = toggleLeading
+
+        NSLayoutConstraint.activate([
+            toggleLeading,
+            toggleButton.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
+            toggleButton.widthAnchor.constraint(equalToConstant: 26),
+            toggleButton.heightAnchor.constraint(equalToConstant: 26),
+
+            tabCapsule.leadingAnchor.constraint(equalTo: toggleButton.trailingAnchor, constant: 8),
+            tabCapsule.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
+            tabCapsule.heightAnchor.constraint(equalToConstant: 28),
+            tabCapsule.widthAnchor.constraint(greaterThanOrEqualToConstant: 118),
+            tabCapsule.widthAnchor.constraint(lessThanOrEqualToConstant: 240),
+
+            documentTitleLabel.leadingAnchor.constraint(equalTo: tabCapsule.leadingAnchor, constant: 12),
+            documentTitleLabel.centerYAnchor.constraint(equalTo: tabCapsule.centerYAnchor),
+            documentTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: dirtyDotView.leadingAnchor, constant: -8),
+
+            dirtyDotView.trailingAnchor.constraint(equalTo: tabCapsule.trailingAnchor, constant: -10),
+            dirtyDotView.centerYAnchor.constraint(equalTo: tabCapsule.centerYAnchor),
+            dirtyDotView.widthAnchor.constraint(equalToConstant: 7),
+            dirtyDotView.heightAnchor.constraint(equalToConstant: 7),
+
+            newButton.leadingAnchor.constraint(equalTo: tabCapsule.trailingAnchor, constant: 2),
+            newButton.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
+            newButton.widthAnchor.constraint(equalToConstant: 26),
+            newButton.heightAnchor.constraint(equalToConstant: 26),
+
+            commandTopButton.trailingAnchor.constraint(equalTo: tabBarView.trailingAnchor, constant: -12),
+            commandTopButton.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
+            commandTopButton.widthAnchor.constraint(equalToConstant: 42),
+            commandTopButton.heightAnchor.constraint(equalToConstant: 26),
+
+            openButton.trailingAnchor.constraint(equalTo: commandTopButton.leadingAnchor, constant: -4),
+            openButton.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
+            openButton.widthAnchor.constraint(equalToConstant: 44),
+            openButton.heightAnchor.constraint(equalToConstant: 26)
+        ])
+
+        return tabBarView
     }
 
     private func configureEditorTextView() {
@@ -637,20 +1223,20 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         editorTextView.importsGraphics = false
         editorTextView.allowsUndo = true
         editorTextView.font = LiveMarkdownStyler.bodyFont
-        editorTextView.textColor = .labelColor
-        editorTextView.backgroundColor = .textBackgroundColor
-        editorTextView.insertionPointColor = .controlAccentColor
-        editorTextView.textContainerInset = NSSize(width: 42, height: 34)
+        editorTextView.textColor = DesignTokens.bodyText
+        editorTextView.backgroundColor = DesignTokens.paper
+        editorTextView.insertionPointColor = DesignTokens.titleText
+        editorTextView.textContainerInset = NSSize(width: 70, height: 44)
         editorTextView.isAutomaticQuoteSubstitutionEnabled = false
         editorTextView.isAutomaticDashSubstitutionEnabled = false
         editorTextView.isAutomaticTextReplacementEnabled = false
         editorTextView.isVerticallyResizable = true
         editorTextView.isHorizontallyResizable = false
         editorTextView.autoresizingMask = [.width]
-        editorTextView.textContainer?.widthTracksTextView = true
-        editorTextView.textContainer?.containerSize = NSSize(width: 860, height: CGFloat.greatestFiniteMagnitude)
+        editorTextView.textContainer?.widthTracksTextView = false
+        editorTextView.textContainer?.containerSize = NSSize(width: DesignTokens.paperWidth, height: CGFloat.greatestFiniteMagnitude)
         editorTextView.linkTextAttributes = [
-            .foregroundColor: NSColor.linkColor,
+            .foregroundColor: DesignTokens.link,
             .underlineStyle: NSUnderlineStyle.single.rawValue
         ]
     }
@@ -671,6 +1257,25 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
         button.imagePosition = .imageLeading
         button.setButtonType(.momentaryPushIn)
+        return button
+    }
+
+    private func makeGhostButton(title: String, action: Selector) -> NSButton {
+        let button = NSButton(title: title, target: self, action: action)
+        button.isBordered = false
+        button.bezelStyle = .regularSquare
+        button.font = NSFont.systemFont(ofSize: 12.5)
+        button.contentTintColor = DesignTokens.tertiaryText
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 6
+        button.layer?.backgroundColor = NSColor.clear.cgColor
+        return button
+    }
+
+    private func makeGhostIconButton(symbol: String, title: String, action: Selector) -> NSButton {
+        let button = makeGhostButton(title: "", action: action)
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        button.imagePosition = .imageOnly
         return button
     }
 
@@ -981,12 +1586,19 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let name = currentFileURL?.lastPathComponent ?? "未命名.md"
         let dirtyPrefix = isDirty ? "• " : ""
 
-        documentTitleLabel.stringValue = dirtyPrefix + name
+        documentTitleLabel.stringValue = name
         documentMetaLabel.stringValue = "\(characterCount) 字 · \(lineCount) 行"
         window.title = "\(dirtyPrefix)\(name) - Markdown 编辑器"
+        dirtyDotView.isHidden = !isDirty
 
         if let status {
-            statusLabel.stringValue = status
+            if status.contains("已保存") || status.contains("已打开") || status.contains("自测") || status == "就绪" || status == "正在编辑" {
+                statusLabel.stringValue = "\(characterCount) 字 · \(lineCount) 行"
+            } else {
+                statusLabel.stringValue = status
+            }
+        } else {
+            statusLabel.stringValue = "\(characterCount) 字 · \(lineCount) 行"
         }
     }
 
@@ -1030,8 +1642,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         style.lineSpacing = 2
         style.paragraphSpacing = 4
         return [
-            .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular),
-            .foregroundColor: NSColor.labelColor,
+            .font: NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular),
+            .foregroundColor: DesignTokens.bodyText,
             .paragraphStyle: style
         ]
     }
@@ -1068,6 +1680,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         var failures: [String] = []
         failures.append(contentsOf: validateDirectoryTreeSelfTest(outputDirectory: outputDirectory))
+        failures.append(contentsOf: validateDesignSystemLayout())
+        failures.append(contentsOf: validateCommandPalette())
 
         let cases = selfTestCases()
 
@@ -1094,6 +1708,90 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         fputs("[MarkdownViewer][self-test] FAIL\n" + failures.joined(separator: "\n") + "\n", stderr)
         return false
+    }
+
+    private func validateDesignSystemLayout() -> [String] {
+        var failures: [String] = []
+        let prefix = "[design-system]"
+        rootView.layoutSubtreeIfNeeded()
+
+        if abs(sidebarView.frame.width - DesignTokens.sidebarWidth) > 2 && !sidebarView.isHidden {
+            failures.append("\(prefix) sidebar width should be \(DesignTokens.sidebarWidth), got \(sidebarView.frame.width)")
+        }
+        if abs(tabBarView.frame.height - DesignTokens.tabBarHeight) > 1 {
+            failures.append("\(prefix) tab bar height should be \(DesignTokens.tabBarHeight), got \(tabBarView.frame.height)")
+        }
+        if let textContainer = editorTextView.textContainer,
+           abs(textContainer.containerSize.width - DesignTokens.paperWidth) > 2 {
+            failures.append("\(prefix) paper width should be \(DesignTokens.paperWidth), got \(textContainer.containerSize.width)")
+        }
+        if commandButton.superview == nil {
+            failures.append("\(prefix) sidebar command palette entry is missing")
+        }
+        if editorTextView.backgroundColor != DesignTokens.paper {
+            failures.append("\(prefix) editor background should be paper white")
+        }
+        guard let tabBarLeftPaddingConstraint else {
+            failures.append("\(prefix) missing tab bar left padding constraint")
+            return failures
+        }
+        if !sidebarView.isHidden {
+            toggleSidebar(self)
+            rootView.layoutSubtreeIfNeeded()
+            if abs(tabBarLeftPaddingConstraint.constant - 84) > 1 {
+                failures.append("\(prefix) collapsed sidebar should leave 84px for traffic lights, got \(tabBarLeftPaddingConstraint.constant)")
+            }
+            toggleSidebar(self)
+            rootView.layoutSubtreeIfNeeded()
+        }
+        if !sidebarView.isHidden && abs(tabBarLeftPaddingConstraint.constant - 12) > 1 {
+            failures.append("\(prefix) expanded sidebar tab padding should be 12px, got \(tabBarLeftPaddingConstraint.constant)")
+        }
+
+        return failures
+    }
+
+    private func validateCommandPalette() -> [String] {
+        var failures: [String] = []
+        let prefix = "[command-palette]"
+        let palette = buildCommandPaletteView()
+        let identifiers = collectButtonIdentifiers(in: palette)
+        for expected in ["new", "openFile", "openDirectory", "save", "saveAs", "sidebar"] {
+            if !identifiers.contains(expected) {
+                failures.append("\(prefix) missing command \(expected)")
+            }
+        }
+        if palette.frame.width != 460 {
+            failures.append("\(prefix) wrong palette width: \(palette.frame.width)")
+        }
+        palette.setQueryForTesting("目录")
+        if palette.visibleCommandIdentifiersForTesting != ["openDirectory", "sidebar"] {
+            failures.append("\(prefix) search for directory should find openDirectory and sidebar, got \(palette.visibleCommandIdentifiersForTesting)")
+        }
+        palette.moveSelectionForTesting(delta: 1)
+        if palette.selectedCommandIdentifierForTesting != "sidebar" {
+            failures.append("\(prefix) arrow navigation should select sidebar after moving down")
+        }
+        palette.setQueryForTesting("另存")
+        if palette.visibleCommandIdentifiersForTesting != ["saveAs"] {
+            failures.append("\(prefix) search for save as should find saveAs, got \(palette.visibleCommandIdentifiersForTesting)")
+        }
+        palette.setQueryForTesting("zz-no-match")
+        if !palette.visibleCommandIdentifiersForTesting.isEmpty {
+            failures.append("\(prefix) empty search should have no commands")
+        }
+        return failures
+    }
+
+    private func collectButtonIdentifiers(in view: NSView) -> Set<String> {
+        var result = Set<String>()
+        if let button = view as? NSButton, let id = button.identifier?.rawValue {
+            result.insert(id)
+        }
+        for subview in view.subviews {
+            result.formUnion(collectButtonIdentifiers(in: subview))
+        }
+        return result
     }
 
     private func validateDirectoryTreeSelfTest(outputDirectory: URL) -> [String] {
@@ -1631,15 +2329,15 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 }
 
 enum LiveMarkdownStyler {
-    static let bodyFont = NSFont.systemFont(ofSize: 16)
+    static let bodyFont = NSFont.systemFont(ofSize: 15.5)
 
     private static let markerFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-    private static let codeFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-    private static let boldCodeFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .semibold)
-    private static let markerColor = NSColor.tertiaryLabelColor
-    private static let mutedColor = NSColor.secondaryLabelColor
-    private static let codeBackground = NSColor.controlBackgroundColor
-    private static let quoteBackground = NSColor.controlBackgroundColor.withAlphaComponent(0.55)
+    private static let codeFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+    private static let boldCodeFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .semibold)
+    private static let markerColor = DesignTokens.placeholderText
+    private static let mutedColor = DesignTokens.secondaryText
+    private static let codeBackground = DesignTokens.codeBackground
+    private static let quoteBackground = NSColor.clear
 
     private static let headingRegex = try! NSRegularExpression(pattern: "^(#{1,6})\\s+(.+)$", options: [.anchorsMatchLines])
     private static let listRegex = try! NSRegularExpression(pattern: "^(\\s*(?:[-*+] |\\d+\\. ))(.+)$", options: [.anchorsMatchLines])
@@ -1790,7 +2488,7 @@ enum LiveMarkdownStyler {
             textStorage.addAttributes([
                 .font: codeFont,
                 .backgroundColor: codeBackground,
-                .foregroundColor: NSColor.labelColor
+                .foregroundColor: DesignTokens.titleText
             ], range: match.range)
             dimMarkup(in: match, contentIndex: 1, textStorage: textStorage)
         }
@@ -1812,7 +2510,7 @@ enum LiveMarkdownStyler {
                 }
             }
             textStorage.addAttributes([
-                .foregroundColor: NSColor.linkColor,
+                .foregroundColor: DesignTokens.link,
                 .underlineStyle: NSUnderlineStyle.single.rawValue
             ], range: match.range(at: 1))
             let urlRange = match.range(at: 2)
@@ -1940,6 +2638,7 @@ enum LiveMarkdownStyler {
         let style = paragraphStyle(spacingBefore: 4, spacingAfter: 0)
         style.headIndent = 8
         style.firstLineHeadIndent = 8
+        style.lineBreakMode = .byClipping
         textStorage.addAttributes([
             .font: boldCodeFont,
             .backgroundColor: codeBackground,
@@ -1952,6 +2651,7 @@ enum LiveMarkdownStyler {
         let style = paragraphStyle(spacingBefore: 0, spacingAfter: 0)
         style.headIndent = 8
         style.firstLineHeadIndent = 8
+        style.lineBreakMode = .byClipping
         textStorage.addAttributes([
             .font: codeFont,
             .backgroundColor: codeBackground,
@@ -2066,7 +2766,7 @@ enum LiveMarkdownStyler {
     private static func baseAttributes() -> [NSAttributedString.Key: Any] {
         [
             .font: bodyFont,
-            .foregroundColor: NSColor.labelColor,
+            .foregroundColor: DesignTokens.bodyText,
             .paragraphStyle: paragraphStyle()
         ]
     }
@@ -2088,7 +2788,7 @@ enum LiveMarkdownStyler {
     private static func codeBlockAttributes() -> [NSAttributedString.Key: Any] {
         [
             .font: codeFont,
-            .foregroundColor: NSColor.labelColor,
+            .foregroundColor: DesignTokens.bodyText,
             .backgroundColor: codeBackground,
             .paragraphStyle: paragraphStyle(spacingAfter: 2)
         ]
@@ -2097,23 +2797,23 @@ enum LiveMarkdownStyler {
     private static func headingFont(level: Int) -> NSFont {
         switch level {
         case 1:
-            return NSFont.systemFont(ofSize: 30, weight: .bold)
+            return NSFont.systemFont(ofSize: 26, weight: .semibold)
         case 2:
-            return NSFont.systemFont(ofSize: 24, weight: .bold)
+            return NSFont.systemFont(ofSize: 18, weight: .semibold)
         case 3:
-            return NSFont.systemFont(ofSize: 20, weight: .semibold)
+            return NSFont.systemFont(ofSize: 16, weight: .semibold)
         default:
-            return NSFont.systemFont(ofSize: 17, weight: .semibold)
+            return NSFont.systemFont(ofSize: 15.5, weight: .semibold)
         }
     }
 
     private static func headingParagraphStyle(level: Int) -> NSParagraphStyle {
-        paragraphStyle(spacingBefore: level == 1 ? 4 : 8, spacingAfter: level == 1 ? 14 : 10)
+        paragraphStyle(spacingBefore: level == 1 ? 8 : 40, spacingAfter: level == 1 ? 24 : 16)
     }
 
     private static func paragraphStyle(spacingBefore: CGFloat = 0, spacingAfter: CGFloat = 8) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = 4
+        style.lineSpacing = 5
         style.paragraphSpacingBefore = spacingBefore
         style.paragraphSpacing = spacingAfter
         return style
