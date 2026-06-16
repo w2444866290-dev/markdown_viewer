@@ -4366,6 +4366,16 @@ private final class RailRow: NSView {
     var onClick: ((Int) -> Void)?
     private var active = false
     private var expanded = false
+    private var heightConstraint: NSLayoutConstraint!
+
+    // Design motion (ui/Design System.dc.html · Motion / OUTLINE):
+    // row height 18→26 over 0.24s easeOutQuint, label fade 0.18s, 12ms per-row stagger on expand.
+    private static let collapsedHeight: CGFloat = 18
+    private static let expandedHeight: CGFloat = 26
+    private static let heightDuration: CFTimeInterval = 0.24
+    private static let labelDuration: CFTimeInterval = 0.18
+    private static let perRowStagger: CFTimeInterval = 0.012
+    private static let easeOutQuint = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
 
     init(entry: OutlineEntry, index: Int) {
         self.level = entry.level
@@ -4387,8 +4397,9 @@ private final class RailRow: NSView {
         addSubview(label)
 
         let tickW: CGFloat = level == 1 ? 22 : 14
+        heightConstraint = heightAnchor.constraint(equalToConstant: RailRow.collapsedHeight)
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 22),
+            heightConstraint,
             tick.trailingAnchor.constraint(equalTo: trailingAnchor),
             tick.centerYAnchor.constraint(equalTo: centerYAnchor),
             tick.heightAnchor.constraint(equalToConstant: 2),
@@ -4415,18 +4426,44 @@ private final class RailRow: NSView {
 
     func setExpanded(_ value: Bool, animated: Bool) {
         expanded = value
-        let work = {
-            self.tick.animator().alphaValue = value ? 0 : 1
-            self.label.animator().alphaValue = value ? 1 : 0
+        let targetHeight = value ? RailRow.expandedHeight : RailRow.collapsedHeight
+        let targetTickAlpha: CGFloat = value ? 0 : 1
+        let targetLabelAlpha: CGFloat = value ? 1 : 0
+
+        guard animated else {
+            heightConstraint.constant = targetHeight
+            tick.alphaValue = targetTickAlpha
+            label.alphaValue = targetLabelAlpha
+            return
         }
-        if animated {
+
+        // EXPAND staggers by row (row i delayed by i × 12ms); COLLAPSE has no stagger.
+        let delay: CFTimeInterval = value ? Double(index) * RailRow.perRowStagger : 0
+
+        let run = { [weak self] in
+            guard let self = self else { return }
+            // Height: 0.24s easeOutQuint melt.
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.18
-                work()
+                ctx.duration = RailRow.heightDuration
+                ctx.timingFunction = RailRow.easeOutQuint
+                self.heightConstraint.animator().constant = targetHeight
+            }
+            // Ticks→text cross-fade: tick fades out as label fades in over 0.18s.
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = RailRow.labelDuration
+                self.tick.animator().alphaValue = targetTickAlpha
+                self.label.animator().alphaValue = targetLabelAlpha
+            }
+        }
+
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                // Guard against a fast hover-out flipping state before our delay fires.
+                guard let self = self, self.expanded == value else { return }
+                run()
             }
         } else {
-            tick.alphaValue = value ? 0 : 1
-            label.alphaValue = value ? 1 : 0
+            run()
         }
     }
 
