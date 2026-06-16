@@ -945,6 +945,211 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// One open document in the tabbed model. Holds its own identity, text snapshot,
+/// dirty baseline and last scroll position. The active doc is mirrored into the
+/// single shared `editorTextView`; inactive docs keep their state here.
+final class DocumentTab {
+    /// File URL on disk, or nil for an untitled (unsaved) document.
+    var url: URL?
+    /// Stable identity for untitled docs (URL is nil); used as a dictionary key
+    /// and to disambiguate two "未命名.md" tabs.
+    let untitledId: Int?
+    var isMarkdown: Bool
+    /// Editor text. Authoritative for inactive docs; for the active doc the
+    /// editorTextView is authoritative and this is refreshed on switch/persist.
+    var text: String
+    /// Text as last saved (or as loaded). dirty == text != savedText.
+    var savedText: String
+    /// Last vertical scroll offset (clip view origin.y).
+    var scrollY: CGFloat = 0
+
+    init(url: URL?, untitledId: Int?, isMarkdown: Bool, text: String, savedText: String) {
+        self.url = url
+        self.untitledId = untitledId
+        self.isMarkdown = isMarkdown
+        self.text = text
+        self.savedText = savedText
+    }
+
+    var isDirty: Bool { text != savedText }
+
+    var displayName: String { url?.lastPathComponent ?? "未命名.md" }
+
+    /// Stable identity key for maps / lastClosed / persistence.
+    var identityKey: String {
+        if let url { return "f:" + url.standardizedFileURL.path }
+        return "u:\(untitledId ?? -1)"
+    }
+}
+
+/// A single tab in the tab bar: filename + a 16px trailing slot that shows the
+/// amber dirty dot by default and swaps to a close "×" on hover. When the doc is
+/// dirty and a close is requested, the slot is replaced by an inline
+/// "确认关闭?" affordance until the second confirm or timeout.
+final class TabItemView: NSView {
+    var onSelect: (() -> Void)?
+    var onClose: (() -> Void)?
+
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let trailing = NSView()            // 16px slot
+    private let dirtyDot = NSView()            // amber dot
+    private let closeButton = HoverButton(title: "×", target: nil, action: nil)
+    private let confirmLabel = NSTextField(labelWithString: "确认关闭?")
+
+    private var isActive = false
+    private var isDirty = false
+    private var isConfirming = false
+    private var hovering = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.lineBreakMode = .byTruncatingMiddle
+        titleLabel.font = NSFont.systemFont(ofSize: 12.5, weight: .regular)
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        trailing.translatesAutoresizingMaskIntoConstraints = false
+
+        dirtyDot.wantsLayer = true
+        dirtyDot.layer?.backgroundColor = DesignTokens.accent.cgColor
+        dirtyDot.layer?.cornerRadius = 3.5
+        dirtyDot.translatesAutoresizingMaskIntoConstraints = false
+        dirtyDot.isHidden = true
+
+        closeButton.title = "×"
+        closeButton.isBordered = false
+        closeButton.bezelStyle = .regularSquare
+        closeButton.font = NSFont.systemFont(ofSize: 13)
+        closeButton.contentTintColor = DesignTokens.placeholderText
+        closeButton.restTint = DesignTokens.placeholderText
+        closeButton.hoverTint = DesignTokens.titleText
+        closeButton.hoverBackground = DesignTokens.pressed
+        closeButton.wantsLayer = true
+        closeButton.layer?.cornerRadius = 6
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.target = self
+        closeButton.action = #selector(closeTapped)
+        closeButton.isHidden = true
+
+        confirmLabel.translatesAutoresizingMaskIntoConstraints = false
+        confirmLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        confirmLabel.textColor = DesignTokens.danger
+        confirmLabel.wantsLayer = true
+        confirmLabel.drawsBackground = true
+        confirmLabel.backgroundColor = DesignTokens.danger.withAlphaComponent(0.10)
+        confirmLabel.layer?.cornerRadius = 6
+        confirmLabel.alignment = .center
+        confirmLabel.toolTip = "再点一次关闭，未保存的更改将丢弃"
+        confirmLabel.isHidden = true
+
+        trailing.addSubview(dirtyDot)
+        trailing.addSubview(closeButton)
+        addSubview(titleLabel)
+        addSubview(trailing)
+        addSubview(confirmLabel)
+
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 32),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+
+            trailing.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 6),
+            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -7),
+            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
+            trailing.widthAnchor.constraint(equalToConstant: 16),
+            trailing.heightAnchor.constraint(equalToConstant: 16),
+
+            dirtyDot.centerXAnchor.constraint(equalTo: trailing.centerXAnchor),
+            dirtyDot.centerYAnchor.constraint(equalTo: trailing.centerYAnchor),
+            dirtyDot.widthAnchor.constraint(equalToConstant: 7),
+            dirtyDot.heightAnchor.constraint(equalToConstant: 7),
+
+            closeButton.topAnchor.constraint(equalTo: trailing.topAnchor),
+            closeButton.bottomAnchor.constraint(equalTo: trailing.bottomAnchor),
+            closeButton.leadingAnchor.constraint(equalTo: trailing.leadingAnchor),
+            closeButton.trailingAnchor.constraint(equalTo: trailing.trailingAnchor),
+
+            confirmLabel.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 6),
+            confirmLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -7),
+            confirmLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            confirmLabel.heightAnchor.constraint(equalToConstant: 18)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func configure(name: String, active: Bool, dirty: Bool, confirming: Bool) {
+        isActive = active
+        isDirty = dirty
+        isConfirming = confirming
+        titleLabel.stringValue = name
+        titleLabel.font = NSFont.systemFont(ofSize: 12.5, weight: active ? .semibold : .regular)
+        titleLabel.textColor = active ? DesignTokens.titleText : DesignTokens.tertiaryText
+        refresh()
+    }
+
+    private func refresh() {
+        // Tab background: active selected, hover inactive uses hover token.
+        let bg: NSColor
+        if isActive {
+            bg = DesignTokens.selected
+        } else if hovering {
+            bg = DesignTokens.hover
+        } else {
+            bg = .clear
+        }
+        layer?.backgroundColor = bg.cgColor
+
+        if isConfirming {
+            confirmLabel.isHidden = false
+            trailing.isHidden = true
+            return
+        }
+        confirmLabel.isHidden = true
+        trailing.isHidden = false
+        // Hover swaps the dirty dot for the close × (× always available on hover).
+        if hovering {
+            dirtyDot.isHidden = true
+            closeButton.isHidden = false
+        } else {
+            closeButton.isHidden = true
+            dirtyDot.isHidden = !isDirty
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true; refresh() }
+    override func mouseExited(with event: NSEvent) { hovering = false; refresh() }
+
+    override func mouseDown(with event: NSEvent) {
+        // The close button is a real NSButton and consumes its own clicks, so
+        // this only fires for the tab body / dirty-dot region. A click on the
+        // confirm chip confirms the close; anything else selects the tab.
+        let point = convert(event.locationInWindow, from: nil)
+        if !confirmLabel.isHidden, confirmLabel.frame.contains(point) {
+            onClose?()
+            return
+        }
+        onSelect?()
+    }
+
+    @objc private func closeTapped() { onClose?() }
+}
+
 final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSSearchFieldDelegate, NSTextViewDelegate, NSWindowDelegate {
     private let window: NSWindow
     private let rootView = DropZoneView()
@@ -953,10 +1158,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private let filterField = RoundedField(placeholder: "筛选文档")
     private let outlineView = NSOutlineView()
     private let outlineScrollView = NSScrollView()
-    private let documentTitleLabel = NSTextField(labelWithString: "未命名.md")
     private let statusLabel = NSTextField(labelWithString: "就绪")
     private let tabBarView = NSView()
-    private let dirtyDotView = NSView()
+    private var newTabButton: HoverButton?
     private let commandButton = HoverButton(title: "", target: nil, action: nil)
     private let editorContainer = NSView()
     private let editorScrollView = NSScrollView()
@@ -972,6 +1176,26 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private var currentFileURL: URL?
     private var currentDocumentIsMarkdown = true
     private var lastSavedText = ""
+
+    // MARK: Multi-document tabbed model
+    /// Ordered list of open documents (left → right in the tab bar).
+    private var tabs: [DocumentTab] = []
+    /// Index of the active tab in `tabs`, or nil when no document is open.
+    private var activeTabIndex: Int? = nil
+    /// Last-closed document, snapshotted for ⌘⇧T reopen (file docs only).
+    private var lastClosedTab: DocumentTab?
+    /// Identity key of the tab currently awaiting a second close confirmation.
+    private var confirmCloseKey: String?
+    private var confirmCloseWork: DispatchWorkItem?
+    /// Monotonic counter for untitled-doc identities.
+    private var untitledCounter = 0
+    /// Tab-bar row container + per-tab views, rebuilt on any tab change.
+    private let tabStrip = NSStackView()
+    private var tabViews: [TabItemView] = []
+    private var emptyStateView: NSView?
+    /// Guards re-entrant editor swaps during tab activation.
+    private var isSwitchingTab = false
+
     private var suppressSelectionHandling = false
     private var isApplyingMarkdownStyle = false
     private var sidebarWidth = DesignTokens.sidebarWidth
@@ -1034,17 +1258,15 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     func canClose() -> Bool {
-        confirmDiscardChangesIfNeeded()
+        confirmDiscardAllIfNeeded()
     }
 
     func openExternalFile(_ url: URL) -> Bool {
-        guard confirmDiscardChangesIfNeeded() else { return false }
-        loadDocument(from: url)
+        openOrSwitchToFile(url)
         return true
     }
 
     func openExternalDirectory(_ url: URL) -> Bool {
-        guard confirmDiscardChangesIfNeeded() else { return false }
         loadDirectory(url)
         return true
     }
@@ -1060,23 +1282,25 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        confirmDiscardChangesIfNeeded()
+        confirmDiscardAllIfNeeded()
     }
 
     @objc func newDocument(_ sender: Any?) {
-        guard confirmDiscardChangesIfNeeded() else { return }
-        currentFileURL = nil
-        currentDocumentIsMarkdown = true
-        editorTextView.string = "# 未命名\n\n"
-        lastSavedText = ""
-        applyCurrentDocumentStyling()
-        updateDocumentState(status: "新文档已创建")
+        let initial = "# 未命名\n\n"
+        let tab = DocumentTab(
+            url: nil,
+            untitledId: nextUntitledId(),
+            isMarkdown: true,
+            text: initial,
+            // savedText differs from text so a fresh untitled doc reads dirty,
+            // matching the mockup (newDoc sets dirty: true).
+            savedText: ""
+        )
+        appendTab(tab, status: "新文档已创建")
         editorTextView.window?.makeFirstResponder(editorTextView)
     }
 
     @objc func openFile(_ sender: Any?) {
-        guard confirmDiscardChangesIfNeeded() else { return }
-
         let panel = NSOpenPanel()
         panel.title = "打开 Markdown 文档"
         panel.canChooseFiles = true
@@ -1085,12 +1309,10 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         panel.allowedContentTypes = markdownContentTypes()
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        loadDocument(from: url)
+        openOrSwitchToFile(url)
     }
 
     @objc func openDirectory(_ sender: Any?) {
-        guard confirmDiscardChangesIfNeeded() else { return }
-
         let panel = NSOpenPanel()
         panel.title = "打开 Markdown 目录"
         panel.canChooseFiles = false
@@ -1209,7 +1431,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             return c
         }()
 
-        let dirty = !node.isDirectory && sameFileURL(node.url, currentFileURL) && isDirty
+        let dirty = !node.isDirectory && isFileDirtyInAnyTab(node.url)
         cell.configure(name: node.name, isDirectory: node.isDirectory, isDirty: dirty)
         return cell
     }
@@ -1959,24 +2181,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let toggleButton = makeGhostIconButton(symbol: "sidebar.left", title: "显示 / 隐藏侧栏", action: #selector(toggleSidebar(_:)))
         toggleButton.toolTip = "显示 / 隐藏侧栏 · ⌘\\"
 
-        let tabCapsule = NSView()
-        tabCapsule.translatesAutoresizingMaskIntoConstraints = false
-        tabCapsule.wantsLayer = true
-        tabCapsule.layer?.backgroundColor = DesignTokens.hover.cgColor
-        tabCapsule.layer?.cornerRadius = 6
-
-        documentTitleLabel.font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
-        documentTitleLabel.textColor = DesignTokens.titleText
-        documentTitleLabel.lineBreakMode = .byTruncatingMiddle
-        documentTitleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        dirtyDotView.translatesAutoresizingMaskIntoConstraints = false
-        dirtyDotView.wantsLayer = true
-        dirtyDotView.layer?.backgroundColor = DesignTokens.accent.cgColor
-        dirtyDotView.layer?.cornerRadius = 3.5
-
-        tabCapsule.addSubview(documentTitleLabel)
-        tabCapsule.addSubview(dirtyDotView)
+        // Horizontal strip of tabs followed by the ＋ new-tab button. The strip
+        // grows to fill the space between the sidebar toggle and the find/open
+        // buttons; individual TabItemViews are (re)built in rebuildTabStrip().
+        tabStrip.orientation = .horizontal
+        tabStrip.alignment = .centerY
+        tabStrip.spacing = 2
+        tabStrip.translatesAutoresizingMaskIntoConstraints = false
+        tabStrip.setHuggingPriority(.defaultLow, for: .horizontal)
 
         let newButton = makeGhostButton(title: "＋", action: #selector(newDocument(_:)))
         newButton.font = NSFont.systemFont(ofSize: 16)
@@ -1987,7 +2199,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let openButton = makeGhostIconButton(symbol: "folder", title: "打开", action: #selector(openFile(_:)))
         openButton.toolTip = "打开 · ⌘O"
 
-        [toggleButton, tabCapsule, newButton, findButton, openButton].forEach {
+        [toggleButton, tabStrip, newButton, findButton, openButton].forEach {
             tabBarView.addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
@@ -2000,22 +2212,10 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             toggleButton.widthAnchor.constraint(equalToConstant: 26),
             toggleButton.heightAnchor.constraint(equalToConstant: 26),
 
-            tabCapsule.leadingAnchor.constraint(equalTo: toggleButton.trailingAnchor, constant: 8),
-            tabCapsule.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
-            tabCapsule.heightAnchor.constraint(equalToConstant: 28),
-            tabCapsule.widthAnchor.constraint(greaterThanOrEqualToConstant: 118),
-            tabCapsule.widthAnchor.constraint(lessThanOrEqualToConstant: 240),
+            tabStrip.leadingAnchor.constraint(equalTo: toggleButton.trailingAnchor, constant: 8),
+            tabStrip.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
+            tabStrip.trailingAnchor.constraint(lessThanOrEqualTo: findButton.leadingAnchor, constant: -8),
 
-            documentTitleLabel.leadingAnchor.constraint(equalTo: tabCapsule.leadingAnchor, constant: 12),
-            documentTitleLabel.centerYAnchor.constraint(equalTo: tabCapsule.centerYAnchor),
-            documentTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: dirtyDotView.leadingAnchor, constant: -8),
-
-            dirtyDotView.trailingAnchor.constraint(equalTo: tabCapsule.trailingAnchor, constant: -10),
-            dirtyDotView.centerYAnchor.constraint(equalTo: tabCapsule.centerYAnchor),
-            dirtyDotView.widthAnchor.constraint(equalToConstant: 7),
-            dirtyDotView.heightAnchor.constraint(equalToConstant: 7),
-
-            newButton.leadingAnchor.constraint(equalTo: tabCapsule.trailingAnchor, constant: 2),
             newButton.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
             newButton.widthAnchor.constraint(equalToConstant: 26),
             newButton.heightAnchor.constraint(equalToConstant: 26),
@@ -2031,7 +2231,304 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             findButton.heightAnchor.constraint(equalToConstant: 26)
         ])
 
+        // ＋ sits at the end of the tab strip so it follows the last tab.
+        newButton.translatesAutoresizingMaskIntoConstraints = false
+        tabStrip.addArrangedSubview(newButton)
+        NSLayoutConstraint.activate([
+            newButton.widthAnchor.constraint(equalToConstant: 26),
+            newButton.heightAnchor.constraint(equalToConstant: 26)
+        ])
+        newTabButton = newButton
+
         return tabBarView
+    }
+
+    /// Rebuild the tab strip views to match `tabs`/`activeTabIndex`. Cheap to
+    /// call on every tab mutation; the strip is small.
+    private func rebuildTabStrip() {
+        guard let newTabButton else { return }
+        // Remove existing TabItemViews (keep the trailing ＋ button).
+        for view in tabViews { tabStrip.removeArrangedSubview(view); view.removeFromSuperview() }
+        tabViews.removeAll()
+
+        for (index, tab) in tabs.enumerated() {
+            let item = TabItemView()
+            let active = index == activeTabIndex
+            item.configure(
+                name: tab.displayName,
+                active: active,
+                dirty: dirtyState(of: tab),
+                confirming: confirmCloseKey == tab.identityKey
+            )
+            item.toolTip = tab.url?.standardizedFileURL.path ?? tab.displayName
+            let key = tab.identityKey
+            item.onSelect = { [weak self] in self?.activateTab(identityKey: key) }
+            item.onClose = { [weak self] in self?.requestCloseTab(identityKey: key) }
+            tabStrip.insertArrangedSubview(item, at: index)
+            tabViews.append(item)
+        }
+        // Keep ＋ at the very end.
+        tabStrip.removeArrangedSubview(newTabButton)
+        tabStrip.addArrangedSubview(newTabButton)
+    }
+
+    // MARK: - Multi-document model
+
+    private var activeTab: DocumentTab? {
+        guard let activeTabIndex, tabs.indices.contains(activeTabIndex) else { return nil }
+        return tabs[activeTabIndex]
+    }
+
+    /// Dirty state of a tab; the active tab uses the live editor as source.
+    private func dirtyState(of tab: DocumentTab) -> Bool {
+        if let activeTab, activeTab === tab { return isDirty }
+        return tab.isDirty
+    }
+
+    private func tabIndex(forIdentityKey key: String) -> Int? {
+        tabs.firstIndex { $0.identityKey == key }
+    }
+
+    private func tabIndex(forFileURL url: URL) -> Int? {
+        tabs.firstIndex { sameFileURL($0.url, url) }
+    }
+
+    /// Save the live editor's text + scroll back into the active tab before we
+    /// swap in a different document.
+    private func captureActiveTabState() {
+        guard let tab = activeTab else { return }
+        tab.text = editorTextView.string
+        tab.url = currentFileURL
+        tab.isMarkdown = currentDocumentIsMarkdown
+        tab.scrollY = editorScrollView.contentView.bounds.origin.y
+    }
+
+    /// Load `tab` into the shared editor and restore its scroll position.
+    private func loadTabIntoEditor(_ tab: DocumentTab, status: String?) {
+        isSwitchingTab = true
+        currentFileURL = tab.url
+        currentDocumentIsMarkdown = tab.isMarkdown
+        editorTextView.string = tab.text
+        lastSavedText = tab.savedText
+        applyCurrentDocumentStyling()
+        isSwitchingTab = false
+
+        updateDocumentState(status: status)
+        if currentFileURL != nil { selectCurrentFileInOutline() } else { outlineView.deselectAll(nil) }
+
+        // Restore scroll after layout settles.
+        let targetY = tab.scrollY
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let clip = self.editorScrollView.contentView
+            let maxY = max(0, self.editorTextView.frame.height - clip.bounds.height)
+            clip.scroll(to: NSPoint(x: 0, y: min(targetY, maxY)))
+            self.editorScrollView.reflectScrolledClipView(clip)
+            self.updateActiveHeading()
+        }
+    }
+
+    private func activateTab(identityKey key: String) {
+        guard let index = tabIndex(forIdentityKey: key) else { return }
+        activateTab(at: index, status: nil)
+    }
+
+    private func activateTab(at index: Int, status: String?) {
+        guard tabs.indices.contains(index) else { return }
+        if index == activeTabIndex { return }
+        clearCloseConfirmation()
+        captureActiveTabState()
+        activeTabIndex = index
+        loadTabIntoEditor(tabs[index], status: status)
+        persistSession()
+    }
+
+    private func showEmptyStateIfNeeded() {
+        let hasDoc = activeTab != nil
+        editorScrollView.isHidden = !hasDoc
+        statusLabel.isHidden = !hasDoc
+        if hasDoc {
+            emptyStateView?.isHidden = true
+            return
+        }
+        // No document open: clear the editor and show the empty-state overlay.
+        isSwitchingTab = true
+        currentFileURL = nil
+        editorTextView.string = ""
+        lastSavedText = ""
+        isSwitchingTab = false
+        window.title = "Markdown 编辑器"
+        outlineView.deselectAll(nil)
+        outlineRail?.setEntries([])
+        if let bar = findBar, !bar.isHidden { closeFind() }
+        installEmptyStateIfNeeded()
+        emptyStateView?.isHidden = false
+    }
+
+    private func installEmptyStateIfNeeded() {
+        guard emptyStateView == nil else { return }
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        let title = NSTextField(labelWithString: "没有打开的文档")
+        title.font = NSFont.systemFont(ofSize: 14)
+        title.textColor = DesignTokens.placeholderText
+        title.translatesAutoresizingMaskIntoConstraints = false
+        let hint = NSTextField(labelWithString: "在左侧选择文件，或按 ⌘K")
+        hint.font = NSFont.systemFont(ofSize: 12)
+        hint.textColor = DesignTokens.disabledText
+        hint.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(title)
+        container.addSubview(hint)
+        editorContainer.addSubview(container)
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: editorContainer.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: editorContainer.trailingAnchor),
+            container.topAnchor.constraint(equalTo: tabBarView.bottomAnchor),
+            container.bottomAnchor.constraint(equalTo: editorContainer.bottomAnchor),
+            title.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            title.centerYAnchor.constraint(equalTo: container.centerYAnchor, constant: -8),
+            hint.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            hint.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 10)
+        ])
+        emptyStateView = container
+    }
+
+    /// Append a new tab (already constructed) and make it active.
+    @discardableResult
+    private func appendTab(_ tab: DocumentTab, status: String?) -> Int {
+        clearCloseConfirmation()
+        captureActiveTabState()
+        tabs.append(tab)
+        let index = tabs.count - 1
+        activeTabIndex = index
+        emptyStateView?.isHidden = true
+        editorScrollView.isHidden = false
+        statusLabel.isHidden = false
+        loadTabIntoEditor(tab, status: status)
+        persistSession()
+        return index
+    }
+
+    private func nextUntitledId() -> Int {
+        untitledCounter += 1
+        return untitledCounter
+    }
+
+    // MARK: Close / new / reopen
+
+    private func requestCloseTab(identityKey key: String) {
+        guard let index = tabIndex(forIdentityKey: key) else { return }
+        let tab = tabs[index]
+        let dirty = dirtyState(of: tab)
+        if dirty && confirmCloseKey != key {
+            // First request on a dirty tab: show the inline confirm affordance.
+            confirmCloseWork?.cancel()
+            confirmCloseKey = key
+            rebuildTabStrip()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.confirmCloseKey == key else { return }
+                self.confirmCloseKey = nil
+                self.rebuildTabStrip()
+            }
+            confirmCloseWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6, execute: work)
+            return
+        }
+        closeTab(at: index)
+    }
+
+    private func closeTab(at index: Int) {
+        guard tabs.indices.contains(index) else { return }
+        clearCloseConfirmation()
+        let closing = tabs[index]
+        // Snapshot for ⌘⇧T (only file-backed docs are reopenable).
+        if index == activeTabIndex { captureActiveTabState() }
+        if closing.url != nil {
+            lastClosedTab = DocumentTab(
+                url: closing.url,
+                untitledId: nil,
+                isMarkdown: closing.isMarkdown,
+                text: closing.savedText,
+                savedText: closing.savedText
+            )
+        } else {
+            lastClosedTab = nil
+        }
+
+        tabs.remove(at: index)
+
+        if tabs.isEmpty {
+            activeTabIndex = nil
+            showEmptyStateIfNeeded()
+            rebuildTabStrip()
+            persistSession()
+            return
+        }
+
+        // Choose the neighbour to the right, else the new last tab.
+        if let current = activeTabIndex {
+            if current == index {
+                let newIndex = min(index, tabs.count - 1)
+                activeTabIndex = newIndex
+                loadTabIntoEditor(tabs[newIndex], status: nil)
+            } else if current > index {
+                activeTabIndex = current - 1
+                rebuildTabStrip()
+            } else {
+                rebuildTabStrip()
+            }
+        }
+        persistSession()
+    }
+
+    private func reopenClosedTab() {
+        guard let snapshot = lastClosedTab, let url = snapshot.url else { return }
+        lastClosedTab = nil
+        // If still on disk, reload fresh; otherwise reopen from the snapshot.
+        if FileManager.default.fileExists(atPath: url.path) {
+            openOrSwitchToFile(url)
+        } else if tabIndex(forFileURL: url) == nil {
+            appendTab(snapshot, status: "已恢复 \(snapshot.displayName)")
+        }
+    }
+
+    @objc func closeActiveTab(_ sender: Any?) {
+        guard let tab = activeTab else { return }
+        requestCloseTab(identityKey: tab.identityKey)
+    }
+
+    @objc func reopenClosedTab(_ sender: Any?) {
+        reopenClosedTab()
+    }
+
+    private func clearCloseConfirmation() {
+        confirmCloseWork?.cancel()
+        confirmCloseWork = nil
+        if confirmCloseKey != nil {
+            confirmCloseKey = nil
+        }
+    }
+
+    /// Open `url` as a tab, switching to it if it is already open.
+    private func openOrSwitchToFile(_ url: URL) {
+        if let index = tabIndex(forFileURL: url) {
+            activateTab(at: index, status: "已切换到 \(url.lastPathComponent)")
+            return
+        }
+        do {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            let tab = DocumentTab(
+                url: url,
+                untitledId: nil,
+                isMarkdown: isMarkdownFile(url),
+                text: text,
+                savedText: text
+            )
+            appendTab(tab, status: "已打开 \(url.lastPathComponent)")
+        } catch {
+            showAlert(title: "无法打开文件", message: error.localizedDescription)
+            updateDocumentState(status: "打开失败")
+        }
     }
 
     private func configureEditorTextView() {
@@ -2392,19 +2889,20 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     private func updateDocumentState(status: String? = nil) {
-        let text = editorTextView.string
-        let characterCount = text.count
-        let lineCount = text.isEmpty ? 0 : text.components(separatedBy: .newlines).count
-        let name = currentFileURL?.lastPathComponent ?? "未命名.md"
+        // Mirror the live editor back into the active tab's model so its dirty
+        // state and tab title stay in sync.
+        if !isSwitchingTab, let tab = activeTab {
+            tab.text = editorTextView.string
+            tab.url = currentFileURL
+            tab.isMarkdown = currentDocumentIsMarkdown
+        }
+
+        let name = currentFileURL?.lastPathComponent ?? activeTab?.displayName ?? "未命名.md"
         let dirty = isDirty
         let dirtyPrefix = dirty ? "• " : ""
-
-        documentTitleLabel.stringValue = name
         window.title = "\(dirtyPrefix)\(name) - Markdown 编辑器"
-        dirtyDotView.isHidden = !dirty
-        _ = characterCount
-        _ = lineCount
 
+        rebuildTabStrip()
         refreshDirtyIndicatorInSidebar()
         refreshStatus()
         recomputeOutline()
@@ -2416,13 +2914,23 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private func refreshDirtyIndicatorInSidebar() {
         let visible = outlineView.rows(in: outlineView.visibleRect)
         guard visible.length > 0 else { return }
-        let dirty = isDirty
         for row in visible.location..<(visible.location + visible.length) {
             guard let node = outlineView.item(atRow: row) as? FileTreeNode,
                   let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell else { continue }
-            let isCurrentDirty = !node.isDirectory && dirty && sameFileURL(node.url, currentFileURL)
-            cell.configure(name: node.name, isDirectory: node.isDirectory, isDirty: isCurrentDirty)
+            let dirty = !node.isDirectory && isFileDirtyInAnyTab(node.url)
+            cell.configure(name: node.name, isDirectory: node.isDirectory, isDirty: dirty)
         }
+    }
+
+    /// True if `url` is open in some tab and that tab has unsaved changes. For
+    /// the active tab the live editor is authoritative.
+    private func isFileDirtyInAnyTab(_ url: URL) -> Bool {
+        for (index, tab) in tabs.enumerated() {
+            guard sameFileURL(tab.url, url) else { continue }
+            if index == activeTabIndex { return isDirty }
+            return tab.isDirty
+        }
+        return false
     }
 
     private func applyCurrentDocumentStyling() {
