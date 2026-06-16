@@ -10,22 +10,37 @@ enum DesignTokens {
     static let bodyText = NSColor(hex: 0x333336)
     static let secondaryText = NSColor(hex: 0x6E6E73)
     static let tertiaryText = NSColor(hex: 0x86868B)
+    static let fileRowText = NSColor(hex: 0x3F3F46)
+    static let statusText = NSColor(hex: 0x767676)
     static let placeholderText = NSColor(hex: 0xAEAEB2)
     static let disabledText = NSColor(hex: 0xC7C7CC)
+    static let folderIcon = NSColor(hex: 0xC7C7CC)
+    static let tickRest = NSColor(hex: 0xCACACE)
     static let divider = NSColor(hex: 0xF0F0F1)
     static let line = NSColor(hex: 0xF4F4F5)
     static let accent = NSColor(hex: 0xE8A33D)
+    static let danger = NSColor(hex: 0xC7482E)
     static let link = NSColor(hex: 0x2A6FDB)
+    static let systemBlue = NSColor(hex: 0x007AFF)
 
     static let hover = NSColor.black.withAlphaComponent(0.05)
     static let sidebarHover = NSColor.black.withAlphaComponent(0.045)
     static let pressed = NSColor.black.withAlphaComponent(0.08)
     static let selected = NSColor.black.withAlphaComponent(0.06)
     static let ring = NSColor.black.withAlphaComponent(0.05)
+    static let fieldFill = NSColor.black.withAlphaComponent(0.04)
+
+    // Accent washes (find hits / current outline)
+    static let accentStrong = NSColor(hex: 0xE8A33D, alpha: 0.55)
+    static let accentSoft = NSColor(hex: 0xE8A33D, alpha: 0.22)
 
     static let sidebarWidth: CGFloat = 216
+    static let sidebarMinWidth: CGFloat = 176
+    static let sidebarMaxWidth: CGFloat = 440
     static let paperWidth: CGFloat = 540
     static let tabBarHeight: CGFloat = 44
+
+    static let bodyFontSizes: [CGFloat] = [14, 15.5, 17]
 }
 
 extension NSColor {
@@ -97,6 +112,230 @@ final class SidebarRowView: NSTableRowView {
     }
 }
 
+/// Ghost button that reveals a subtle hover background, matching the design's
+/// "图标钮 / 幽灵钮默认透明，hover 才显 5% 底" rule.
+class HoverButton: NSButton {
+    var hoverBackground: NSColor = DesignTokens.hover
+    var restBackground: NSColor = .clear
+    var hoverTint: NSColor?
+    var restTint: NSColor?
+    private var inside = false
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeInActiveApp, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self
+        ))
+    }
+
+    private func refresh() {
+        layer?.backgroundColor = (inside ? hoverBackground : restBackground).cgColor
+        if let tint = inside ? hoverTint : restTint { contentTintColor = tint }
+    }
+
+    override func mouseEntered(with event: NSEvent) { inside = true; refresh() }
+    override func mouseExited(with event: NSEvent) { inside = false; refresh() }
+    override func layout() { super.layout(); refresh() }
+}
+
+/// A borderless rounded text input matching the sidebar filter / find fields
+/// (no system search-glass affordance, subtle fill, inset text).
+final class RoundedField: NSView {
+    let textField = NSTextField()
+    private let leftInset: CGFloat
+
+    init(placeholder: String, fontSize: CGFloat = 12.5, fill: NSColor = DesignTokens.fieldFill, leftInset: CGFloat = 10) {
+        self.leftInset = leftInset
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = fill.cgColor
+        layer?.cornerRadius = 6
+
+        textField.placeholderString = placeholder
+        textField.font = NSFont.systemFont(ofSize: fontSize)
+        textField.isBordered = false
+        textField.isBezeled = false
+        textField.drawsBackground = false
+        textField.focusRingType = .none
+        textField.textColor = DesignTokens.titleText
+        textField.lineBreakMode = .byTruncatingTail
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(textField)
+
+        NSLayoutConstraint.activate([
+            textField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: leftInset),
+            textField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            textField.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+/// Sidebar file/folder row content: leading icon, name, trailing amber dirty dot.
+final class SidebarCell: NSTableCellView {
+    let icon = NSImageView()
+    let dirtyDot = NSView()
+    private var nameLeading: NSLayoutConstraint!
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        let label = NSTextField(labelWithString: "")
+        label.lineBreakMode = .byTruncatingMiddle
+        label.translatesAutoresizingMaskIntoConstraints = false
+        textField = label
+
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.imageScaling = .scaleProportionallyDown
+
+        dirtyDot.wantsLayer = true
+        dirtyDot.layer?.backgroundColor = DesignTokens.accent.cgColor
+        dirtyDot.layer?.cornerRadius = 3.5
+        dirtyDot.translatesAutoresizingMaskIntoConstraints = false
+        dirtyDot.isHidden = true
+
+        addSubview(icon)
+        addSubview(label)
+        addSubview(dirtyDot)
+
+        nameLeading = label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 7)
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 14),
+            icon.heightAnchor.constraint(equalToConstant: 14),
+            nameLeading,
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: dirtyDot.leadingAnchor, constant: -6),
+            dirtyDot.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            dirtyDot.centerYAnchor.constraint(equalTo: centerYAnchor),
+            dirtyDot.widthAnchor.constraint(equalToConstant: 7),
+            dirtyDot.heightAnchor.constraint(equalToConstant: 7)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func configure(name: String, isDirectory: Bool, isDirty: Bool) {
+        textField?.stringValue = name
+        textField?.font = NSFont.systemFont(ofSize: 13, weight: isDirty ? .semibold : .regular)
+        textField?.textColor = isDirectory ? DesignTokens.placeholderText : DesignTokens.fileRowText
+        let symbol = isDirectory ? "folder.fill" : "doc.text"
+        let tint = isDirectory ? DesignTokens.folderIcon : NSColor(hex: 0xC2C2C8)
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        icon.contentTintColor = tint
+        dirtyDot.isHidden = !isDirty
+    }
+}
+
+/// A thin drag handle for resizing the sidebar (col-resize), hover = grey line,
+/// drag = blue line, matching the design's RESIZE component.
+final class ResizeHandleView: NSView {
+    var onDrag: ((CGFloat) -> Void)?
+    var onCommit: (() -> Void)?
+    private let line = NSView()
+    private var dragging = false
+    private var hovering = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        line.wantsLayer = true
+        line.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(line)
+        NSLayoutConstraint.activate([
+            line.centerXAnchor.constraint(equalTo: centerXAnchor),
+            line.topAnchor.constraint(equalTo: topAnchor),
+            line.bottomAnchor.constraint(equalTo: bottomAnchor),
+            line.widthAnchor.constraint(equalToConstant: 1)
+        ])
+        refreshLine()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeLeftRight)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.activeInActiveApp, .mouseEnteredAndExited, .inVisibleRect], owner: self))
+    }
+
+    private func refreshLine() {
+        let color: NSColor = dragging ? NSColor(calibratedRed: 10/255, green: 132/255, blue: 1, alpha: 0.6)
+            : (hovering ? NSColor.black.withAlphaComponent(0.18) : .clear)
+        line.layer?.backgroundColor = color.cgColor
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true; refreshLine() }
+    override func mouseExited(with event: NSEvent) { hovering = false; refreshLine() }
+
+    override func mouseDown(with event: NSEvent) {
+        dragging = true
+        refreshLine()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard dragging, let superview else { return }
+        let p = superview.convert(event.locationInWindow, from: nil)
+        onDrag?(p.x)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragging = false
+        refreshLine()
+        onCommit?()
+    }
+}
+
+// NOTE: FindBarView and OutlineRailView are fully implemented further below.
+
+/// Split view whose divider is invisible (separation is by surface colour, as in
+/// the design). A ResizeHandleView overlay provides the grab + hover/drag line.
+final class BodySplitView: NSSplitView {
+    override var dividerThickness: CGFloat { 1 }
+    override func drawDivider(in rect: NSRect) { /* no visible line */ }
+}
+
+/// Root view that accepts dragged Markdown/text files.
+final class DropZoneView: NSView {
+    var onDragChange: ((Bool) -> Void)?
+    var onPerform: ((URL) -> Bool)?
+
+    private func droppedURL(_ sender: NSDraggingInfo) -> URL? {
+        guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+              let url = urls.first else { return nil }
+        let ext = url.pathExtension.lowercased()
+        return ["md", "markdown", "mdown", "mkd", "txt", "text"].contains(ext) ? url : nil
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if droppedURL(sender) != nil { onDragChange?(true); return .copy }
+        return []
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) { onDragChange?(false) }
+    override func draggingEnded(_ sender: NSDraggingInfo) { onDragChange?(false) }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        droppedURL(sender) != nil
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        onDragChange?(false)
+        guard let url = droppedURL(sender) else { return false }
+        return onPerform?(url) ?? false
+    }
+}
+
 struct PaletteCommand {
     let id: String
     let title: String
@@ -104,42 +343,46 @@ struct PaletteCommand {
     let keywords: String
 }
 
-final class CommandPaletteSearchField: NSSearchField {
-    weak var paletteView: CommandPaletteView?
-
-    override func keyDown(with event: NSEvent) {
-        switch event.keyCode {
-        case 125:
-            paletteView?.moveSelection(delta: 1)
-        case 126:
-            paletteView?.moveSelection(delta: -1)
-        case 36, 76:
-            paletteView?.runSelected()
-        case 53:
-            paletteView?.cancel()
-        default:
-            super.keyDown(with: event)
-        }
-    }
+struct PaletteDoc {
+    let name: String
+    let key: String
+    let isActive: Bool
 }
 
-final class CommandPaletteView: NSView, NSSearchFieldDelegate {
+/// Top-anchored stack so the scroll view starts at the first row, not the last.
+final class FlippedStackView: NSStackView {
+    override var isFlipped: Bool { true }
+}
+
+/// ⌘K palette: a documents section + a commands section, arrow-navigable,
+/// matching the design's segmented command palette.
+final class CommandPaletteView: NSView, NSTextFieldDelegate {
+    private let documents: [PaletteDoc]
     private let commands: [PaletteCommand]
-    private var filteredCommands: [PaletteCommand]
+    private var filteredDocs: [PaletteDoc] = []
+    private var filteredCommands: [PaletteCommand] = []
     private var selectedIndex = 0
+    private let openDocument: (String) -> Void
     private let runCommand: (String) -> Void
     private let cancelCommand: () -> Void
-    private let searchField = CommandPaletteSearchField()
-    private let stack = NSStackView()
+    private let searchField = NSTextField()
+    private let stack = FlippedStackView()
+    private let scrollView = NSScrollView()
+    private var scrollHeight: NSLayoutConstraint!
 
-    init(commands: [PaletteCommand], runCommand: @escaping (String) -> Void, cancel: @escaping () -> Void) {
+    init(documents: [PaletteDoc],
+         commands: [PaletteCommand],
+         openDocument: @escaping (String) -> Void,
+         runCommand: @escaping (String) -> Void,
+         cancel: @escaping () -> Void) {
+        self.documents = documents
         self.commands = commands
-        self.filteredCommands = commands
+        self.openDocument = openDocument
         self.runCommand = runCommand
         self.cancelCommand = cancel
-        super.init(frame: NSRect(x: 0, y: 0, width: 460, height: 306))
+        super.init(frame: NSRect(x: 0, y: 0, width: 460, height: 320))
         build()
-        renderCommandRows()
+        applyFilter("")
     }
 
     required init?(coder: NSCoder) {
@@ -153,55 +396,77 @@ final class CommandPaletteView: NSView, NSSearchFieldDelegate {
     }
 
     func controlTextDidChange(_ obj: Notification) {
+        selectedIndex = 0
         applyFilter(searchField.stringValue)
     }
 
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        switch selector {
+        case #selector(NSResponder.moveDown(_:)):
+            moveSelection(delta: 1); return true
+        case #selector(NSResponder.moveUp(_:)):
+            moveSelection(delta: -1); return true
+        case #selector(NSResponder.insertNewline(_:)):
+            runSelected(); return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            cancel(); return true
+        default:
+            return false
+        }
+    }
+
+    private var totalCount: Int { filteredDocs.count + filteredCommands.count }
+
     func moveSelection(delta: Int) {
-        guard !filteredCommands.isEmpty else { return }
-        selectedIndex = (selectedIndex + delta + filteredCommands.count) % filteredCommands.count
-        renderCommandRows()
+        guard totalCount > 0 else { return }
+        selectedIndex = (selectedIndex + delta + totalCount) % totalCount
+        renderRows()
     }
 
     func runSelected() {
-        guard filteredCommands.indices.contains(selectedIndex) else { return }
-        runCommand(filteredCommands[selectedIndex].id)
+        guard totalCount > 0, selectedIndex < totalCount else { return }
+        if selectedIndex < filteredDocs.count {
+            openDocument(filteredDocs[selectedIndex].key)
+        } else {
+            runCommand(filteredCommands[selectedIndex - filteredDocs.count].id)
+        }
     }
 
-    func cancel() {
-        cancelCommand()
-    }
+    func cancel() { cancelCommand() }
 
     func setQueryForTesting(_ query: String) {
         searchField.stringValue = query
+        selectedIndex = 0
         applyFilter(query)
     }
 
-    func moveSelectionForTesting(delta: Int) {
-        moveSelection(delta: delta)
-    }
+    func moveSelectionForTesting(delta: Int) { moveSelection(delta: delta) }
 
-    var visibleCommandIdentifiersForTesting: [String] {
-        filteredCommands.map(\.id)
-    }
+    var visibleCommandIdentifiersForTesting: [String] { filteredCommands.map(\.id) }
 
     var selectedCommandIdentifierForTesting: String? {
-        guard filteredCommands.indices.contains(selectedIndex) else { return nil }
-        return filteredCommands[selectedIndex].id
+        guard selectedIndex >= filteredDocs.count, selectedIndex < totalCount else { return nil }
+        return filteredCommands[selectedIndex - filteredDocs.count].id
     }
 
     private func build() {
         wantsLayer = true
-        layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.92).cgColor
+        layer?.backgroundColor = DesignTokens.paper.cgColor
         layer?.cornerRadius = 14
         layer?.borderWidth = 1
         layer?.borderColor = DesignTokens.ring.cgColor
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.22
+        layer?.shadowRadius = 30
+        layer?.shadowOffset = NSSize(width: 0, height: -10)
 
-        searchField.paletteView = self
-        searchField.placeholderString = "搜索命令..."
+        searchField.placeholderString = "搜索文档或命令…"
         searchField.font = NSFont.systemFont(ofSize: 14)
         searchField.isBordered = false
         searchField.isBezeled = false
         searchField.drawsBackground = false
+        searchField.focusRingType = .none
+        searchField.textColor = DesignTokens.titleText
         searchField.delegate = self
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
@@ -210,21 +475,24 @@ final class CommandPaletteView: NSView, NSSearchFieldDelegate {
         divider.layer?.backgroundColor = DesignTokens.divider.cgColor
         divider.translatesAutoresizingMaskIntoConstraints = false
 
-        let label = NSTextField(labelWithString: "命令")
-        label.font = NSFont.systemFont(ofSize: 10.5)
-        label.textColor = DesignTokens.placeholderText
-        label.translatesAutoresizingMaskIntoConstraints = false
-
         stack.orientation = .vertical
+        stack.alignment = .leading
         stack.spacing = 2
         stack.translatesAutoresizingMaskIntoConstraints = false
 
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.documentView = stack
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
         addSubview(searchField)
         addSubview(divider)
-        addSubview(label)
-        addSubview(stack)
+        addSubview(scrollView)
+
+        scrollHeight = scrollView.heightAnchor.constraint(equalToConstant: 120)
 
         NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 460),
             searchField.topAnchor.constraint(equalTo: topAnchor),
             searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
@@ -235,61 +503,143 @@ final class CommandPaletteView: NSView, NSSearchFieldDelegate {
             divider.trailingAnchor.constraint(equalTo: trailingAnchor),
             divider.heightAnchor.constraint(equalToConstant: 1),
 
-            label.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 12),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
+            scrollView.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 8),
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            scrollHeight,
 
-            stack.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 6),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8)
+            stack.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            stack.widthAnchor.constraint(equalTo: scrollView.widthAnchor)
         ])
+    }
+
+    private func matches(_ haystack: String, _ query: String) -> Bool {
+        query.isEmpty || haystack.localizedCaseInsensitiveContains(query)
     }
 
     private func applyFilter(_ rawQuery: String) {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty {
-            filteredCommands = commands
-        } else {
-            filteredCommands = commands.filter { command in
-                let haystack = "\(command.title) \(command.shortcut) \(command.keywords)"
-                return haystack.localizedCaseInsensitiveContains(query)
-            }
-        }
-        selectedIndex = filteredCommands.isEmpty ? 0 : min(selectedIndex, filteredCommands.count - 1)
-        renderCommandRows()
+        filteredDocs = documents.filter { matches($0.name, query) }
+        filteredCommands = commands.filter { matches("\($0.title) \($0.shortcut) \($0.keywords)", query) }
+        if totalCount == 0 { selectedIndex = 0 } else { selectedIndex = min(selectedIndex, totalCount - 1) }
+        renderRows()
     }
 
-    private func renderCommandRows() {
-        stack.arrangedSubviews.forEach {
-            stack.removeArrangedSubview($0)
-            $0.removeFromSuperview()
-        }
+    private func sectionHeader(_ title: String) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = NSFont.systemFont(ofSize: 10.5)
+        label.textColor = DesignTokens.placeholderText
+        label.translatesAutoresizingMaskIntoConstraints = false
+        let wrap = NSView()
+        wrap.translatesAutoresizingMaskIntoConstraints = false
+        wrap.addSubview(label)
+        NSLayoutConstraint.activate([
+            wrap.heightAnchor.constraint(equalToConstant: 24),
+            label.leadingAnchor.constraint(equalTo: wrap.leadingAnchor, constant: 12),
+            label.bottomAnchor.constraint(equalTo: wrap.bottomAnchor, constant: -4)
+        ])
+        return wrap
+    }
 
-        if filteredCommands.isEmpty {
-            let empty = NSTextField(labelWithString: "没有匹配命令")
-            empty.font = NSFont.systemFont(ofSize: 13)
+    private func renderRows() {
+        stack.arrangedSubviews.forEach { stack.removeArrangedSubview($0); $0.removeFromSuperview() }
+
+        if totalCount == 0 {
+            let empty = NSTextField(labelWithString: "没有匹配的文档或命令")
+            empty.font = NSFont.systemFont(ofSize: 12.5)
             empty.textColor = DesignTokens.placeholderText
-            empty.alignment = .center
             empty.translatesAutoresizingMaskIntoConstraints = false
-            stack.addArrangedSubview(empty)
-            empty.heightAnchor.constraint(equalToConstant: 64).isActive = true
+            let wrap = NSView()
+            wrap.translatesAutoresizingMaskIntoConstraints = false
+            wrap.addSubview(empty)
+            addFullWidth(wrap, height: 48)
+            NSLayoutConstraint.activate([
+                empty.leadingAnchor.constraint(equalTo: wrap.leadingAnchor, constant: 12),
+                empty.centerYAnchor.constraint(equalTo: wrap.centerYAnchor)
+            ])
+            scrollHeight.constant = 48
             return
         }
 
-        for (index, command) in filteredCommands.enumerated() {
-            stack.addArrangedSubview(commandRow(command, isSelected: index == selectedIndex))
+        if !filteredDocs.isEmpty { addFullWidth(sectionHeader("文档")) }
+        for (i, doc) in filteredDocs.enumerated() {
+            addFullWidth(docRow(doc, isSelected: i == selectedIndex))
         }
+        if !filteredCommands.isEmpty { addFullWidth(sectionHeader("命令")) }
+        for (i, cmd) in filteredCommands.enumerated() {
+            addFullWidth(commandRow(cmd, isSelected: filteredDocs.count + i == selectedIndex))
+        }
+
+        stack.layoutSubtreeIfNeeded()
+        scrollHeight.constant = min(stack.fittingSize.height, 340)
     }
 
-    private func commandRow(_ command: PaletteCommand, isSelected: Bool) -> NSButton {
-        let button = NSButton(title: "", target: self, action: #selector(runCommandButton(_:)))
-        button.identifier = NSUserInterfaceItemIdentifier(command.id)
+    // Palette is a fixed 460pt wide; scroll content (after 8pt insets) is 444pt.
+    private func addFullWidth(_ view: NSView, height: CGFloat? = nil) {
+        view.widthAnchor.constraint(equalToConstant: 444).isActive = true
+        if let height { view.heightAnchor.constraint(equalToConstant: height).isActive = true }
+        stack.addArrangedSubview(view)
+    }
+
+    private func rowButton(isSelected: Bool, action: Selector) -> NSButton {
+        let button = NSButton(title: "", target: self, action: action)
         button.isBordered = false
         button.bezelStyle = .regularSquare
         button.wantsLayer = true
         button.layer?.cornerRadius = 6
         button.layer?.backgroundColor = isSelected ? DesignTokens.hover.cgColor : NSColor.clear.cgColor
         button.translatesAutoresizingMaskIntoConstraints = false
+        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        return button
+    }
+
+    private func docRow(_ doc: PaletteDoc, isSelected: Bool) -> NSButton {
+        let button = rowButton(isSelected: isSelected, action: #selector(runDocButton(_:)))
+        button.identifier = NSUserInterfaceItemIdentifier("doc:\(doc.key)")
+
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .regular))
+        icon.contentTintColor = NSColor(hex: 0xC2C2C8)
+        icon.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleLabel = NSTextField(labelWithString: doc.name)
+        titleLabel.font = NSFont.systemFont(ofSize: 13.5)
+        titleLabel.textColor = DesignTokens.titleText
+        titleLabel.lineBreakMode = .byTruncatingMiddle
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        button.addSubview(icon)
+        button.addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 12),
+            icon.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 12),
+            titleLabel.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
+            titleLabel.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: button.trailingAnchor, constant: -40)
+        ])
+
+        if doc.isActive {
+            let active = NSTextField(labelWithString: "当前")
+            active.font = NSFont.systemFont(ofSize: 10)
+            active.textColor = DesignTokens.placeholderText
+            active.translatesAutoresizingMaskIntoConstraints = false
+            button.addSubview(active)
+            NSLayoutConstraint.activate([
+                active.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -12),
+                active.centerYAnchor.constraint(equalTo: button.centerYAnchor)
+            ])
+        }
+        return button
+    }
+
+    private func commandRow(_ command: PaletteCommand, isSelected: Bool) -> NSButton {
+        let button = rowButton(isSelected: isSelected, action: #selector(runCommandButton(_:)))
+        button.identifier = NSUserInterfaceItemIdentifier(command.id)
 
         let titleLabel = NSTextField(labelWithString: command.title)
         titleLabel.font = NSFont.systemFont(ofSize: 13.5)
@@ -304,23 +654,40 @@ final class CommandPaletteView: NSView, NSSearchFieldDelegate {
 
         button.addSubview(titleLabel)
         button.addSubview(shortcutLabel)
-
         NSLayoutConstraint.activate([
-            button.heightAnchor.constraint(equalToConstant: 36),
             titleLabel.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 12),
             titleLabel.centerYAnchor.constraint(equalTo: button.centerYAnchor),
             titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: shortcutLabel.leadingAnchor, constant: -12),
             shortcutLabel.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -12),
             shortcutLabel.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-            shortcutLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 44)
+            shortcutLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 30)
         ])
-
         return button
     }
 
     @objc private func runCommandButton(_ sender: NSButton) {
         guard let id = sender.identifier?.rawValue else { return }
         runCommand(id)
+    }
+
+    @objc private func runDocButton(_ sender: NSButton) {
+        guard let raw = sender.identifier?.rawValue, raw.hasPrefix("doc:") else { return }
+        openDocument(String(raw.dropFirst(4)))
+    }
+}
+
+/// Dimmed backdrop behind the ⌘K palette; clicking outside the palette dismisses it.
+final class PaletteBackdropView: NSView {
+    var onClickOutside: (() -> Void)?
+    weak var paletteView: NSView?
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let palette = paletteView, palette.frame.contains(point) {
+            super.mouseDown(with: event)
+        } else {
+            onClickOutside?()
+        }
     }
 }
 
@@ -535,9 +902,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         commandItem.target = target
         viewMenu.addItem(commandItem)
 
+        let findItem = NSMenuItem(title: "查找 / 替换", action: #selector(MarkdownWindowController.toggleFindBar(_:)), keyEquivalent: "f")
+        findItem.target = target
+        viewMenu.addItem(findItem)
+
         let sidebarItem = NSMenuItem(title: "显示/隐藏侧栏", action: #selector(MarkdownWindowController.toggleSidebar(_:)), keyEquivalent: "\\")
         sidebarItem.target = target
         viewMenu.addItem(sidebarItem)
+
+        viewMenu.addItem(.separator())
+
+        let zoomInItem = NSMenuItem(title: "放大字号", action: #selector(MarkdownWindowController.increaseFont(_:)), keyEquivalent: "+")
+        zoomInItem.target = target
+        viewMenu.addItem(zoomInItem)
+        let zoomInAlt = NSMenuItem(title: "放大字号", action: #selector(MarkdownWindowController.increaseFont(_:)), keyEquivalent: "=")
+        zoomInAlt.target = target
+        zoomInAlt.isAlternate = false
+        zoomInAlt.isHidden = true
+        viewMenu.addItem(zoomInAlt)
+        let zoomOutItem = NSMenuItem(title: "缩小字号", action: #selector(MarkdownWindowController.decreaseFont(_:)), keyEquivalent: "-")
+        zoomOutItem.target = target
+        viewMenu.addItem(zoomOutItem)
+        let zoomResetItem = NSMenuItem(title: "重置字号", action: #selector(MarkdownWindowController.resetFont(_:)), keyEquivalent: "0")
+        zoomResetItem.target = target
+        viewMenu.addItem(zoomResetItem)
 
         let editItem = NSMenuItem()
         mainMenu.addItem(editItem)
@@ -559,25 +947,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSSearchFieldDelegate, NSTextViewDelegate, NSWindowDelegate {
     private let window: NSWindow
-    private let rootView = NSView()
+    private let rootView = DropZoneView()
     private let sidebarView = NSView()
     private let directoryLabel = NSTextField(labelWithString: "未选择目录")
-    private let searchField = NSSearchField()
+    private let filterField = RoundedField(placeholder: "筛选文档")
     private let outlineView = NSOutlineView()
     private let outlineScrollView = NSScrollView()
     private let documentTitleLabel = NSTextField(labelWithString: "未命名.md")
-    private let documentMetaLabel = NSTextField(labelWithString: "0 字 · 0 行")
     private let statusLabel = NSTextField(labelWithString: "就绪")
     private let tabBarView = NSView()
     private let dirtyDotView = NSView()
-    private let commandButton = NSButton(title: "⌘K  全部命令", target: nil, action: nil)
+    private let commandButton = HoverButton(title: "", target: nil, action: nil)
+    private let editorContainer = NSView()
     private let editorScrollView = NSScrollView()
     private let editorTextView = PaperTextView(frame: .zero)
 
-    private var bodySplitView: NSSplitView?
     private var sidebarWidthConstraint: NSLayoutConstraint?
     private var tabBarLeftPaddingConstraint: NSLayoutConstraint?
-    private var commandPanel: NSPanel?
+    private var resizeHandle: ResizeHandleView?
+    private var paletteOverlay: NSView?
     private var currentDirectoryURL: URL?
     private var fileTreeRoots: [FileTreeNode] = []
     private var filteredTreeRoots: [FileTreeNode] = []
@@ -586,7 +974,26 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private var lastSavedText = ""
     private var suppressSelectionHandling = false
     private var isApplyingMarkdownStyle = false
+    private var sidebarWidth = DesignTokens.sidebarWidth
     private let debugLayout = ProcessInfo.processInfo.environment["MARKDOWN_VIEWER_DEBUG_LAYOUT"] == "1"
+
+    // Shell overlays (find panel, outline rail, toast) wired up in later phases.
+    private var findBar: FindBarView?
+    private var outlineRail: OutlineRailView?
+    private var toastView: NSView?
+    private var dragOverlay: NSView?
+    private var statusFadeWork: DispatchWorkItem?
+    private var toastWork: DispatchWorkItem?
+    private var fontIndex = 1
+
+    private var outlineEntries: [OutlineEntry] = []
+    private var findMatches: [NSTextCheckingResult] = []
+    private var findIndex = 0
+    private var findError = false
+    private var findCaseSensitive = false
+    private var findWholeWord = false
+    private var findUseRegex = false
+    private var findReplaceVisible = false
 
     override init() {
         window = NSWindow(
@@ -617,6 +1024,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     func showWindow() {
+        window.setContentSize(NSSize(width: 1180, height: 760))
+        window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(editorTextView)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
@@ -724,47 +1133,42 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     @objc func showCommandPalette(_ sender: Any?) {
-        if let commandPanel, commandPanel.isVisible {
-            commandPanel.close()
-            self.commandPanel = nil
-            return
-        }
+        if paletteOverlay != nil { closeCommandPalette(); return }
 
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 306),
-            styleMask: [.titled, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = true
-        panel.backgroundColor = DesignTokens.paper.withAlphaComponent(0.92)
-        panel.isOpaque = false
-        panel.hasShadow = true
+        let backdrop = PaletteBackdropView()
+        backdrop.wantsLayer = true
+        backdrop.layer?.backgroundColor = NSColor(hex: 0xF8F8FA, alpha: 0.6).cgColor
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.onClickOutside = { [weak self] in self?.closeCommandPalette() }
+
         let paletteView = buildCommandPaletteView()
-        panel.contentView = paletteView
+        paletteView.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.paletteView = paletteView
+        backdrop.addSubview(paletteView)
+        rootView.addSubview(backdrop)
 
-        let windowFrame = window.frame
-        let panelOrigin = NSPoint(
-            x: windowFrame.midX - panel.frame.width / 2,
-            y: windowFrame.maxY - 122 - panel.frame.height
-        )
-        panel.setFrameOrigin(panelOrigin)
-        window.addChildWindow(panel, ordered: .above)
-        panel.makeKeyAndOrderFront(nil)
-        paletteView.focusSearch(in: panel)
-        commandPanel = panel
+        NSLayoutConstraint.activate([
+            backdrop.topAnchor.constraint(equalTo: rootView.topAnchor),
+            backdrop.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+            backdrop.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+            backdrop.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
+            paletteView.centerXAnchor.constraint(equalTo: backdrop.centerXAnchor),
+            paletteView.topAnchor.constraint(equalTo: backdrop.topAnchor, constant: 96)
+        ])
+
+        paletteOverlay = backdrop
+        backdrop.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.12; backdrop.animator().alphaValue = 1 }
+        DispatchQueue.main.async { [weak self] in paletteView.focusSearch(in: self?.window) }
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
         guard let sidebarWidthConstraint else { return }
         let shouldHide = !sidebarView.isHidden
         sidebarView.isHidden = shouldHide
-        sidebarWidthConstraint.constant = shouldHide ? 0 : DesignTokens.sidebarWidth
+        sidebarWidthConstraint.constant = shouldHide ? 0 : sidebarWidth
         tabBarLeftPaddingConstraint?.constant = shouldHide ? 84 : 12
-        statusLabel.stringValue = shouldHide ? "侧栏已隐藏" : "侧栏已显示"
+        resizeHandle?.isHidden = shouldHide
     }
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -799,29 +1203,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         guard let node = item as? FileTreeNode else { return nil }
 
         let identifier = NSUserInterfaceItemIdentifier("FileTreeCell")
-        let cell = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView ?? NSTableCellView()
-        cell.identifier = identifier
+        let cell = outlineView.makeView(withIdentifier: identifier, owner: self) as? SidebarCell ?? {
+            let c = SidebarCell()
+            c.identifier = identifier
+            return c
+        }()
 
-        let textField: NSTextField
-        if let existing = cell.textField {
-            textField = existing
-        } else {
-            textField = NSTextField(labelWithString: "")
-            textField.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(textField)
-            cell.textField = textField
-            NSLayoutConstraint.activate([
-                textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
-                textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
-            ])
-        }
-
-        textField.stringValue = node.name
-        textField.font = node.isDirectory ? NSFont.systemFont(ofSize: 13, weight: .regular) : NSFont.systemFont(ofSize: 13)
-        textField.textColor = node.isDirectory ? DesignTokens.placeholderText : DesignTokens.bodyText
-        textField.lineBreakMode = .byTruncatingMiddle
-
+        let dirty = !node.isDirectory && sameFileURL(node.url, currentFileURL) && isDirty
+        cell.configure(name: node.name, isDirectory: node.isDirectory, isDirty: dirty)
         return cell
     }
 
@@ -865,27 +1254,60 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     private func buildCommandPaletteView() -> CommandPaletteView {
-        CommandPaletteView(commands: paletteCommands) { [weak self] id in
-            self?.runPaletteCommand(id)
-        } cancel: { [weak self] in
-            self?.closeCommandPalette()
-        }
+        CommandPaletteView(
+            documents: paletteDocuments(),
+            commands: paletteCommands,
+            openDocument: { [weak self] key in self?.runPaletteDocument(key) },
+            runCommand: { [weak self] id in self?.runPaletteCommand(id) },
+            cancel: { [weak self] in self?.closeCommandPalette() }
+        )
     }
 
     private var paletteCommands: [PaletteCommand] {
         [
             PaletteCommand(id: "new", title: "新建文档", shortcut: "⌘N", keywords: "new 新建 markdown"),
-            PaletteCommand(id: "openFile", title: "打开文件", shortcut: "⌘O", keywords: "open file 打开 文件"),
-            PaletteCommand(id: "openDirectory", title: "打开目录", shortcut: "⇧⌘O", keywords: "open folder directory 目录 文件夹"),
             PaletteCommand(id: "save", title: "保存", shortcut: "⌘S", keywords: "save 保存"),
             PaletteCommand(id: "saveAs", title: "另存为", shortcut: "⇧⌘S", keywords: "save as 另存"),
+            PaletteCommand(id: "find", title: "查找 / 替换", shortcut: "⌘F", keywords: "find replace 查找 替换"),
+            PaletteCommand(id: "openFile", title: "打开…", shortcut: "⌘O", keywords: "open file 打开 文件"),
+            PaletteCommand(id: "openDirectory", title: "打开目录", shortcut: "⇧⌘O", keywords: "open folder directory 目录 文件夹"),
+            PaletteCommand(id: "fontUp", title: "放大字号", shortcut: "⌘+", keywords: "font zoom in 放大 字号"),
+            PaletteCommand(id: "fontDown", title: "缩小字号", shortcut: "⌘-", keywords: "font zoom out 缩小 字号"),
+            PaletteCommand(id: "fontReset", title: "重置字号", shortcut: "⌘0", keywords: "font reset 重置 字号"),
             PaletteCommand(id: "sidebar", title: "显示 / 隐藏侧栏", shortcut: "⌘\\", keywords: "sidebar toggle 侧栏 目录")
         ]
     }
 
+    private func paletteDocuments() -> [PaletteDoc] {
+        var docs: [PaletteDoc] = []
+        var seen = Set<String>()
+        func walk(_ nodes: [FileTreeNode]) {
+            for node in nodes {
+                if node.isDirectory {
+                    walk(node.children)
+                } else if node.isEditableText {
+                    let key = node.url.standardizedFileURL.path
+                    if seen.insert(key).inserted {
+                        docs.append(PaletteDoc(name: node.name, key: key, isActive: sameFileURL(node.url, currentFileURL)))
+                    }
+                }
+            }
+        }
+        walk(fileTreeRoots)
+        return docs
+    }
+
     private func closeCommandPalette() {
-        commandPanel?.close()
-        commandPanel = nil
+        paletteOverlay?.removeFromSuperview()
+        paletteOverlay = nil
+        window.makeFirstResponder(editorTextView)
+    }
+
+    private func runPaletteDocument(_ key: String) {
+        closeCommandPalette()
+        let url = URL(fileURLWithPath: key)
+        guard confirmDiscardChangesIfNeeded() else { return }
+        loadDocument(from: url)
     }
 
     private func runPaletteCommand(_ id: String) {
@@ -901,6 +1323,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             _ = saveDocument(self)
         case "saveAs":
             _ = saveDocumentAs(self)
+        case "find":
+            openFind()
+        case "fontUp":
+            increaseFont(self)
+        case "fontDown":
+            decreaseFont(self)
+        case "fontReset":
+            resetFont(self)
         case "sidebar":
             toggleSidebar(self)
         default:
@@ -908,22 +1338,465 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         }
     }
 
+    // MARK: - Content overlays (outline rail, find bar, drag, toast)
+
+    private func installContentOverlays(in container: NSView) {
+        let rail = OutlineRailView()
+        container.addSubview(rail)
+        NSLayoutConstraint.activate([
+            rail.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            rail.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            rail.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor, constant: 60),
+            rail.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -40)
+        ])
+        rail.onJump = { [weak self] index in self?.jumpToHeading(index) }
+        rail.isHidden = true
+        outlineRail = rail
+
+        let bar = FindBarView()
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(bar)
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.tabBarHeight + 10),
+            bar.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -18)
+        ])
+        bar.isHidden = true
+        wireFindBar(bar)
+        findBar = bar
+
+        let overlay = NSView()
+        overlay.wantsLayer = true
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        overlay.layer?.cornerRadius = 14
+        overlay.layer?.borderWidth = 2
+        overlay.layer?.borderColor = DesignTokens.accent.cgColor
+        overlay.layer?.backgroundColor = DesignTokens.accent.withAlphaComponent(0.06).cgColor
+        overlay.isHidden = true
+        let hint = NSTextField(labelWithString: "松开以打开 Markdown 文件")
+        hint.font = NSFont.systemFont(ofSize: 13)
+        hint.textColor = DesignTokens.titleText
+        hint.wantsLayer = true
+        hint.drawsBackground = true
+        hint.backgroundColor = DesignTokens.paper
+        hint.alignment = .center
+        hint.translatesAutoresizingMaskIntoConstraints = false
+        let hintPad = NSView()
+        hintPad.wantsLayer = true
+        hintPad.layer?.backgroundColor = DesignTokens.paper.cgColor
+        hintPad.layer?.cornerRadius = 10
+        hintPad.translatesAutoresizingMaskIntoConstraints = false
+        hintPad.addSubview(hint)
+        overlay.addSubview(hintPad)
+        container.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
+            overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            overlay.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+            overlay.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
+            hintPad.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+            hintPad.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+            hint.topAnchor.constraint(equalTo: hintPad.topAnchor, constant: 10),
+            hint.bottomAnchor.constraint(equalTo: hintPad.bottomAnchor, constant: -10),
+            hint.leadingAnchor.constraint(equalTo: hintPad.leadingAnchor, constant: 18),
+            hint.trailingAnchor.constraint(equalTo: hintPad.trailingAnchor, constant: -18)
+        ])
+        dragOverlay = overlay
+
+        rootView.onDragChange = { [weak self] active in self?.dragOverlay?.isHidden = !active }
+        rootView.onPerform = { [weak self] url in self?.openExternalFile(url) ?? false }
+        rootView.registerForDraggedTypes([.fileURL])
+    }
+
+    private func observeScroll() {
+        let clip = editorScrollView.contentView
+        clip.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(scrollViewDidScroll),
+            name: NSView.boundsDidChangeNotification,
+            object: clip
+        )
+    }
+
+    @objc private func scrollViewDidScroll() {
+        refreshStatus()
+        updateActiveHeading()
+        fadeStatusForScroll()
+    }
+
+    private func fadeStatusForScroll() {
+        statusFadeWork?.cancel()
+        statusLabel.alphaValue = 0
+        let work = DispatchWorkItem { [weak self] in
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.3; self?.statusLabel.animator().alphaValue = 1 }
+        }
+        statusFadeWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+    }
+
+    // MARK: - Outline rail
+
+    private func recomputeOutline() {
+        let newEntries = currentDocumentIsMarkdown ? parseHeadings(editorTextView.string) : []
+        // Char offsets shift on every keystroke, but the rail rows only need to be
+        // rebuilt when the heading titles/levels actually change.
+        let structureChanged = newEntries.count != outlineEntries.count
+            || zip(newEntries, outlineEntries).contains { $0.title != $1.title || $0.level != $1.level }
+        outlineEntries = newEntries
+        if structureChanged { outlineRail?.setEntries(newEntries) }
+        updateActiveHeading()
+    }
+
+    private func parseHeadings(_ text: String) -> [OutlineEntry] {
+        let nsText = text as NSString
+        var entries: [OutlineEntry] = []
+        var insideCode = false
+        nsText.enumerateSubstrings(in: NSRange(location: 0, length: nsText.length), options: [.byLines]) { sub, range, _, _ in
+            guard let line = sub else { return }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") { insideCode.toggle(); return }
+            guard !insideCode else { return }
+            var level = 0
+            for ch in trimmed { if ch == "#" { level += 1 } else { break } }
+            guard (1...6).contains(level) else { return }
+            let after = trimmed.index(trimmed.startIndex, offsetBy: level)
+            guard after < trimmed.endIndex, trimmed[after] == " " else { return }
+            let title = String(trimmed[trimmed.index(after: after)...]).trimmingCharacters(in: .whitespaces)
+            guard !title.isEmpty else { return }
+            entries.append(OutlineEntry(title: title, level: level, charIndex: range.location))
+        }
+        return entries
+    }
+
+    private func headingLineRect(_ charIndex: Int) -> NSRect? {
+        guard let lm = editorTextView.layoutManager, let tc = editorTextView.textContainer else { return nil }
+        let nsText = editorTextView.string as NSString
+        guard charIndex <= nsText.length else { return nil }
+        let lineRange = nsText.lineRange(for: NSRange(location: charIndex, length: 0))
+        let glyphRange = lm.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
+        var rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+        rect.origin.y += editorTextView.textContainerInset.height
+        return rect
+    }
+
+    private func updateActiveHeading() {
+        guard !outlineEntries.isEmpty else { return }
+        let scrollTop = editorScrollView.contentView.bounds.origin.y
+        let threshold = scrollTop + 80
+        var active = 0
+        for (i, entry) in outlineEntries.enumerated() {
+            guard let rect = headingLineRect(entry.charIndex) else { continue }
+            if rect.minY <= threshold { active = i } else { break }
+        }
+        outlineRail?.setActive(active)
+    }
+
+    private func jumpToHeading(_ index: Int) {
+        guard outlineEntries.indices.contains(index), let rect = headingLineRect(outlineEntries[index].charIndex) else { return }
+        let docHeight = editorTextView.frame.height
+        let viewHeight = editorScrollView.contentView.bounds.height
+        let target = max(0, min(rect.minY - 40, max(0, docHeight - viewHeight)))
+        editorScrollView.contentView.scroll(to: NSPoint(x: 0, y: target))
+        editorScrollView.reflectScrolledClipView(editorScrollView.contentView)
+        let lineRange = (editorTextView.string as NSString).lineRange(for: NSRange(location: outlineEntries[index].charIndex, length: 0))
+        washHeading(lineRange)
+        refreshStatus()
+        updateActiveHeading()
+    }
+
+    private func washHeading(_ range: NSRange) {
+        guard let lm = editorTextView.layoutManager else { return }
+        lm.addTemporaryAttributes([.backgroundColor: DesignTokens.accent.withAlphaComponent(0.30)], forCharacterRange: range)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+            guard let self, let lm = self.editorTextView.layoutManager else { return }
+            lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+            if let bar = self.findBar, !bar.isHidden { self.applyFindHighlights() }
+        }
+    }
+
+    // MARK: - Status
+
+    private func scrollProgressPercent() -> Int {
+        let clip = editorScrollView.contentView
+        let docHeight = editorTextView.frame.height
+        let viewHeight = clip.bounds.height
+        let maxScroll = max(1, docHeight - viewHeight)
+        let ratio = max(0, min(1, clip.bounds.origin.y / maxScroll))
+        return Int((ratio * 100).rounded())
+    }
+
+    private func refreshStatus() {
+        let text = editorTextView.string
+        let chars = text.count
+        let lines = text.isEmpty ? 0 : text.components(separatedBy: .newlines).count
+        statusLabel.stringValue = "\(chars) 字 · \(lines) 行 · \(scrollProgressPercent())%"
+    }
+
+    // MARK: - Toast
+
+    private func flash(_ message: String) {
+        toastWork?.cancel()
+        toastView?.removeFromSuperview()
+
+        let pill = NSView()
+        pill.wantsLayer = true
+        pill.layer?.backgroundColor = NSColor(hex: 0x1C1C1E, alpha: 0.9).cgColor
+        pill.layer?.cornerRadius = 14
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        let label = NSTextField(labelWithString: "✓ \(message)")
+        label.font = NSFont.systemFont(ofSize: 12)
+        label.textColor = .white
+        label.translatesAutoresizingMaskIntoConstraints = false
+        pill.addSubview(label)
+        rootView.addSubview(pill)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: pill.topAnchor, constant: 7),
+            label.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -7),
+            label.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 16),
+            label.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -16),
+            pill.centerXAnchor.constraint(equalTo: rootView.centerXAnchor),
+            pill.topAnchor.constraint(equalTo: rootView.topAnchor, constant: 56)
+        ])
+        toastView = pill
+        pill.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.12; pill.animator().alphaValue = 1 }
+        let work = DispatchWorkItem { [weak self] in
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.2
+                pill.animator().alphaValue = 0
+            }, completionHandler: { pill.removeFromSuperview() })
+            if self?.toastView === pill { self?.toastView = nil }
+        }
+        toastWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
+    }
+
+    // MARK: - Font scaling
+
+    @objc func increaseFont(_ sender: Any?) { applyFont(fontIndex + 1) }
+    @objc func decreaseFont(_ sender: Any?) { applyFont(fontIndex - 1) }
+    @objc func resetFont(_ sender: Any?) { applyFont(1) }
+
+    private func applyFont(_ index: Int) {
+        let clamped = max(0, min(DesignTokens.bodyFontSizes.count - 1, index))
+        fontIndex = clamped
+        let size = DesignTokens.bodyFontSizes[clamped]
+        LiveMarkdownStyler.bodyPointSize = size
+        editorTextView.font = LiveMarkdownStyler.bodyFont
+        applyCurrentDocumentStyling()
+        persistSession()
+        let display = size.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(size)) : String(format: "%.1f", size)
+        flash("正文字号 \(display)px")
+    }
+
+    // MARK: - Find / Replace
+
+    @objc func toggleFindBar(_ sender: Any?) {
+        if let bar = findBar, !bar.isHidden { closeFind() } else { openFind() }
+    }
+
+    private func openFind() {
+        guard let bar = findBar else { return }
+        bar.isHidden = false
+        bar.setToggles(caseSensitive: findCaseSensitive, wholeWord: findWholeWord, regex: findUseRegex)
+        bar.focusFind()
+        recomputeFind()
+    }
+
+    private func closeFind() {
+        clearFindHighlights()
+        findMatches = []
+        findIndex = 0
+        findBar?.isHidden = true
+        window.makeFirstResponder(editorTextView)
+    }
+
+    private func wireFindBar(_ bar: FindBarView) {
+        bar.onQueryChange = { [weak self] _ in self?.recomputeFind() }
+        bar.onNext = { [weak self] in self?.findStep(1) }
+        bar.onPrev = { [weak self] in self?.findStep(-1) }
+        bar.onClose = { [weak self] in self?.closeFind() }
+        bar.onToggleReplace = { [weak self] in
+            guard let self, let bar = self.findBar else { return }
+            self.findReplaceVisible.toggle()
+            bar.setReplaceVisible(self.findReplaceVisible)
+        }
+        bar.onToggleCase = { [weak self] in self?.findCaseSensitive.toggle(); self?.syncFindToggles(); self?.recomputeFind() }
+        bar.onToggleWord = { [weak self] in self?.findWholeWord.toggle(); self?.syncFindToggles(); self?.recomputeFind() }
+        bar.onToggleRegex = { [weak self] in self?.findUseRegex.toggle(); self?.syncFindToggles(); self?.recomputeFind() }
+        bar.onReplaceOne = { [weak self] in self?.replaceCurrent() }
+        bar.onReplaceAll = { [weak self] in self?.replaceAll() }
+    }
+
+    private func syncFindToggles() {
+        findBar?.setToggles(caseSensitive: findCaseSensitive, wholeWord: findWholeWord, regex: findUseRegex)
+    }
+
+    private func buildFindRegex() -> NSRegularExpression? {
+        guard let bar = findBar, !bar.query.isEmpty else { return nil }
+        var pattern = bar.query
+        if findUseRegex {
+            // use as-is
+        } else {
+            pattern = NSRegularExpression.escapedPattern(for: pattern)
+            if findWholeWord { pattern = "\\b\(pattern)\\b" }
+        }
+        var options: NSRegularExpression.Options = []
+        if !findCaseSensitive { options.insert(.caseInsensitive) }
+        return try? NSRegularExpression(pattern: pattern, options: options)
+    }
+
+    private func recomputeFind() {
+        clearFindHighlights()
+        findError = false
+        guard let bar = findBar, !bar.isHidden else { return }
+        let query = bar.query
+        guard !query.isEmpty else {
+            findMatches = []
+            findIndex = 0
+            bar.setCount("", isError: false)
+            bar.setNavEnabled(false)
+            return
+        }
+        guard let regex = buildFindRegex() else {
+            findError = true
+            findMatches = []
+            bar.setCount("无效正则", isError: true)
+            bar.setNavEnabled(false)
+            return
+        }
+        let text = editorTextView.string
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        findMatches = regex.matches(in: text, range: full).filter { $0.range.length > 0 }
+        if findMatches.isEmpty {
+            findIndex = 0
+            bar.setCount("无结果", isError: false)
+            bar.setNavEnabled(false)
+            return
+        }
+        findIndex = min(findIndex, findMatches.count - 1)
+        bar.setNavEnabled(true)
+        applyFindHighlights()
+        scrollToCurrentMatch()
+    }
+
+    private func findStep(_ delta: Int) {
+        guard !findMatches.isEmpty else { return }
+        findIndex = (findIndex + delta + findMatches.count) % findMatches.count
+        applyFindHighlights()
+        scrollToCurrentMatch()
+    }
+
+    private func clearFindHighlights() {
+        guard let lm = editorTextView.layoutManager else { return }
+        let full = NSRange(location: 0, length: (editorTextView.string as NSString).length)
+        lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: full)
+    }
+
+    private func applyFindHighlights() {
+        guard let lm = editorTextView.layoutManager, let bar = findBar else { return }
+        clearFindHighlights()
+        for (i, match) in findMatches.enumerated() {
+            let color = i == findIndex ? DesignTokens.accentStrong : DesignTokens.accentSoft
+            lm.addTemporaryAttributes([.backgroundColor: color], forCharacterRange: match.range)
+        }
+        bar.setCount("\(findIndex + 1)/\(findMatches.count)", isError: false)
+    }
+
+    private func scrollToCurrentMatch() {
+        guard findMatches.indices.contains(findIndex) else { return }
+        editorTextView.scrollRangeToVisible(findMatches[findIndex].range)
+    }
+
+    // Expand the replacement template against the FULL document so regex
+    // back-references and look-around context resolve correctly.
+    private func expandedReplacement(for match: NSTextCheckingResult, in text: String, template: String) -> String {
+        guard findUseRegex, let regex = buildFindRegex() else { return template }
+        return regex.replacementString(for: match, in: text, offset: 0, template: template)
+    }
+
+    private func replaceCurrent() {
+        guard !findError, findMatches.indices.contains(findIndex), let bar = findBar else {
+            flash("没有可替换的匹配")
+            return
+        }
+        guard let storage = editorTextView.textStorage else { return }
+        let match = findMatches[findIndex]
+        let replacement = expandedReplacement(for: match, in: editorTextView.string, template: bar.replacement)
+        guard editorTextView.shouldChangeText(in: match.range, replacementString: replacement) else { return }
+        storage.replaceCharacters(in: match.range, with: replacement)
+        editorTextView.didChangeText()
+        applyCurrentDocumentStyling()
+        updateDocumentState(status: nil)
+        recomputeFind()
+        flash("已替换 1 处")
+    }
+
+    private func replaceAll() {
+        guard !findError, !findMatches.isEmpty, let bar = findBar, let storage = editorTextView.textStorage else {
+            flash("没有可替换的匹配")
+            return
+        }
+        let count = findMatches.count
+        let originalText = editorTextView.string
+        let fullRange = NSRange(location: 0, length: storage.length)
+        guard editorTextView.shouldChangeText(in: fullRange, replacementString: nil) else { return }
+        // Replace from last to first so earlier match ranges stay valid; expand
+        // each template against the original (unchanged-prefix) document text.
+        for match in findMatches.reversed() {
+            let replacement = expandedReplacement(for: match, in: originalText, template: bar.replacement)
+            storage.replaceCharacters(in: match.range, with: replacement)
+        }
+        editorTextView.didChangeText()
+        applyCurrentDocumentStyling()
+        updateDocumentState(status: nil)
+        recomputeFind()
+        flash("已替换 \(count) 处")
+    }
+
     private func buildInterface() {
         rootView.translatesAutoresizingMaskIntoConstraints = true
         rootView.wantsLayer = true
         rootView.layer?.backgroundColor = DesignTokens.paper.cgColor
 
-        let bodySplitView = buildBodySplitView()
-        self.bodySplitView = bodySplitView
+        restoreSession()
 
-        rootView.addSubview(bodySplitView)
+        let split = BodySplitView()
+        split.isVertical = true
+        split.dividerStyle = .thin
+        split.translatesAutoresizingMaskIntoConstraints = false
 
+        let sidebar = buildSidebar()
+        let editorPane = buildEditorPane()
+        split.addArrangedSubview(sidebar)
+        split.addArrangedSubview(editorPane)
+
+        let widthConstraint = sidebar.widthAnchor.constraint(equalToConstant: sidebarWidth)
+        widthConstraint.priority = .init(999)
+        widthConstraint.isActive = true
+        sidebarWidthConstraint = widthConstraint
+
+        rootView.addSubview(split)
         NSLayoutConstraint.activate([
-            bodySplitView.topAnchor.constraint(equalTo: rootView.topAnchor),
-            bodySplitView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
-            bodySplitView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-            bodySplitView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor)
+            split.topAnchor.constraint(equalTo: rootView.topAnchor),
+            split.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+            split.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+            split.bottomAnchor.constraint(equalTo: rootView.bottomAnchor)
         ])
+
+        // Grab handle / hover line overlaid on the (invisible) divider.
+        let handle = ResizeHandleView()
+        handle.translatesAutoresizingMaskIntoConstraints = false
+        rootView.addSubview(handle)
+        NSLayoutConstraint.activate([
+            handle.topAnchor.constraint(equalTo: rootView.topAnchor),
+            handle.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
+            handle.centerXAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            handle.widthAnchor.constraint(equalToConstant: 9)
+        ])
+        handle.onDrag = { [weak self] x in self?.setSidebarWidth(x) }
+        handle.onCommit = { [weak self] in self?.persistSession() }
+        resizeHandle = handle
 
         DispatchQueue.main.async { [weak self] in
             self?.rootView.needsLayout = true
@@ -932,68 +1805,28 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         }
     }
 
-    private func buildTopBar() -> NSView {
-        let topBar = NSVisualEffectView()
-        topBar.material = .headerView
-        topBar.blendingMode = .withinWindow
-        topBar.translatesAutoresizingMaskIntoConstraints = false
-
-        let buttonStack = NSStackView()
-        buttonStack.orientation = .horizontal
-        buttonStack.alignment = .centerY
-        buttonStack.spacing = 8
-        buttonStack.translatesAutoresizingMaskIntoConstraints = false
-
-        buttonStack.addArrangedSubview(makeToolbarButton(title: "新建", symbol: "doc.badge.plus", action: #selector(newDocument(_:))))
-        buttonStack.addArrangedSubview(makeToolbarButton(title: "打开文件", symbol: "doc", action: #selector(openFile(_:))))
-        buttonStack.addArrangedSubview(makeToolbarButton(title: "打开目录", symbol: "folder", action: #selector(openDirectory(_:))))
-        buttonStack.addArrangedSubview(makeToolbarButton(title: "保存", symbol: "square.and.arrow.down", action: #selector(saveDocument(_:))))
-        buttonStack.addArrangedSubview(makeToolbarButton(title: "另存为", symbol: "square.and.arrow.down.on.square", action: #selector(saveDocumentAs(_:))))
-
-        let titleStack = NSStackView()
-        titleStack.orientation = .vertical
-        titleStack.alignment = .leading
-        titleStack.spacing = 2
-        titleStack.translatesAutoresizingMaskIntoConstraints = false
-
-        documentTitleLabel.font = NSFont.boldSystemFont(ofSize: 16)
-        documentTitleLabel.lineBreakMode = .byTruncatingMiddle
-        documentMetaLabel.font = NSFont.systemFont(ofSize: 12)
-        documentMetaLabel.textColor = .secondaryLabelColor
-        titleStack.addArrangedSubview(documentTitleLabel)
-        titleStack.addArrangedSubview(documentMetaLabel)
-
-        topBar.addSubview(buttonStack)
-        topBar.addSubview(titleStack)
-
-        NSLayoutConstraint.activate([
-            buttonStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 16),
-            buttonStack.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
-
-            titleStack.leadingAnchor.constraint(equalTo: buttonStack.trailingAnchor, constant: 18),
-            titleStack.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
-            titleStack.trailingAnchor.constraint(lessThanOrEqualTo: topBar.trailingAnchor, constant: -16)
-        ])
-
-        return topBar
+    private func setSidebarWidth(_ raw: CGFloat) {
+        let clamped = max(DesignTokens.sidebarMinWidth, min(DesignTokens.sidebarMaxWidth, raw))
+        sidebarWidth = clamped
+        if !sidebarView.isHidden { sidebarWidthConstraint?.constant = clamped }
     }
 
-    private func buildBodySplitView() -> NSSplitView {
-        let bodySplitView = NSSplitView()
-        bodySplitView.isVertical = true
-        bodySplitView.dividerStyle = .thin
-        bodySplitView.translatesAutoresizingMaskIntoConstraints = false
+    private func restoreSession() {
+        let defaults = UserDefaults.standard
+        if let w = defaults.object(forKey: "mdviewer.sideW") as? Double {
+            sidebarWidth = max(DesignTokens.sidebarMinWidth, min(DesignTokens.sidebarMaxWidth, CGFloat(w)))
+        }
+        if let idx = defaults.object(forKey: "mdviewer.fontIdx") as? Int,
+           DesignTokens.bodyFontSizes.indices.contains(idx) {
+            fontIndex = idx
+        }
+        LiveMarkdownStyler.bodyPointSize = DesignTokens.bodyFontSizes[fontIndex]
+    }
 
-        let sidebar = buildSidebar()
-        let editorPane = buildEditorPane()
-
-        bodySplitView.addArrangedSubview(sidebar)
-        bodySplitView.addArrangedSubview(editorPane)
-
-        let widthConstraint = sidebar.widthAnchor.constraint(equalToConstant: DesignTokens.sidebarWidth)
-        widthConstraint.isActive = true
-        sidebarWidthConstraint = widthConstraint
-        return bodySplitView
+    private func persistSession() {
+        let defaults = UserDefaults.standard
+        defaults.set(Double(sidebarWidth), forKey: "mdviewer.sideW")
+        defaults.set(fontIndex, forKey: "mdviewer.fontIdx")
     }
 
     private func buildSidebar() -> NSView {
@@ -1001,30 +1834,20 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         sidebarView.wantsLayer = true
         sidebarView.layer?.backgroundColor = DesignTokens.sidebar.cgColor
 
-        directoryLabel.font = NSFont.systemFont(ofSize: 12)
-        directoryLabel.textColor = DesignTokens.secondaryText
-        directoryLabel.lineBreakMode = .byTruncatingMiddle
-
-        searchField.placeholderString = "筛选文档"
-        searchField.delegate = self
-        searchField.font = NSFont.systemFont(ofSize: 12.5)
-        searchField.isBordered = false
-        searchField.isBezeled = false
-        searchField.drawsBackground = true
-        searchField.backgroundColor = NSColor.black.withAlphaComponent(0.04)
-        searchField.wantsLayer = true
-        searchField.layer?.cornerRadius = 6
+        filterField.textField.delegate = self
+        filterField.translatesAutoresizingMaskIntoConstraints = false
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("FileTreeColumn"))
         column.title = "文件"
         column.width = 188
-        column.minWidth = 160
+        column.minWidth = 120
         column.resizingMask = .autoresizingMask
         outlineView.addTableColumn(column)
         outlineView.outlineTableColumn = column
         outlineView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         outlineView.headerView = nil
         outlineView.rowHeight = 28
+        outlineView.indentationPerLevel = 14
         outlineView.style = .sourceList
         outlineView.backgroundColor = DesignTokens.sidebar
         outlineView.dataSource = self
@@ -1037,52 +1860,42 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         outlineScrollView.documentView = outlineView
         outlineScrollView.hasVerticalScroller = true
         outlineScrollView.drawsBackground = false
-        outlineScrollView.setContentHuggingPriority(.defaultLow, for: .vertical)
+        outlineScrollView.translatesAutoresizingMaskIntoConstraints = false
+        outlineScrollView.automaticallyAdjustsContentInsets = false
 
+        commandButton.title = "⌘K    全部命令"
         commandButton.target = self
         commandButton.action = #selector(showCommandPalette(_:))
         commandButton.bezelStyle = .regularSquare
         commandButton.isBordered = false
         commandButton.alignment = .left
-        commandButton.font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
-        commandButton.contentTintColor = DesignTokens.tertiaryText
-
-        let topSpacer = NSView()
-        topSpacer.translatesAutoresizingMaskIntoConstraints = false
-
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.distribution = .fill
-        stack.spacing = 8
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.addArrangedSubview(topSpacer)
-        stack.addArrangedSubview(directoryLabel)
-        stack.addArrangedSubview(searchField)
-        stack.addArrangedSubview(outlineScrollView)
-        stack.addArrangedSubview(commandButton)
-
-        topSpacer.translatesAutoresizingMaskIntoConstraints = false
-        searchField.translatesAutoresizingMaskIntoConstraints = false
-        outlineScrollView.translatesAutoresizingMaskIntoConstraints = false
+        commandButton.font = NSFont.systemFont(ofSize: 11.5)
+        commandButton.contentTintColor = NSColor(hex: 0x9A9A9E)
+        commandButton.restTint = NSColor(hex: 0x9A9A9E)
+        commandButton.hoverTint = DesignTokens.secondaryText
+        commandButton.wantsLayer = true
+        commandButton.layer?.cornerRadius = 6
+        commandButton.toolTip = "所有命令与文档 · ⌘K"
         commandButton.translatesAutoresizingMaskIntoConstraints = false
 
-        sidebarView.addSubview(stack)
+        sidebarView.addSubview(filterField)
+        sidebarView.addSubview(outlineScrollView)
+        sidebarView.addSubview(commandButton)
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: sidebarView.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: sidebarView.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -12),
-            stack.bottomAnchor.constraint(equalTo: sidebarView.bottomAnchor, constant: -8),
+            filterField.topAnchor.constraint(equalTo: sidebarView.topAnchor, constant: DesignTokens.tabBarHeight + 2),
+            filterField.leadingAnchor.constraint(equalTo: sidebarView.leadingAnchor, constant: 12),
+            filterField.trailingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -12),
+            filterField.heightAnchor.constraint(equalToConstant: 28),
 
-            topSpacer.heightAnchor.constraint(equalToConstant: DesignTokens.tabBarHeight),
-            topSpacer.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            directoryLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            searchField.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            searchField.heightAnchor.constraint(equalToConstant: 28),
-            outlineScrollView.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            outlineScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240),
-            commandButton.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            outlineScrollView.topAnchor.constraint(equalTo: filterField.bottomAnchor, constant: 8),
+            outlineScrollView.leadingAnchor.constraint(equalTo: sidebarView.leadingAnchor, constant: 10),
+            outlineScrollView.trailingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -10),
+            outlineScrollView.bottomAnchor.constraint(equalTo: commandButton.topAnchor, constant: -4),
+
+            commandButton.leadingAnchor.constraint(equalTo: sidebarView.leadingAnchor, constant: 16),
+            commandButton.trailingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -12),
+            commandButton.bottomAnchor.constraint(equalTo: sidebarView.bottomAnchor),
             commandButton.heightAnchor.constraint(equalToConstant: 38)
         ])
 
@@ -1098,7 +1911,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         editorScrollView.drawsBackground = true
         editorScrollView.backgroundColor = DesignTokens.paper
 
-        let container = NSView()
+        let container = editorContainer
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
         container.layer?.backgroundColor = DesignTokens.paper.cgColor
@@ -1112,7 +1925,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         editorScrollView.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
-        statusLabel.textColor = DesignTokens.tertiaryText
+        statusLabel.textColor = DesignTokens.statusText
         statusLabel.alignment = .right
 
         NSLayoutConstraint.activate([
@@ -1131,6 +1944,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
             statusLabel.heightAnchor.constraint(equalToConstant: 18)
         ])
+
+        installContentOverlays(in: container)
+        observeScroll()
 
         return container
     }
@@ -1163,13 +1979,15 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         tabCapsule.addSubview(dirtyDotView)
 
         let newButton = makeGhostButton(title: "＋", action: #selector(newDocument(_:)))
+        newButton.font = NSFont.systemFont(ofSize: 16)
         newButton.toolTip = "新建文档 · ⌘N"
-        let openButton = makeGhostButton(title: "打开", action: #selector(openFile(_:)))
-        openButton.toolTip = "打开文件 · ⌘O"
-        let commandTopButton = makeGhostButton(title: "⌘K", action: #selector(showCommandPalette(_:)))
-        commandTopButton.toolTip = "所有命令与文档 · ⌘K"
 
-        [toggleButton, tabCapsule, newButton, openButton, commandTopButton].forEach {
+        let findButton = makeGhostIconButton(symbol: "magnifyingglass", title: "查找 / 替换", action: #selector(toggleFindBar(_:)))
+        findButton.toolTip = "查找 / 替换 · ⌘F"
+        let openButton = makeGhostIconButton(symbol: "folder", title: "打开", action: #selector(openFile(_:)))
+        openButton.toolTip = "打开 · ⌘O"
+
+        [toggleButton, tabCapsule, newButton, findButton, openButton].forEach {
             tabBarView.addSubview($0)
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
@@ -1202,15 +2020,15 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             newButton.widthAnchor.constraint(equalToConstant: 26),
             newButton.heightAnchor.constraint(equalToConstant: 26),
 
-            commandTopButton.trailingAnchor.constraint(equalTo: tabBarView.trailingAnchor, constant: -12),
-            commandTopButton.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
-            commandTopButton.widthAnchor.constraint(equalToConstant: 42),
-            commandTopButton.heightAnchor.constraint(equalToConstant: 26),
-
-            openButton.trailingAnchor.constraint(equalTo: commandTopButton.leadingAnchor, constant: -4),
+            openButton.trailingAnchor.constraint(equalTo: tabBarView.trailingAnchor, constant: -12),
             openButton.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
-            openButton.widthAnchor.constraint(equalToConstant: 44),
-            openButton.heightAnchor.constraint(equalToConstant: 26)
+            openButton.widthAnchor.constraint(equalToConstant: 28),
+            openButton.heightAnchor.constraint(equalToConstant: 26),
+
+            findButton.trailingAnchor.constraint(equalTo: openButton.leadingAnchor, constant: -2),
+            findButton.centerYAnchor.constraint(equalTo: tabBarView.centerYAnchor),
+            findButton.widthAnchor.constraint(equalToConstant: 28),
+            findButton.heightAnchor.constraint(equalToConstant: 26)
         ])
 
         return tabBarView
@@ -1250,31 +2068,24 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         updateDocumentState(status: "就绪")
     }
 
-    private func makeToolbarButton(title: String, symbol: String, action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: self, action: action)
-        button.bezelStyle = .texturedRounded
-        button.controlSize = .regular
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        button.imagePosition = .imageLeading
-        button.setButtonType(.momentaryPushIn)
-        return button
-    }
-
-    private func makeGhostButton(title: String, action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: self, action: action)
+    private func makeGhostButton(title: String, action: Selector) -> HoverButton {
+        let button = HoverButton(title: title, target: self, action: action)
         button.isBordered = false
         button.bezelStyle = .regularSquare
         button.font = NSFont.systemFont(ofSize: 12.5)
-        button.contentTintColor = DesignTokens.tertiaryText
+        button.contentTintColor = DesignTokens.placeholderText
+        button.restTint = DesignTokens.placeholderText
+        button.hoverTint = DesignTokens.secondaryText
         button.wantsLayer = true
         button.layer?.cornerRadius = 6
-        button.layer?.backgroundColor = NSColor.clear.cgColor
         return button
     }
 
-    private func makeGhostIconButton(symbol: String, title: String, action: Selector) -> NSButton {
+    private func makeGhostIconButton(symbol: String, title: String, action: Selector) -> HoverButton {
         let button = makeGhostButton(title: "", action: action)
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
+            .withSymbolConfiguration(config)
         button.imagePosition = .imageOnly
         return button
     }
@@ -1314,6 +2125,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             currentFileURL = url
             lastSavedText = text
             updateDocumentState(status: "已保存 \(url.lastPathComponent)")
+            flash("已保存 \(url.lastPathComponent)")
             return true
         } catch {
             showAlert(title: "保存失败", message: error.localizedDescription)
@@ -1331,7 +2143,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     private func applyFileFilter() {
-        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let query = filterField.textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         if query.isEmpty {
             filteredTreeRoots = fileTreeRoots
@@ -1584,21 +2396,32 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let characterCount = text.count
         let lineCount = text.isEmpty ? 0 : text.components(separatedBy: .newlines).count
         let name = currentFileURL?.lastPathComponent ?? "未命名.md"
-        let dirtyPrefix = isDirty ? "• " : ""
+        let dirty = isDirty
+        let dirtyPrefix = dirty ? "• " : ""
 
         documentTitleLabel.stringValue = name
-        documentMetaLabel.stringValue = "\(characterCount) 字 · \(lineCount) 行"
         window.title = "\(dirtyPrefix)\(name) - Markdown 编辑器"
-        dirtyDotView.isHidden = !isDirty
+        dirtyDotView.isHidden = !dirty
+        _ = characterCount
+        _ = lineCount
 
-        if let status {
-            if status.contains("已保存") || status.contains("已打开") || status.contains("自测") || status == "就绪" || status == "正在编辑" {
-                statusLabel.stringValue = "\(characterCount) 字 · \(lineCount) 行"
-            } else {
-                statusLabel.stringValue = status
-            }
-        } else {
-            statusLabel.stringValue = "\(characterCount) 字 · \(lineCount) 行"
+        refreshDirtyIndicatorInSidebar()
+        refreshStatus()
+        recomputeOutline()
+        if let bar = findBar, !bar.isHidden { recomputeFind() }
+    }
+
+    /// Refresh the amber unsaved dot across all visible sidebar rows so a
+    /// previously-edited file's row clears when the active document changes.
+    private func refreshDirtyIndicatorInSidebar() {
+        let visible = outlineView.rows(in: outlineView.visibleRect)
+        guard visible.length > 0 else { return }
+        let dirty = isDirty
+        for row in visible.location..<(visible.location + visible.length) {
+            guard let node = outlineView.item(atRow: row) as? FileTreeNode,
+                  let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell else { continue }
+            let isCurrentDirty = !node.isDirectory && dirty && sameFileURL(node.url, currentFileURL)
+            cell.configure(name: node.name, isDirectory: node.isDirectory, isDirty: isCurrentDirty)
         }
     }
 
@@ -1671,6 +2494,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     private func performSelfTest(outputDirectory: URL) -> Bool {
+        window.setContentSize(NSSize(width: 1180, height: 760))
+        rootView.layoutSubtreeIfNeeded()
+
         do {
             try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         } catch {
@@ -1756,13 +2582,17 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let prefix = "[command-palette]"
         let palette = buildCommandPaletteView()
         let identifiers = collectButtonIdentifiers(in: palette)
-        for expected in ["new", "openFile", "openDirectory", "save", "saveAs", "sidebar"] {
+        for expected in ["new", "openFile", "openDirectory", "save", "saveAs", "find", "fontUp", "fontDown", "fontReset", "sidebar"] {
             if !identifiers.contains(expected) {
                 failures.append("\(prefix) missing command \(expected)")
             }
         }
         if palette.frame.width != 460 {
             failures.append("\(prefix) wrong palette width: \(palette.frame.width)")
+        }
+        palette.setQueryForTesting("字号")
+        if palette.visibleCommandIdentifiersForTesting != ["fontUp", "fontDown", "fontReset"] {
+            failures.append("\(prefix) search for font size should find the three font commands, got \(palette.visibleCommandIdentifiersForTesting)")
         }
         palette.setQueryForTesting("目录")
         if palette.visibleCommandIdentifiersForTesting != ["openDirectory", "sidebar"] {
@@ -1876,7 +2706,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             }
         }
 
-        searchField.stringValue = "openai"
+        filterField.textField.stringValue = "openai"
         applyFileFilter()
         if findNode(relativePath: "agents/openai.yaml", in: filteredTreeRoots) == nil {
             failures.append("\(prefix) search cannot find nested yaml file")
@@ -1884,7 +2714,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         if findNode(relativePath: "SKILL.md", in: filteredTreeRoots) != nil {
             failures.append("\(prefix) search should hide unrelated root markdown file")
         }
-        searchField.stringValue = ""
+        filterField.textField.stringValue = ""
         applyFileFilter()
 
         return failures
@@ -2329,7 +3159,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 }
 
 enum LiveMarkdownStyler {
-    static let bodyFont = NSFont.systemFont(ofSize: 15.5)
+    static var bodyPointSize: CGFloat = 15.5
+    static var bodyFont: NSFont { NSFont.systemFont(ofSize: bodyPointSize) }
 
     private static let markerFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
     private static let codeFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
@@ -3227,6 +4058,458 @@ enum MarkdownRenderer {
     private static func italicFont(for attributes: [NSAttributedString.Key: Any]) -> NSFont {
         let font = attributes[.font] as? NSFont ?? bodyFont
         return NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+    }
+}
+
+// MARK: - Find / Replace floating panel
+
+/// Toggle chip used for case / whole-word / regex switches.
+final class ChipButton: HoverButton {
+    var active = false { didSet { refreshChip() } }
+
+    func refreshChip() {
+        restBackground = active ? NSColor.black.withAlphaComponent(0.10) : .clear
+        restTint = active ? DesignTokens.titleText : DesignTokens.placeholderText
+        hoverTint = active ? DesignTokens.titleText : DesignTokens.secondaryText
+        needsLayout = true
+    }
+}
+
+final class FindBarView: NSView, NSTextFieldDelegate {
+    let findInput = NSTextField()
+    private let replaceInput = NSTextField()
+    private let countLabel = NSTextField(labelWithString: "")
+    private let findContainer = NSView()
+    private let chevron = HoverButton(title: "▸", target: nil, action: nil)
+    private let caseChip = ChipButton(title: "Aa", target: nil, action: nil)
+    private let wordChip = ChipButton(title: "W", target: nil, action: nil)
+    private let regexChip = ChipButton(title: ".*", target: nil, action: nil)
+    private let prevButton = HoverButton(title: "↑", target: nil, action: nil)
+    private let nextButton = HoverButton(title: "↓", target: nil, action: nil)
+    private let replaceRow = NSStackView()
+
+    var onQueryChange: ((String) -> Void)?
+    var onReplaceTextChange: ((String) -> Void)?
+    var onNext: (() -> Void)?
+    var onPrev: (() -> Void)?
+    var onClose: (() -> Void)?
+    var onToggleReplace: (() -> Void)?
+    var onToggleCase: (() -> Void)?
+    var onToggleWord: (() -> Void)?
+    var onToggleRegex: (() -> Void)?
+    var onReplaceOne: (() -> Void)?
+    var onReplaceAll: (() -> Void)?
+
+    var query: String { findInput.stringValue }
+    var replacement: String { replaceInput.stringValue }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        build()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func iconButton(_ button: HoverButton, _ title: String, width: CGFloat, height: CGFloat, fontSize: CGFloat, action: Selector) -> HoverButton {
+        button.title = title
+        button.isBordered = false
+        button.bezelStyle = .regularSquare
+        button.font = NSFont.systemFont(ofSize: fontSize)
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 6
+        button.contentTintColor = DesignTokens.placeholderText
+        button.restTint = DesignTokens.placeholderText
+        button.hoverTint = DesignTokens.secondaryText
+        button.target = self
+        button.action = action
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: width).isActive = true
+        button.heightAnchor.constraint(equalToConstant: height).isActive = true
+        return button
+    }
+
+    private func separator() -> NSView {
+        let v = NSView()
+        v.wantsLayer = true
+        v.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.08).cgColor
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.widthAnchor.constraint(equalToConstant: 1).isActive = true
+        v.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        return v
+    }
+
+    private func styleInput(_ field: NSTextField, placeholder: String) {
+        field.placeholderString = placeholder
+        field.font = NSFont.systemFont(ofSize: 13)
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.textColor = DesignTokens.titleText
+        field.delegate = self
+        field.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    private func roundedContainer(_ field: NSView, width: CGFloat) -> NSView {
+        let c = NSView()
+        c.wantsLayer = true
+        c.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.045).cgColor
+        c.layer?.cornerRadius = 6
+        c.translatesAutoresizingMaskIntoConstraints = false
+        c.addSubview(field)
+        NSLayoutConstraint.activate([
+            c.widthAnchor.constraint(equalToConstant: width),
+            c.heightAnchor.constraint(equalToConstant: 28),
+            field.leadingAnchor.constraint(equalTo: c.leadingAnchor, constant: 9),
+            field.centerYAnchor.constraint(equalTo: c.centerYAnchor)
+        ])
+        return c
+    }
+
+    private func build() {
+        wantsLayer = true
+        layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.97).cgColor
+        layer?.cornerRadius = 10
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.14
+        layer?.shadowRadius = 14
+        layer?.shadowOffset = NSSize(width: 0, height: -4)
+        layer?.borderWidth = 1
+        layer?.borderColor = DesignTokens.ring.cgColor
+
+        _ = iconButton(chevron, "▸", width: 20, height: 28, fontSize: 9, action: #selector(toggleReplaceAction))
+
+        styleInput(findInput, placeholder: "查找")
+
+        countLabel.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        countLabel.textColor = DesignTokens.statusText
+        countLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        findContainer.wantsLayer = true
+        findContainer.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.045).cgColor
+        findContainer.layer?.cornerRadius = 6
+        findContainer.translatesAutoresizingMaskIntoConstraints = false
+        findContainer.addSubview(findInput)
+        findContainer.addSubview(countLabel)
+        NSLayoutConstraint.activate([
+            findContainer.widthAnchor.constraint(equalToConstant: 240),
+            findContainer.heightAnchor.constraint(equalToConstant: 28),
+            findInput.leadingAnchor.constraint(equalTo: findContainer.leadingAnchor, constant: 9),
+            findInput.centerYAnchor.constraint(equalTo: findContainer.centerYAnchor),
+            findInput.trailingAnchor.constraint(equalTo: countLabel.leadingAnchor, constant: -8),
+            countLabel.trailingAnchor.constraint(equalTo: findContainer.trailingAnchor, constant: -9),
+            countLabel.centerYAnchor.constraint(equalTo: findContainer.centerYAnchor)
+        ])
+        findInput.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        countLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        for (chip, sel) in [(caseChip, #selector(toggleCaseAction)), (wordChip, #selector(toggleWordAction)), (regexChip, #selector(toggleRegexAction))] {
+            chip.isBordered = false
+            chip.bezelStyle = .regularSquare
+            chip.font = NSFont.monospacedSystemFont(ofSize: chip == regexChip ? 12 : 11, weight: .semibold)
+            chip.wantsLayer = true
+            chip.layer?.cornerRadius = 6
+            chip.target = self
+            chip.action = sel
+            chip.translatesAutoresizingMaskIntoConstraints = false
+            chip.widthAnchor.constraint(equalToConstant: 22).isActive = true
+            chip.heightAnchor.constraint(equalToConstant: 22).isActive = true
+            chip.refreshChip()
+        }
+        let chips = NSStackView(views: [caseChip, wordChip, regexChip])
+        chips.orientation = .horizontal
+        chips.spacing = 2
+
+        _ = iconButton(prevButton, "↑", width: 24, height: 24, fontSize: 12, action: #selector(prevAction))
+        _ = iconButton(nextButton, "↓", width: 24, height: 24, fontSize: 12, action: #selector(nextAction))
+        prevButton.restTint = DesignTokens.secondaryText
+        nextButton.restTint = DesignTokens.secondaryText
+        let nav = NSStackView(views: [prevButton, nextButton])
+        nav.orientation = .horizontal
+        nav.spacing = 2
+
+        let closeButton = iconButton(HoverButton(title: "×", target: nil, action: nil), "×", width: 24, height: 24, fontSize: 14, action: #selector(closeAction))
+
+        let row1 = NSStackView(views: [chevron, findContainer, chips, separator(), nav, separator(), closeButton])
+        row1.orientation = .horizontal
+        row1.alignment = .centerY
+        row1.spacing = 6
+        row1.translatesAutoresizingMaskIntoConstraints = false
+
+        // Replace row
+        styleInput(replaceInput, placeholder: "替换为")
+        let replaceContainer = roundedContainer(replaceInput, width: 240)
+        if let f = replaceContainer.subviews.first {
+            f.trailingAnchor.constraint(equalTo: replaceContainer.trailingAnchor, constant: -9).isActive = true
+        }
+        let replaceOne = pillButton("替换", action: #selector(replaceOneAction))
+        let replaceAllBtn = pillButton("全部替换", action: #selector(replaceAllAction))
+        let spacer20 = NSView()
+        spacer20.translatesAutoresizingMaskIntoConstraints = false
+        spacer20.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        let flexSpacer = NSView()
+        flexSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        replaceRow.setViews([spacer20, replaceContainer, flexSpacer, replaceOne, replaceAllBtn], in: .leading)
+        replaceRow.orientation = .horizontal
+        replaceRow.alignment = .centerY
+        replaceRow.spacing = 6
+        replaceRow.translatesAutoresizingMaskIntoConstraints = false
+        replaceRow.isHidden = true
+
+        let outer = NSStackView(views: [row1, replaceRow])
+        outer.orientation = .vertical
+        outer.alignment = .leading
+        outer.spacing = 6
+        outer.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(outer)
+        NSLayoutConstraint.activate([
+            outer.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            outer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            outer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            outer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
+        ])
+    }
+
+    private func pillButton(_ title: String, action: Selector) -> HoverButton {
+        let b = HoverButton(title: title, target: self, action: action)
+        b.isBordered = false
+        b.bezelStyle = .regularSquare
+        b.font = NSFont.systemFont(ofSize: 12)
+        b.wantsLayer = true
+        b.layer?.cornerRadius = 6
+        b.contentTintColor = DesignTokens.fileRowText
+        b.restTint = DesignTokens.fileRowText
+        b.hoverTint = DesignTokens.titleText
+        b.restBackground = NSColor.black.withAlphaComponent(0.05)
+        b.hoverBackground = NSColor.black.withAlphaComponent(0.08)
+        b.translatesAutoresizingMaskIntoConstraints = false
+        b.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        b.widthAnchor.constraint(greaterThanOrEqualToConstant: title.count > 2 ? 76 : 52).isActive = true
+        return b
+    }
+
+    func setCount(_ text: String, isError: Bool) {
+        countLabel.stringValue = text
+        countLabel.textColor = isError ? DesignTokens.danger : DesignTokens.statusText
+        findContainer.layer?.borderWidth = isError ? 1 : 0
+        findContainer.layer?.borderColor = isError ? DesignTokens.danger.withAlphaComponent(0.45).cgColor : NSColor.clear.cgColor
+    }
+
+    func setToggles(caseSensitive: Bool, wholeWord: Bool, regex: Bool) {
+        caseChip.active = caseSensitive
+        wordChip.active = wholeWord
+        regexChip.active = regex
+    }
+
+    func setReplaceVisible(_ visible: Bool) {
+        replaceRow.isHidden = !visible
+        chevron.title = visible ? "▾" : "▸"
+        chevron.contentTintColor = visible ? DesignTokens.secondaryText : DesignTokens.placeholderText
+    }
+
+    func setNavEnabled(_ enabled: Bool) {
+        let tint = enabled ? DesignTokens.secondaryText : DesignTokens.disabledText
+        prevButton.restTint = tint
+        nextButton.restTint = tint
+        prevButton.contentTintColor = tint
+        nextButton.contentTintColor = tint
+    }
+
+    func focusFind() { window?.makeFirstResponder(findInput) }
+
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField else { return }
+        if field === findInput { onQueryChange?(findInput.stringValue) }
+        else if field === replaceInput { onReplaceTextChange?(replaceInput.stringValue) }
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        switch selector {
+        case #selector(NSResponder.insertNewline(_:)):
+            if control === replaceInput { onReplaceOne?() } else { onNext?() }
+            return true
+        case #selector(NSResponder.insertLineBreak(_:)): // ⇧Return in the find field → previous
+            if control === findInput { onPrev?() }
+            return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            onClose?()
+            return true
+        default:
+            return false
+        }
+    }
+
+    @objc private func toggleReplaceAction() { onToggleReplace?() }
+    @objc private func toggleCaseAction() { onToggleCase?() }
+    @objc private func toggleWordAction() { onToggleWord?() }
+    @objc private func toggleRegexAction() { onToggleRegex?() }
+    @objc private func prevAction() { onPrev?() }
+    @objc private func nextAction() { onNext?() }
+    @objc private func closeAction() { onClose?() }
+    @objc private func replaceOneAction() { onReplaceOne?() }
+    @objc private func replaceAllAction() { onReplaceAll?() }
+}
+
+// MARK: - Floating outline rail
+
+struct OutlineEntry {
+    let title: String
+    let level: Int
+    let charIndex: Int
+}
+
+private final class RailRow: NSView {
+    let tick = NSView()
+    let label = NSTextField(labelWithString: "")
+    private let level: Int
+    let index: Int
+    var onClick: ((Int) -> Void)?
+    private var active = false
+    private var expanded = false
+
+    init(entry: OutlineEntry, index: Int) {
+        self.level = entry.level
+        self.index = index
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+
+        tick.wantsLayer = true
+        tick.layer?.cornerRadius = 1
+        tick.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(tick)
+
+        label.stringValue = entry.title
+        label.alignment = .right
+        label.lineBreakMode = .byTruncatingTail
+        label.font = NSFont.systemFont(ofSize: level == 1 ? 13 : 12)
+        label.alphaValue = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+
+        let tickW: CGFloat = level == 1 ? 22 : 14
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 22),
+            tick.trailingAnchor.constraint(equalTo: trailingAnchor),
+            tick.centerYAnchor.constraint(equalTo: centerYAnchor),
+            tick.heightAnchor.constraint(equalToConstant: 2),
+            tick.widthAnchor.constraint(equalToConstant: tickW),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor)
+        ])
+        refresh()
+
+        let click = NSClickGestureRecognizer(target: self, action: #selector(clicked))
+        addGestureRecognizer(click)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @objc private func clicked() { onClick?(index) }
+
+    func setActive(_ value: Bool) {
+        guard value != active else { return }
+        active = value
+        refresh()
+    }
+
+    func setExpanded(_ value: Bool, animated: Bool) {
+        expanded = value
+        let work = {
+            self.tick.animator().alphaValue = value ? 0 : 1
+            self.label.animator().alphaValue = value ? 1 : 0
+        }
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.18
+                work()
+            }
+        } else {
+            tick.alphaValue = value ? 0 : 1
+            label.alphaValue = value ? 1 : 0
+        }
+    }
+
+    private func refresh() {
+        tick.layer?.backgroundColor = (active ? DesignTokens.accent : DesignTokens.tickRest).cgColor
+        label.textColor = active ? DesignTokens.accent : DesignTokens.tertiaryText
+        label.font = NSFont.systemFont(ofSize: level == 1 ? 13 : 12, weight: active ? .semibold : .regular)
+    }
+}
+
+final class OutlineRailView: NSView {
+    var onJump: ((Int) -> Void)?
+    var onReveal: (() -> Void)?
+    private let stack = NSStackView()
+    private var rows: [RailRow] = []
+    private var widthConstraint: NSLayoutConstraint!
+    private var expanded = false
+    private let collapsedWidth: CGFloat = 84
+    private let expandedWidth: CGFloat = 250
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        translatesAutoresizingMaskIntoConstraints = false
+        stack.orientation = .vertical
+        stack.alignment = .trailing
+        stack.spacing = 2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        widthConstraint = widthAnchor.constraint(equalToConstant: collapsedWidth)
+        widthConstraint.isActive = true
+        NSLayoutConstraint.activate([
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.activeInActiveApp, .mouseEnteredAndExited, .inVisibleRect], owner: self))
+    }
+
+    func setEntries(_ entries: [OutlineEntry]) {
+        rows.forEach { $0.removeFromSuperview() }
+        rows = []
+        for (i, entry) in entries.enumerated() {
+            let row = RailRow(entry: entry, index: i)
+            row.onClick = { [weak self] idx in self?.onJump?(idx) }
+            rows.append(row)
+            stack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+        isHidden = entries.isEmpty
+        setExpanded(false, animated: false)
+    }
+
+    func setActive(_ index: Int) {
+        for (i, row) in rows.enumerated() { row.setActive(i == index) }
+    }
+
+    private func setExpanded(_ value: Bool, animated: Bool) {
+        expanded = value
+        rows.forEach { $0.setExpanded(value, animated: animated) }
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.2
+                widthConstraint.animator().constant = value ? expandedWidth : collapsedWidth
+            }
+        } else {
+            widthConstraint.constant = value ? expandedWidth : collapsedWidth
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onReveal?()
+        if !expanded { setExpanded(true, animated: true) }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if expanded { setExpanded(false, animated: true) }
     }
 }
 
