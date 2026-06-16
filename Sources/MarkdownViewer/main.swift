@@ -3874,6 +3874,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         if !hasHiddenCodeFence() {
             failures.append("\(prefix) fenced code markers are still visible")
         }
+        if !hasCodeLanguageLabel(for: "swift") {
+            failures.append("\(prefix) fenced code language label was not applied")
+        }
         if !hasImageAltStyle(for: testCase.imageAlt) {
             failures.append("\(prefix) image alt text style was not applied")
         }
@@ -4132,7 +4135,25 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let nsString = storage.string as NSString
         let range = nsString.range(of: "```swift")
         guard range.location != NSNotFound else { return false }
-        return isVisuallyHidden(range: range, in: storage)
+        // Only the three backtick markers must be hidden; the "swift" language
+        // token is now intentionally surfaced as a small gray label.
+        let markers = NSRange(location: range.location, length: 3)
+        return isVisuallyHidden(range: markers, in: storage)
+    }
+
+    /// The fenced-code language token (e.g. "swift") is rendered as a small gray
+    /// label (#b3b3b8) rather than hidden, per the mockup code-block header.
+    private func hasCodeLanguageLabel(for language: String) -> Bool {
+        guard let storage = editorTextView.textStorage else { return false }
+        let nsString = storage.string as NSString
+        let fenceRange = nsString.range(of: "```\(language)")
+        guard fenceRange.location != NSNotFound else { return false }
+        let langRange = NSRange(location: fenceRange.location + 3, length: language.utf16.count)
+        guard langRange.location + langRange.length <= nsString.length else { return false }
+        let attrs = storage.attributes(at: langRange.location, effectiveRange: nil)
+        guard let color = attrs[.foregroundColor] as? NSColor, color != .clear,
+              let font = attrs[.font] as? NSFont, font.pointSize > 2 else { return false }
+        return true
     }
 
     private func hasImageAltStyle(for needle: String) -> Bool {
@@ -4220,7 +4241,26 @@ enum LiveMarkdownStyler {
 
             if trimmed.hasPrefix("```") {
                 textStorage.addAttributes(codeBlockAttributes(), range: substringRange)
-                textStorage.addAttributes(hiddenMarkupAttributes(), range: substringRange)
+                let isOpeningFence = !insideCodeBlock
+                if isOpeningFence, let langRange = fenceLanguageRange(line: line, lineRange: substringRange) {
+                    // Hide the ``` markers but surface the language token as a small
+                    // uppercase-style gray label (mockup code-block header, #b3b3b8).
+                    let markersLength = langRange.location - substringRange.location
+                    if markersLength > 0 {
+                        textStorage.addAttributes(hiddenMarkupAttributes(),
+                            range: NSRange(location: substringRange.location, length: markersLength))
+                    }
+                    let langEnd = langRange.location + langRange.length
+                    let tailLength = (substringRange.location + substringRange.length) - langEnd
+                    if tailLength > 0 {
+                        textStorage.addAttributes(hiddenMarkupAttributes(),
+                            range: NSRange(location: langEnd, length: tailLength))
+                    }
+                    textStorage.addAttributes(codeLanguageLabelAttributes(), range: langRange)
+                } else {
+                    // Bare ``` (no language) or the closing fence: hide entirely.
+                    textStorage.addAttributes(hiddenMarkupAttributes(), range: substringRange)
+                }
                 insideCodeBlock.toggle()
                 index += 1
                 continue
@@ -4639,6 +4679,43 @@ enum LiveMarkdownStyler {
         [
             .font: codeFont,
             .foregroundColor: DesignTokens.bodyText,
+            .backgroundColor: codeBackground,
+            .paragraphStyle: paragraphStyle(spacingAfter: 2)
+        ]
+    }
+
+    /// The character range of the language token on an opening fence line (the
+    /// text after the leading ```), or nil if the fence has no language. Trailing
+    /// whitespace and any info-string remainder after the first word are excluded.
+    private static func fenceLanguageRange(line: String, lineRange: NSRange) -> NSRange? {
+        let ns = line as NSString
+        // Locate the opening ``` (it may be indented by leading whitespace).
+        let backtickRange = ns.range(of: "```")
+        guard backtickRange.location != NSNotFound else { return nil }
+        var i = backtickRange.location + backtickRange.length
+        let length = ns.length
+        // Skip any whitespace between ``` and the language word.
+        while i < length, isWhitespaceUnichar(ns.character(at: i)) { i += 1 }
+        let start = i
+        // The language is the first whitespace-delimited word of the info string.
+        while i < length, !isWhitespaceUnichar(ns.character(at: i)) { i += 1 }
+        guard i > start else { return nil }
+        return NSRange(location: lineRange.location + start, length: i - start)
+    }
+
+    private static func isWhitespaceUnichar(_ c: unichar) -> Bool {
+        c == 0x20 || c == 0x09
+    }
+
+    /// Small uppercase-style gray label for the fenced-code language token
+    /// (mockup: font-size 10.5, letter-spacing 0.6, color #b3b3b8, uppercase).
+    /// True text-transform is omitted: this is live-editable text, so the
+    /// displayed characters must stay byte-identical to what the user typed.
+    private static func codeLanguageLabelAttributes() -> [NSAttributedString.Key: Any] {
+        [
+            .font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular),
+            .foregroundColor: NSColor(hex: 0xB3B3B8),
+            .kern: 0.6,
             .backgroundColor: codeBackground,
             .paragraphStyle: paragraphStyle(spacingAfter: 2)
         ]
