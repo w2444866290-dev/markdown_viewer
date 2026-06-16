@@ -148,15 +148,21 @@ class HoverButton: NSButton {
     /// label) and need to react to hover beyond `contentTintColor`.
     var onHoverChange: ((Bool) -> Void)?
     private var inside = false
+    /// Our own hover tracking area. Tracked by reference so we remove only it on
+    /// refresh, preserving any foreign tracking areas (e.g. the tooltip
+    /// controller's) others may have installed.
+    private var hoverArea: NSTrackingArea?
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        trackingAreas.forEach { removeTrackingArea($0) }
-        addTrackingArea(NSTrackingArea(
+        if let existing = hoverArea { removeTrackingArea(existing) }
+        let area = NSTrackingArea(
             rect: bounds,
             options: [.activeInActiveApp, .mouseEnteredAndExited, .inVisibleRect],
             owner: self
-        ))
+        )
+        addTrackingArea(area)
+        hoverArea = area
     }
 
     private func refresh() {
@@ -1287,6 +1293,199 @@ final class TabItemView: NSView {
     var isConfirmShownForTesting: Bool { !confirmLabel.isHidden }
 }
 
+/// Centralized custom tooltip — a dark glass pill matching the mockup's
+/// `data-tip` affordance (template line 266, JS `_onTipOver` 511-521): bg
+/// rgba(28,28,30,0.92), white ~11.5px text, radius 6, soft shadow
+/// (0 6px 20px rgba(0,0,0,0.22)), appearing ~480ms after the pointer rests on a
+/// registered element and positioned just below it (or above when near the host
+/// bottom). One controller owns a single reusable pill view; chrome elements opt
+/// in via `register(view:text:)` instead of the system `.toolTip`. Honors
+/// reduce-motion (appears instantly, no fade).
+final class TooltipController: NSResponder {
+    /// Host view the pill is added into and positioned within (the window's
+    /// content view). Weak: the controller is owned by the window controller,
+    /// which also owns the host.
+    private weak var host: NSView?
+    /// Per-registered-view text, keyed by ObjectIdentifier of the view.
+    private var texts: [ObjectIdentifier: String] = [:]
+    /// Tracking areas we installed, kept so we can remove them on teardown.
+    private var trackingAreas: [ObjectIdentifier: NSTrackingArea] = [:]
+    /// The single reusable pill (text + background); nil until first shown.
+    private var pill: NSView?
+    private var label: NSTextField?
+    /// Pending show timer (the ~480ms rest delay).
+    private var showWork: DispatchWorkItem?
+    /// View the pointer currently rests on (drives positioning / staleness).
+    private weak var activeView: NSView?
+    /// Local monitor that hides the pill on any mouse-down.
+    private var mouseDownMonitor: Any?
+
+    /// ~480ms rest delay before the tip appears (mockup `_onTipOver` line 521).
+    private static let showDelay: TimeInterval = 0.48
+
+    init(host: NSView) {
+        self.host = host
+        super.init()
+        // Hide on any click anywhere (mockup: window `mousedown` -> `_hideTip`).
+        mouseDownMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            self?.hide()
+            return event
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    deinit {
+        if let monitor = mouseDownMonitor { NSEvent.removeMonitor(monitor) }
+    }
+
+    /// Register a chrome element for the custom dark-pill tooltip. Replaces (and
+    /// clears) any native `.toolTip` so the two never both fire.
+    func register(view: NSView, text: String) {
+        view.toolTip = nil
+        let id = ObjectIdentifier(view)
+        texts[id] = text
+        if let existing = trackingAreas[id] {
+            view.removeTrackingArea(existing)
+        }
+        let area = NSTrackingArea(
+            rect: view.bounds,
+            options: [.activeInActiveApp, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        view.addTrackingArea(area)
+        trackingAreas[id] = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard let area = event.trackingArea,
+              let view = viewForTrackingArea(area),
+              let text = texts[ObjectIdentifier(view)] else { return }
+        scheduleShow(for: view, text: text)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hide()
+    }
+
+    /// Recover the registered view that owns a given tracking area. The handful of
+    /// registered chrome elements keep this lookup trivial.
+    private func viewForTrackingArea(_ area: NSTrackingArea) -> NSView? {
+        for (id, registered) in trackingAreas where registered === area {
+            if let view = findView(matching: id, in: host) { return view }
+        }
+        return nil
+    }
+
+    private func findView(matching id: ObjectIdentifier, in root: NSView?) -> NSView? {
+        guard let root else { return nil }
+        if ObjectIdentifier(root) == id { return root }
+        for sub in root.subviews {
+            if let hit = findView(matching: id, in: sub) { return hit }
+        }
+        return nil
+    }
+
+    private func scheduleShow(for view: NSView, text: String) {
+        showWork?.cancel()
+        activeView = view
+        let work = DispatchWorkItem { [weak self, weak view] in
+            guard let self, let view, self.activeView === view else { return }
+            self.present(text: text, anchor: view)
+        }
+        showWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.showDelay, execute: work)
+    }
+
+    /// Build (once) and place the pill anchored to `anchor`.
+    private func present(text: String, anchor: NSView) {
+        guard let host, anchor.window != nil else { return }
+
+        let pill = self.pill ?? makePill()
+        self.pill = pill
+        label?.stringValue = text
+        if pill.superview !== host { host.addSubview(pill) }
+        pill.layoutSubtreeIfNeeded()
+        let size = pill.fittingSize
+
+        // Anchor frame in host coordinates; mockup positions the pill centered on
+        // the element, 8px below (or 8px above when within 90pt of the bottom).
+        let anchorInHost = host.convert(anchor.bounds, from: anchor)
+        let centerX = anchorInHost.midX
+        // AppKit's y points up. "near the window bottom" (mockup: 90px from the
+        // viewport bottom) maps to a low y value here.
+        let nearBottom = anchorInHost.minY < 90
+        var x = centerX - size.width / 2
+        var y: CGFloat
+        if nearBottom {
+            // Above the element.
+            y = anchorInHost.maxY + 8
+        } else {
+            // Below the element.
+            y = anchorInHost.minY - 8 - size.height
+        }
+        // Keep within the host horizontally.
+        x = max(6, min(x, host.bounds.width - size.width - 6))
+        y = max(6, min(y, host.bounds.height - size.height - 6))
+        pill.setFrameOrigin(NSPoint(x: x.rounded(), y: y.rounded()))
+        pill.setFrameSize(size)
+
+        if prefersReducedMotion {
+            pill.alphaValue = 1
+        } else {
+            pill.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { ctx in
+                // Mockup `tipIn`: 0.12s ease fade-in.
+                ctx.duration = motionDuration(0.12)
+                pill.animator().alphaValue = 1
+            }
+        }
+    }
+
+    private func makePill() -> NSView {
+        let pill = NSView()
+        pill.wantsLayer = true
+        pill.layer?.backgroundColor = NSColor(hex: 0x1C1C1E, alpha: 0.92).cgColor
+        pill.layer?.cornerRadius = 6
+        pill.layer?.masksToBounds = false
+        // Shadow: 0 6px 20px rgba(0,0,0,0.22). AppKit y points up, so the 6px
+        // downward offset is negative y; blur 20 ≈ 2 × shadowRadius.
+        pill.layer?.shadowColor = NSColor.black.cgColor
+        pill.layer?.shadowOpacity = 0.22
+        pill.layer?.shadowRadius = 10
+        pill.layer?.shadowOffset = CGSize(width: 0, height: -6)
+
+        let label = NSTextField(labelWithString: "")
+        label.font = NSFont.systemFont(ofSize: 11.5)
+        label.textColor = .white
+        label.maximumNumberOfLines = 1
+        label.lineBreakMode = .byClipping
+        label.translatesAutoresizingMaskIntoConstraints = false
+        pill.addSubview(label)
+        // Padding 4px 9px (mockup line 266).
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: pill.topAnchor, constant: 4),
+            label.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -4),
+            label.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 9),
+            label.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -9)
+        ])
+        self.label = label
+        return pill
+    }
+
+    /// Cancel any pending show and remove the pill immediately (mockup hides the
+    /// tip with no exit animation, on both mouseout and mousedown).
+    func hide() {
+        showWork?.cancel()
+        showWork = nil
+        activeView = nil
+        pill?.removeFromSuperview()
+    }
+}
+
 final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSSearchFieldDelegate, NSTextViewDelegate, NSWindowDelegate {
     private let window: NSWindow
     private let rootView = DropZoneView()
@@ -1340,6 +1539,10 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private var sidebarWidth = DesignTokens.sidebarWidth
     private let debugLayout = ProcessInfo.processInfo.environment["MARKDOWN_VIEWER_DEBUG_LAYOUT"] == "1"
 
+    /// Centralized custom dark-pill tooltip for chrome buttons (replaces the
+    /// system `.toolTip`). Lazily created once the host content view exists.
+    private var tooltipController: TooltipController?
+
     // Shell overlays (find panel, outline rail, toast) wired up in later phases.
     private var findBar: FindBarView?
     private var outlineRail: OutlineRailView?
@@ -1389,6 +1592,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         rootView.autoresizingMask = [.width, .height]
         window.contentView = rootView
         window.delegate = self
+
+        tooltipController = TooltipController(host: rootView)
 
         buildInterface()
         configureInitialDocument()
@@ -2459,7 +2664,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         commandButton.isBordered = false
         commandButton.wantsLayer = true
         commandButton.layer?.cornerRadius = 6
-        commandButton.toolTip = "所有命令与文档 · ⌘K"
+        tooltipController?.register(view: commandButton, text: "所有命令与文档 · ⌘K")
         commandButton.translatesAutoresizingMaskIntoConstraints = false
 
         let kbdChip = NSView()
@@ -2580,7 +2785,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         tabBarView.layer?.backgroundColor = DesignTokens.paper.cgColor
 
         let toggleButton = makeGhostIconButton(symbol: "sidebar.left", title: "显示 / 隐藏侧栏", action: #selector(toggleSidebar(_:)))
-        toggleButton.toolTip = "显示 / 隐藏侧栏 · ⌘\\"
+        tooltipController?.register(view: toggleButton, text: "显示 / 隐藏侧栏 · ⌘\\")
 
         // Horizontal strip of tabs followed by the ＋ new-tab button. The strip
         // grows to fill the space between the sidebar toggle and the find/open
@@ -2593,12 +2798,12 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         let newButton = makeGhostButton(title: "＋", action: #selector(newDocument(_:)))
         newButton.font = NSFont.systemFont(ofSize: 16)
-        newButton.toolTip = "新建文档 · ⌘N"
+        tooltipController?.register(view: newButton, text: "新建文档 · ⌘N")
 
         let findButton = makeGhostIconButton(symbol: "magnifyingglass", title: "查找 / 替换", action: #selector(toggleFindBar(_:)))
-        findButton.toolTip = "查找 / 替换 · ⌘F"
+        tooltipController?.register(view: findButton, text: "查找 / 替换 · ⌘F")
         let openButton = makeGhostIconButton(symbol: "folder", title: "打开", action: #selector(openFile(_:)))
-        openButton.toolTip = "打开 · ⌘O"
+        tooltipController?.register(view: openButton, text: "打开 · ⌘O")
 
         [toggleButton, tabStrip, newButton, findButton, openButton].forEach {
             tabBarView.addSubview($0)
