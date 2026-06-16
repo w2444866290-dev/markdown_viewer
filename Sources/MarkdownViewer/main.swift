@@ -1931,9 +1931,25 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         let backdrop = PaletteBackdropView()
         backdrop.wantsLayer = true
-        backdrop.layer?.backgroundColor = NSColor(hex: 0xF8F8FA, alpha: 0.6).cgColor
         backdrop.translatesAutoresizingMaskIntoConstraints = false
         backdrop.onClickOutside = { [weak self] in self?.closeCommandPalette() }
+
+        // Layer order (back → front): blur → dim wash → card. The blur gives the
+        // design's `backdrop-filter: blur(6px)` over the app content; the light
+        // dim wash sits on top of the blur (unchanged rgba(248,248,250,0.6)); the
+        // card stays a solid modal (built opaque in buildCommandPaletteView).
+        let blur = NSVisualEffectView()
+        blur.blendingMode = .withinWindow
+        blur.material = .popover
+        blur.state = .active
+        blur.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.addSubview(blur)
+
+        let dim = NSView()
+        dim.wantsLayer = true
+        dim.layer?.backgroundColor = NSColor(hex: 0xF8F8FA, alpha: 0.6).cgColor
+        dim.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.addSubview(dim)
 
         let paletteView = buildCommandPaletteView()
         paletteView.translatesAutoresizingMaskIntoConstraints = false
@@ -1946,6 +1962,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             backdrop.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
             backdrop.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
             backdrop.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
+            blur.topAnchor.constraint(equalTo: backdrop.topAnchor),
+            blur.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
+            blur.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
+            blur.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
+            dim.topAnchor.constraint(equalTo: backdrop.topAnchor),
+            dim.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
+            dim.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
+            dim.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
             paletteView.centerXAnchor.constraint(equalTo: backdrop.centerXAnchor),
             paletteView.topAnchor.constraint(equalTo: backdrop.topAnchor, constant: 96)
         ])
@@ -6976,6 +7000,13 @@ final class FindBarView: NSView, NSTextFieldDelegate {
     private let nextButton = HoverButton(title: "↓", target: nil, action: nil)
     private let replaceRow = NSStackView()
 
+    /// Real backdrop blur backing the panel so content behind it is blurred,
+    /// matching the design's `backdrop-filter: blur(14px)` on the light glass.
+    private let glassBacking = NSVisualEffectView()
+    /// Light white tint laid over the blur to reach the design's
+    /// `rgba(255,255,255,0.92)` frosted-white look (the blur reads cooler alone).
+    private let glassTint = NSView()
+
     var onQueryChange: ((String) -> Void)?
     var onReplaceTextChange: ((String) -> Void)?
     var onNext: (() -> Void)?
@@ -7084,7 +7115,13 @@ final class FindBarView: NSView, NSTextFieldDelegate {
 
     private func build() {
         wantsLayer = true
-        layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.97).cgColor
+        // The opaque paper fill is gone: a real backdrop-blur view (glassBacking)
+        // now provides the frosted material, topped with a light white tint so the
+        // app content behind the panel is genuinely blurred (design: light glass,
+        // rgba(255,255,255,0.92) + backdrop-filter: blur(14px)). The corner radius,
+        // ring and shadow stay on this layer; masksToBounds is left false so the
+        // shadow renders — the blur is rounded separately via its own maskImage.
+        layer?.backgroundColor = NSColor.clear.cgColor
         layer?.cornerRadius = 10
         layer?.shadowColor = NSColor.black.cgColor
         layer?.shadowOpacity = 0.14
@@ -7092,6 +7129,23 @@ final class FindBarView: NSView, NSTextFieldDelegate {
         layer?.shadowOffset = NSSize(width: 0, height: -4)
         layer?.borderWidth = 1
         layer?.borderColor = DesignTokens.ring.cgColor
+
+        // Within-window light frosted glass: `.popover` is the lightest material
+        // that reads as "浅色玻璃", `.withinWindow` blurs the app content under it.
+        glassBacking.blendingMode = .withinWindow
+        glassBacking.material = .popover
+        glassBacking.state = .active
+        glassBacking.wantsLayer = true
+        glassBacking.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(glassBacking) // inserted first → sits UNDER the content stack
+
+        // Frosted-white tint over the blur for the design's rgba(255,255,255,0.92).
+        glassTint.wantsLayer = true
+        glassTint.layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.92).cgColor
+        glassTint.layer?.cornerRadius = 10
+        glassTint.layer?.masksToBounds = true
+        glassTint.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(glassTint)
 
         _ = iconButton(chevron, "▸", width: 20, height: 28, fontSize: 9, action: #selector(toggleReplaceAction))
 
@@ -7179,11 +7233,42 @@ final class FindBarView: NSView, NSTextFieldDelegate {
         outer.translatesAutoresizingMaskIntoConstraints = false
         addSubview(outer)
         NSLayoutConstraint.activate([
+            // Glass backing + tint fill the whole panel, behind the content.
+            glassBacking.topAnchor.constraint(equalTo: topAnchor),
+            glassBacking.leadingAnchor.constraint(equalTo: leadingAnchor),
+            glassBacking.trailingAnchor.constraint(equalTo: trailingAnchor),
+            glassBacking.bottomAnchor.constraint(equalTo: bottomAnchor),
+            glassTint.topAnchor.constraint(equalTo: topAnchor),
+            glassTint.leadingAnchor.constraint(equalTo: leadingAnchor),
+            glassTint.trailingAnchor.constraint(equalTo: trailingAnchor),
+            glassTint.bottomAnchor.constraint(equalTo: bottomAnchor),
             outer.topAnchor.constraint(equalTo: topAnchor, constant: 6),
             outer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             outer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             outer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
         ])
+    }
+
+    /// Round the backdrop-blur view to the panel's 10pt corner radius via a
+    /// maskImage (NSVisualEffectView ignores layer cornerRadius), so the blur
+    /// respects the rounded corners just like the tint/ring above it.
+    override func layout() {
+        super.layout()
+        glassBacking.maskImage = FindBarView.roundedMask(cornerRadius: 10)
+    }
+
+    /// A resizable rounded-rect mask image: the corners are baked in via
+    /// capInsets so it scales to any panel size without distorting the radius.
+    private static func roundedMask(cornerRadius radius: CGFloat) -> NSImage {
+        let edge = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.set()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
     }
 
     private func pillButton(_ title: String, action: Selector) -> HoverButton {
