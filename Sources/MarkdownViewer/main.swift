@@ -213,12 +213,18 @@ final class RoundedField: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 
-/// Sidebar file/folder row content: leading icon, name, trailing amber dirty dot.
+/// Sidebar file/folder row content: leading folder chevron (▾/▸), icon, name,
+/// trailing amber dirty dot. The chevron replaces NSOutlineView's native
+/// disclosure triangle (which SidebarOutlineView suppresses), matching the
+/// mockup's inline `item.chev` span (template ~line 69).
 final class SidebarCell: NSTableCellView {
     let icon = NSImageView()
     let dirtyDot = NSView()
+    /// Inline folder disclosure glyph (▾ expanded / ▸ collapsed), ~9px.
+    private let chevron = NSTextField(labelWithString: "")
     private var nameLeading: NSLayoutConstraint!
     private var isDirectory = false
+    private var isExpanded = false
     private var rowHovered = false
 
     override init(frame frameRect: NSRect) {
@@ -227,6 +233,11 @@ final class SidebarCell: NSTableCellView {
         label.lineBreakMode = .byTruncatingMiddle
         label.translatesAutoresizingMaskIntoConstraints = false
         textField = label
+
+        chevron.font = NSFont.systemFont(ofSize: 9, weight: .regular)
+        chevron.alignment = .center
+        chevron.isHidden = true
+        chevron.translatesAutoresizingMaskIntoConstraints = false
 
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.imageScaling = .scaleProportionallyDown
@@ -237,13 +248,20 @@ final class SidebarCell: NSTableCellView {
         dirtyDot.translatesAutoresizingMaskIntoConstraints = false
         dirtyDot.isHidden = true
 
+        addSubview(chevron)
         addSubview(icon)
         addSubview(label)
         addSubview(dirtyDot)
 
+        // The icon's leading edge is fixed; the chevron sits in the ~9px slot
+        // just before it (folders only). File rows leave that slot empty so
+        // their icon aligns with sibling folder icons.
         nameLeading = label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 7)
         NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            chevron.trailingAnchor.constraint(equalTo: icon.leadingAnchor, constant: -4),
+            chevron.centerYAnchor.constraint(equalTo: centerYAnchor),
+            chevron.widthAnchor.constraint(equalToConstant: 9),
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 13),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 14),
             icon.heightAnchor.constraint(equalToConstant: 14),
@@ -259,10 +277,13 @@ final class SidebarCell: NSTableCellView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func configure(name: String, isDirectory: Bool, isDirty: Bool) {
+    func configure(name: String, isDirectory: Bool, isExpanded: Bool, isDirty: Bool) {
         self.isDirectory = isDirectory
+        self.isExpanded = isExpanded
         textField?.stringValue = name
         textField?.font = NSFont.systemFont(ofSize: 13, weight: isDirty ? .semibold : .regular)
+        chevron.isHidden = !isDirectory
+        chevron.stringValue = isExpanded ? "▾" : "▸"
         applyTextColor()
         let symbol = isDirectory ? "folder.fill" : "doc.text"
         let tint = isDirectory ? DesignTokens.folderIcon : NSColor(hex: 0xC2C2C8)
@@ -283,11 +304,21 @@ final class SidebarCell: NSTableCellView {
 
     private func applyTextColor() {
         if isDirectory {
-            textField?.textColor = rowHovered ? DesignTokens.secondaryText : DesignTokens.placeholderText
+            // Chevron + folder text both follow placeholder (rest) → secondary (hover).
+            let color = rowHovered ? DesignTokens.secondaryText : DesignTokens.placeholderText
+            textField?.textColor = color
+            chevron.textColor = color
         } else {
             textField?.textColor = DesignTokens.fileRowText
         }
     }
+}
+
+/// NSOutlineView that suppresses the native disclosure triangle so folder rows
+/// can draw their own inline ▾/▸ chevron (see SidebarCell). Returning a zero
+/// frame for the outline cell hides the triangle without reserving its space.
+final class SidebarOutlineView: NSOutlineView {
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect { .zero }
 }
 
 /// A thin drag handle for resizing the sidebar (col-resize), hover = grey line,
@@ -1224,7 +1255,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private let sidebarView = NSView()
     private let directoryLabel = NSTextField(labelWithString: "未选择目录")
     private let filterField = RoundedField(placeholder: "筛选文档")
-    private let outlineView = NSOutlineView()
+    private let outlineView = SidebarOutlineView()
     private let outlineScrollView = NSScrollView()
     private let statusLabel = NSTextField(labelWithString: "就绪")
     private let tabBarView = NSView()
@@ -1525,8 +1556,23 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         }()
 
         let dirty = !node.isDirectory && isFileDirtyInAnyTab(node.url)
-        cell.configure(name: node.name, isDirectory: node.isDirectory, isDirty: dirty)
+        let expanded = node.isDirectory && outlineView.isItemExpanded(node)
+        cell.configure(name: node.name, isDirectory: node.isDirectory, isExpanded: expanded, isDirty: dirty)
         return cell
+    }
+
+    // Refresh the inline ▾/▸ chevron when a folder expands or collapses. Reloading
+    // just the toggled item re-runs configure() with the new expanded state.
+    func outlineViewItemDidExpand(_ notification: Notification) {
+        if let node = notification.userInfo?["NSObject"] as? FileTreeNode {
+            outlineView.reloadItem(node)
+        }
+    }
+
+    func outlineViewItemDidCollapse(_ notification: Notification) {
+        if let node = notification.userInfo?["NSObject"] as? FileTreeNode {
+            outlineView.reloadItem(node)
+        }
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -3187,7 +3233,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             guard let node = outlineView.item(atRow: row) as? FileTreeNode,
                   let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell else { continue }
             let dirty = !node.isDirectory && isFileDirtyInAnyTab(node.url)
-            cell.configure(name: node.name, isDirectory: node.isDirectory, isDirty: dirty)
+            let expanded = node.isDirectory && outlineView.isItemExpanded(node)
+            cell.configure(name: node.name, isDirectory: node.isDirectory, isExpanded: expanded, isDirty: dirty)
         }
     }
 
