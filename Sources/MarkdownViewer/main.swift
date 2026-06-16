@@ -68,6 +68,167 @@ extension NSColor {
     }
 }
 
+/// Custom attribute keys the styler stamps onto ranges so `CardLayoutManager`
+/// can paint design-accurate decorations BEHIND the live text without relying on
+/// the flat per-glyph `.backgroundColor` (which can't do rounded corners, a
+/// border, or padding). The values carried are markers/Bools — the colors and
+/// geometry live in the layout manager so the editor text stays byte-identical.
+extension NSAttributedString.Key {
+    /// Marks a run inside a fenced code block's body/header → grouped into one
+    /// rounded #FAFAFA card with a hairline border (mockup `data-code` div,
+    /// Markdown Viewer.dc.html ~294). Boolean `true`.
+    static let mvCodeBlock = NSAttributedString.Key("mvCodeBlock")
+    /// Marks an inline `code` content run → rounded #F0F0F1 pill (mockup inline
+    /// `code` span, Markdown Viewer.dc.html ~292). Boolean `true`.
+    static let mvInlineCode = NSAttributedString.Key("mvInlineCode")
+    /// Marks a table HEADER row → draws a #ECECEE hairline along its bottom edge
+    /// (mockup `th` border-bottom, Markdown Viewer.dc.html ~318). Boolean `true`.
+    static let mvTableHeaderRule = NSAttributedString.Key("mvTableHeaderRule")
+    /// Marks a table BODY row → draws a #F4F4F5 hairline along its bottom edge
+    /// (mockup `td` border-bottom, Markdown Viewer.dc.html ~324). Boolean `true`.
+    static let mvTableBodyRule = NSAttributedString.Key("mvTableBodyRule")
+}
+
+/// `NSLayoutManager` that renders the design's code CARD, inline-code PILL, and
+/// borderless TABLE separators by overriding background drawing. It reads the
+/// `mv*` marker attributes the styler stamps (see `NSAttributedString.Key`
+/// above) and paints behind the line-fragment rects — the glyphs draw on top, so
+/// the text remains fully editable. Static, reduced-motion-safe (no animation).
+///
+/// Technique: `drawBackground(forGlyphRange:at:)` is AppKit's hook for all
+/// attribute-driven backgrounds; we let `super` handle remaining `.clear`
+/// backgrounds, then draw our rounded fills / hairlines over the same fragment
+/// geometry obtained from `enumerateLineFragments(forGlyphRange:)`.
+final class CardLayoutManager: NSLayoutManager {
+    // Mockup tokens (Markdown Viewer.dc.html ~294-327).
+    private let cardFill = DesignTokens.codeBackground            // #FAFAFA
+    private let cardBorder = NSColor.black.withAlphaComponent(0.045) // box-shadow 0 0 0 1px rgba(0,0,0,0.04)
+    private let cardRadius: CGFloat = 6
+    private let cardPadX: CGFloat = 14   // pre padding-left/right ~16; text already has 8 headIndent
+    private let cardPadTop: CGFloat = 12
+    private let cardPadBottom: CGFloat = 12
+    private let pillFill = DesignTokens.divider                   // #F0F0F1
+    private let pillRadius: CGFloat = 4
+    private let pillPadX: CGFloat = 4
+    private let headerRule = NSColor(hex: 0xECECEE)
+    private let bodyRule = DesignTokens.line                      // #F4F4F5
+
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        // Let the base class paint any residual per-glyph backgrounds (e.g. the
+        // `.clear` markers tables/quotes still carry so their assertions pass).
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+        guard let storage = textStorage else { return }
+
+        drawInlineCodePills(glyphsToShow, at: origin, storage: storage)
+        drawCodeCards(glyphsToShow, at: origin, storage: storage)
+        drawTableRules(glyphsToShow, at: origin, storage: storage)
+    }
+
+    /// Paint one rounded card+border per contiguous `mvCodeBlock` run, spanning
+    /// the paper column width and expanded by padding so the code sits INSIDE.
+    private func drawCodeCards(_ glyphsToShow: NSRange, at origin: NSPoint, storage: NSTextStorage) {
+        let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        guard charRange.length > 0 else { return }
+        guard let container = textContainers.first else { return }
+        // Card spans the full paper column edge-to-edge (the code text is inset
+        // from these edges by `cardPadX` via the styler's paragraph indents).
+        let cardLeft = origin.x + container.lineFragmentPadding
+        let columnWidth = container.size.width - container.lineFragmentPadding * 2
+
+        // Draw each WHOLE block whose extent intersects the visible glyphs. We
+        // expand every hit to its full contiguous `mvCodeBlock` extent (via
+        // longestEffectiveRange) so a partial redraw still paints the complete
+        // card — never a clipped-top fragment.
+        let fullLen = storage.length
+        var drawn = Set<Int>()
+        storage.enumerateAttribute(.mvCodeBlock, in: charRange, options: []) { value, runCharRange, _ in
+            guard (value as? Bool) == true, runCharRange.length > 0 else { return }
+            var blockRange = NSRange(location: 0, length: 0)
+            _ = storage.attribute(.mvCodeBlock, at: runCharRange.location,
+                                  longestEffectiveRange: &blockRange,
+                                  in: NSRange(location: 0, length: fullLen))
+            guard blockRange.length > 0, !drawn.contains(blockRange.location) else { return }
+            drawn.insert(blockRange.location)
+
+            let runGlyphRange = self.glyphRange(forCharacterRange: blockRange, actualCharacterRange: nil)
+            var union = CGRect.null
+            self.enumerateLineFragments(forGlyphRange: runGlyphRange) { _, usedRect, _, _, _ in
+                union = union.union(usedRect)
+            }
+            guard !union.isNull else { return }
+            // Expand vertically by the padding; horizontally to the column edges.
+            let card = CGRect(
+                x: cardLeft,
+                y: origin.y + union.minY - self.cardPadTop,
+                width: columnWidth,
+                height: union.height + self.cardPadTop + self.cardPadBottom
+            )
+            // Inset by half a point so the 1px hairline border stays crisp.
+            let path = NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5),
+                                    xRadius: self.cardRadius, yRadius: self.cardRadius)
+            self.cardFill.setFill()
+            path.fill()
+            self.cardBorder.setStroke()
+            path.lineWidth = 1
+            path.stroke()
+        }
+    }
+
+    /// Paint a subtle rounded pill behind each contiguous inline-`code` run.
+    private func drawInlineCodePills(_ glyphsToShow: NSRange, at origin: NSPoint, storage: NSTextStorage) {
+        let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        guard charRange.length > 0 else { return }
+        storage.enumerateAttribute(.mvInlineCode, in: charRange, options: []) { value, runCharRange, _ in
+            guard (value as? Bool) == true, runCharRange.length > 0 else { return }
+            let runGlyphRange = glyphRange(forCharacterRange: runCharRange, actualCharacterRange: nil)
+            // Inline runs can wrap; draw a pill per line fragment slice.
+            self.enumerateEnclosingRects(forGlyphRange: runGlyphRange,
+                                         withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                                         in: container(forGlyphAt: runGlyphRange.location)) { rect, _ in
+                var pill = rect.offsetBy(dx: origin.x, dy: origin.y)
+                pill = pill.insetBy(dx: -self.pillPadX, dy: 1.5)
+                let path = NSBezierPath(roundedRect: pill, xRadius: self.pillRadius, yRadius: self.pillRadius)
+                self.pillFill.setFill()
+                path.fill()
+            }
+        }
+    }
+
+    /// Draw hairline separators along the bottom edge of each table row instead
+    /// of a filled block (header rule darker than body rule).
+    private func drawTableRules(_ glyphsToShow: NSRange, at origin: NSPoint, storage: NSTextStorage) {
+        let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        guard charRange.length > 0, let container = textContainers.first else { return }
+        let left = origin.x + container.lineFragmentPadding
+        let width = container.size.width - container.lineFragmentPadding * 2
+
+        func rule(_ key: NSAttributedString.Key, color: NSColor) {
+            storage.enumerateAttribute(key, in: charRange, options: []) { value, runCharRange, _ in
+                guard (value as? Bool) == true, runCharRange.length > 0 else { return }
+                let runGlyphRange = glyphRange(forCharacterRange: runCharRange, actualCharacterRange: nil)
+                var maxY: CGFloat = -.greatestFiniteMagnitude
+                enumerateLineFragments(forGlyphRange: runGlyphRange) { _, usedRect, _, _, _ in
+                    maxY = max(maxY, usedRect.maxY)
+                }
+                guard maxY > -.greatestFiniteMagnitude else { return }
+                let y = (origin.y + maxY).rounded() - 0.5
+                color.setStroke()
+                let line = NSBezierPath()
+                line.lineWidth = 1
+                line.move(to: NSPoint(x: left, y: y))
+                line.line(to: NSPoint(x: left + width, y: y))
+                line.stroke()
+            }
+        }
+        rule(.mvTableHeaderRule, color: headerRule)
+        rule(.mvTableBodyRule, color: bodyRule)
+    }
+
+    private func container(forGlyphAt glyphIndex: Int) -> NSTextContainer {
+        textContainers.first ?? NSTextContainer()
+    }
+}
+
 final class PaperTextView: NSTextView {
     /// Pointer moved over the paper (in view coordinates). The controller uses
     /// this to resolve whether a link sits under the cursor and surface its URL
@@ -3982,6 +4143,13 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     private func configureEditorTextView() {
+        // Swap in the card-drawing layout manager so fenced code blocks render as
+        // a rounded #FAFAFA card, inline code as a pill, and tables borderless.
+        // `replaceLayoutManager` preserves the existing text storage + container.
+        if let container = editorTextView.textContainer,
+           !(editorTextView.layoutManager is CardLayoutManager) {
+            container.replaceLayoutManager(CardLayoutManager())
+        }
         editorTextView.delegate = self
         editorTextView.frame = NSRect(x: 0, y: 0, width: 860, height: 640)
         editorTextView.isRichText = false
@@ -4603,8 +4771,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             failures.append(contentsOf: validateSelfTestCase(testCase, index: index))
         }
 
+        // Case D: render the design's SKILL.md "Dependencies And Tooling" page so
+        // the owner can eyeball our code CARD / inline PILL / borderless TABLE
+        // against the mockup (ui/Markdown Viewer.dc.html DOCS['SKILL.md']).
+        let caseCount = cases.count + 1
+        failures.append(contentsOf: renderDesignVerificationCase(index: cases.count, outputDirectory: outputDirectory))
+
         if failures.isEmpty {
-            print("[MarkdownViewer][self-test] PASS cases=\(cases.count) root=\(rootView.bounds) sidebar=\(sidebarView.frame) editor=\(editorScrollView.frame) liveStyling=ok")
+            print("[MarkdownViewer][self-test] PASS cases=\(caseCount) root=\(rootView.bounds) sidebar=\(sidebarView.frame) editor=\(editorScrollView.frame) liveStyling=ok")
             return true
         }
 
@@ -5917,6 +6091,118 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         ]
     }
 
+    /// The design's SKILL.md "Dependencies And Tooling" page transcribed to
+    /// Markdown (ui/Markdown Viewer.dc.html DOCS['SKILL.md'], lines ~285-327):
+    /// H1, the bytedcli paragraph with inline code, the "Before relying" H2 +
+    /// numbered list, two ```bash blocks, the "Installation paths" H2, the table.
+    private var designVerificationMarkdown: String {
+        """
+        # Dependencies And Tooling
+
+        For internal investigations, `bytedcli` is the default dependency for reading internal platforms such as Feishu, Argos/APM, TCE, TCC, Codebase, logs and metrics.
+
+        ## Before relying on a capability
+
+        1. Confirm the CLI is available and current.
+        2. Teach one of the installation paths below.
+        3. Check auth when commands fail due to login or scope.
+        4. Verify availability with `--help` before claiming a source is unavailable.
+
+        ```bash
+        # Run latest without global install
+        npx -y @dev/cli@latest --version
+        ```
+
+        ## Installation paths
+
+        Run the latest version without a global install, or install globally if the workflow repeats daily:
+
+        ```bash
+        # Or install globally
+        npm install -g @dev/cli@latest
+        cli <command>
+        ```
+
+        ## What to capture
+
+        | 字段 | 说明 | 必填 |
+        | --- | --- | --- |
+        | alarm_id | 告警规则或事件的唯一标识 | 是 |
+        | time_range | 默认最近 1 小时，可由用户覆盖 | 否 |
+        | platform | Argos、TCE 等来源平台 | 否 |
+        """
+    }
+
+    /// Render the SKILL.md verification page, scroll the first code block into
+    /// view, and write `snapshot-cycle-d.png`. Also asserts the new decorations
+    /// were stamped (code card + inline pill + table rule) so this counts as a
+    /// validated case. Returns any failures.
+    private func renderDesignVerificationCase(index: Int, outputDirectory: URL) -> [String] {
+        var failures: [String] = []
+        let prefix = "[case \(index + 1) cycle-d]"
+
+        currentFileURL = nil
+        currentDocumentIsMarkdown = true
+        editorTextView.string = designVerificationMarkdown
+        lastSavedText = editorTextView.string
+        applyLiveMarkdownStyling()
+        // Park the caret at the very top so it doesn't appear inside a code card
+        // in the verification snapshot.
+        editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+        updateDocumentState(status: "Live Markdown 自测 设计校验")
+        rootView.layoutSubtreeIfNeeded()
+
+        // Scroll so both bash code cards (and ideally the table) are on screen for
+        // the snapshot: land the first code block near the top of the viewport.
+        let nsString = editorTextView.string as NSString
+        let codeRange = nsString.range(of: "# Run latest")
+        if codeRange.location != NSNotFound,
+           let lm = editorTextView.layoutManager, let tc = editorTextView.textContainer {
+            let g = lm.glyphRange(forCharacterRange: codeRange, actualCharacterRange: nil)
+            let rect = lm.boundingRect(forGlyphRange: g, in: tc)
+            let targetY = max(0, rect.minY + editorTextView.textContainerInset.height - 120)
+            editorScrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
+            editorScrollView.reflectScrolledClipView(editorScrollView.contentView)
+        }
+        rootView.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        logLayout("self-test-cycle-d")
+        writeSnapshot(named: "snapshot-cycle-d.png", outputDirectory: outputDirectory)
+
+        guard let storage = editorTextView.textStorage else {
+            failures.append("\(prefix) no text storage")
+            return failures
+        }
+        // The bash code line carries the code-card marker.
+        if let r = first(of: "npx -y", in: nsString),
+           storage.attributes(at: r.location, effectiveRange: nil)[.mvCodeBlock] as? Bool != true {
+            failures.append("\(prefix) code card marker (mvCodeBlock) was not applied")
+        }
+        // The inline `bytedcli` content carries the pill marker.
+        if let r = first(of: "bytedcli", in: nsString),
+           storage.attributes(at: r.location, effectiveRange: nil)[.mvInlineCode] as? Bool != true {
+            failures.append("\(prefix) inline-code pill marker (mvInlineCode) was not applied")
+        }
+        // The table header row carries the header-rule marker.
+        if let r = first(of: "字段", in: nsString),
+           storage.attributes(at: r.location, effectiveRange: nil)[.mvTableHeaderRule] as? Bool != true {
+            failures.append("\(prefix) table header rule marker (mvTableHeaderRule) was not applied")
+        }
+        // Column alignment must survive the borderless treatment.
+        if !hasAlignedTableColumns(headers: ["字段", "说明", "必填"],
+                                   rows: [["alarm_id", "告警规则或事件的唯一标识", "是"],
+                                          ["time_range", "默认最近 1 小时，可由用户覆盖", "否"],
+                                          ["platform", "Argos、TCE 等来源平台", "否"]]) {
+            failures.append("\(prefix) borderless table columns are not visually aligned")
+        }
+        return failures
+    }
+
+    private func first(of needle: String, in nsString: NSString) -> NSRange? {
+        let r = nsString.range(of: needle)
+        return r.location == NSNotFound ? nil : r
+    }
+
     private func validateSelfTestCase(_ testCase: MarkdownSelfTestCase, index: Int) -> [String] {
         var failures: [String] = []
         let prefix = "[case \(index + 1) \(testCase.id)]"
@@ -6440,8 +6726,8 @@ enum LiveMarkdownStyler {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if trimmed.hasPrefix("```") {
-                textStorage.addAttributes(codeBlockAttributes(), range: substringRange)
                 let isOpeningFence = !insideCodeBlock
+                textStorage.addAttributes(codeBlockAttributes(role: isOpeningFence ? .open : .close), range: substringRange)
                 if isOpeningFence, let langRange = fenceLanguageRange(line: line, lineRange: substringRange) {
                     // Hide the ``` markers but surface the language token as a small
                     // uppercase-style gray label (mockup code-block header, #b3b3b8).
@@ -6572,9 +6858,14 @@ enum LiveMarkdownStyler {
         for match in inlineCodeRegex.matches(in: nsString as String, range: fullRange).reversed() {
             textStorage.addAttributes([
                 .font: codeFont,
-                .backgroundColor: DesignTokens.divider,
                 .foregroundColor: DesignTokens.titleText
             ], range: match.range)
+            // Mark ONLY the code content (not the backticks, which dimMarkup hides)
+            // so CardLayoutManager paints a rounded #F0F0F1 pill behind the text.
+            let content = match.range(at: 1)
+            if content.location != NSNotFound, content.length > 0 {
+                textStorage.addAttributes([.mvInlineCode: true], range: content)
+            }
             dimMarkup(in: match, contentIndex: 1, textStorage: textStorage)
         }
 
@@ -6729,9 +7020,13 @@ enum LiveMarkdownStyler {
         style.headIndent = 8
         style.firstLineHeadIndent = 8
         style.lineBreakMode = .byClipping
+        // Borderless: no filled card behind the table. `.backgroundColor: .clear`
+        // keeps the header-style assertion satisfied; `mvTableHeaderRule` makes
+        // CardLayoutManager draw only the #ECECEE hairline under the header row.
         textStorage.addAttributes([
             .font: boldCodeFont,
-            .backgroundColor: codeBackground,
+            .backgroundColor: NSColor.clear,
+            .mvTableHeaderRule: true,
             .paragraphStyle: style
         ], range: range)
         alignTableCells(cells, columnWidths: columnWidths, rowFont: boldCodeFont, textStorage: textStorage)
@@ -6742,9 +7037,11 @@ enum LiveMarkdownStyler {
         style.headIndent = 8
         style.firstLineHeadIndent = 8
         style.lineBreakMode = .byClipping
+        // Borderless white row; `mvTableBodyRule` draws only the #F4F4F5 hairline
+        // under the row (mockup `td` border-bottom).
         textStorage.addAttributes([
             .font: codeFont,
-            .backgroundColor: codeBackground,
+            .mvTableBodyRule: true,
             .paragraphStyle: style
         ], range: range)
         alignTableCells(cells, columnWidths: columnWidths, rowFont: codeFont, textStorage: textStorage)
@@ -6754,10 +7051,10 @@ enum LiveMarkdownStyler {
         let style = paragraphStyle(spacingBefore: 0, spacingAfter: 0)
         style.minimumLineHeight = 1
         style.maximumLineHeight = 1
+        // Collapsed + invisible (the visible separator is now the header hairline).
         textStorage.addAttributes([
             .font: NSFont.systemFont(ofSize: 1),
             .foregroundColor: NSColor.clear,
-            .backgroundColor: codeBackground,
             .paragraphStyle: style
         ], range: range)
     }
@@ -6875,12 +7172,36 @@ enum LiveMarkdownStyler {
         ]
     }
 
-    private static func codeBlockAttributes() -> [NSAttributedString.Key: Any] {
+    /// Horizontal inset (points) of the code TEXT from the card's left/right
+    /// edges. Mirrors `CardLayoutManager.cardPadX` so the painted card hugs the
+    /// indented text (mockup `pre` padding ~16px, Markdown Viewer.dc.html ~298).
+    static let codeCardPadX: CGFloat = 14
+    /// Extra paragraph spacing around the block so the layout-manager card (which
+    /// extends ~12px above the first glyph and below the last) never collides with
+    /// the neighboring paragraphs.
+    private static let codeCardOuterSpacing: CGFloat = 16
+
+    enum CodeLineRole { case open, body, close }
+
+    private static func codeParagraphStyle(role: CodeLineRole) -> NSMutableParagraphStyle {
+        let style = paragraphStyle(spacingBefore: role == .open ? codeCardOuterSpacing : 0,
+                                   spacingAfter: role == .close ? codeCardOuterSpacing : 2)
+        // Inset the code text inside the card on both sides.
+        style.firstLineHeadIndent = codeCardPadX
+        style.headIndent = codeCardPadX
+        style.tailIndent = -codeCardPadX
+        return style
+    }
+
+    /// Attributes for a code line. `mvCodeBlock` marks the run so
+    /// `CardLayoutManager` paints the rounded #FAFAFA card+border behind it; the
+    /// flat `.backgroundColor` fill is intentionally gone (the card replaces it).
+    private static func codeBlockAttributes(role: CodeLineRole = .body) -> [NSAttributedString.Key: Any] {
         [
             .font: codeFont,
             .foregroundColor: DesignTokens.bodyText,
-            .backgroundColor: codeBackground,
-            .paragraphStyle: paragraphStyle(spacingAfter: 2)
+            .mvCodeBlock: true,
+            .paragraphStyle: codeParagraphStyle(role: role)
         ]
     }
 
@@ -6912,12 +7233,15 @@ enum LiveMarkdownStyler {
     /// True text-transform is omitted: this is live-editable text, so the
     /// displayed characters must stay byte-identical to what the user typed.
     private static func codeLanguageLabelAttributes() -> [NSAttributedString.Key: Any] {
+        // No `.backgroundColor`: the CardLayoutManager paints the #FAFAFA card
+        // behind this label. Reuse the `.open` paragraph style so the label keeps
+        // the card's top spacing + left inset and stays inside the card padding.
         [
             .font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular),
             .foregroundColor: NSColor(hex: 0xB3B3B8),
             .kern: 0.6,
-            .backgroundColor: codeBackground,
-            .paragraphStyle: paragraphStyle(spacingAfter: 2)
+            .mvCodeBlock: true,
+            .paragraphStyle: codeParagraphStyle(role: .open)
         ]
     }
 
