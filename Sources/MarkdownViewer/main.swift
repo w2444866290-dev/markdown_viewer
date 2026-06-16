@@ -43,6 +43,20 @@ enum DesignTokens {
     static let bodyFontSizes: [CGFloat] = [14, 15.5, 17]
 }
 
+/// Accessibility: honor the system "Reduce motion" setting (System Settings >
+/// Accessibility > Display). When true, all UI animations collapse to an
+/// instant (~0s) transition so nothing slides/fades. When false, behavior is
+/// identical to the un-instrumented animations.
+var prefersReducedMotion: Bool {
+    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+}
+
+/// Scale an animation duration through the reduced-motion setting: returns 0
+/// when motion should be reduced, otherwise the original duration.
+func motionDuration(_ duration: TimeInterval) -> TimeInterval {
+    prefersReducedMotion ? 0 : duration
+}
+
 extension NSColor {
     convenience init(hex: Int, alpha: CGFloat = 1) {
         self.init(
@@ -90,24 +104,35 @@ final class SidebarRowView: NSTableRowView {
     override func mouseEntered(with event: NSEvent) {
         mouseInside = true
         needsDisplay = true
+        forwardHover(true)
     }
 
     override func mouseExited(with event: NSEvent) {
         mouseInside = false
         needsDisplay = true
+        forwardHover(false)
+    }
+
+    /// Tell the row's SidebarCell about hover so folder text can brighten.
+    private func forwardHover(_ hovered: Bool) {
+        for column in 0..<max(1, numberOfColumns) {
+            if let cell = view(atColumn: column) as? SidebarCell {
+                cell.setRowHovered(hovered)
+            }
+        }
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
         DesignTokens.selected.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6).fill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
     }
 
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
         if !isSelected && mouseInside {
             DesignTokens.sidebarHover.setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
         }
     }
 }
@@ -119,6 +144,9 @@ class HoverButton: NSButton {
     var restBackground: NSColor = .clear
     var hoverTint: NSColor?
     var restTint: NSColor?
+    /// Optional hook for callers that render their own subviews (e.g. a chip +
+    /// label) and need to react to hover beyond `contentTintColor`.
+    var onHoverChange: ((Bool) -> Void)?
     private var inside = false
 
     override func updateTrackingAreas() {
@@ -132,8 +160,18 @@ class HoverButton: NSButton {
     }
 
     private func refresh() {
-        layer?.backgroundColor = (inside ? hoverBackground : restBackground).cgColor
+        // Reduced motion: suppress the implicit CALayer fade on the hover
+        // background so the change is instant.
+        if prefersReducedMotion {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer?.backgroundColor = (inside ? hoverBackground : restBackground).cgColor
+            CATransaction.commit()
+        } else {
+            layer?.backgroundColor = (inside ? hoverBackground : restBackground).cgColor
+        }
         if let tint = inside ? hoverTint : restTint { contentTintColor = tint }
+        onHoverChange?(inside)
     }
 
     override func mouseEntered(with event: NSEvent) { inside = true; refresh() }
@@ -180,6 +218,8 @@ final class SidebarCell: NSTableCellView {
     let icon = NSImageView()
     let dirtyDot = NSView()
     private var nameLeading: NSLayoutConstraint!
+    private var isDirectory = false
+    private var rowHovered = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -220,9 +260,10 @@ final class SidebarCell: NSTableCellView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func configure(name: String, isDirectory: Bool, isDirty: Bool) {
+        self.isDirectory = isDirectory
         textField?.stringValue = name
         textField?.font = NSFont.systemFont(ofSize: 13, weight: isDirty ? .semibold : .regular)
-        textField?.textColor = isDirectory ? DesignTokens.placeholderText : DesignTokens.fileRowText
+        applyTextColor()
         let symbol = isDirectory ? "folder.fill" : "doc.text"
         let tint = isDirectory ? DesignTokens.folderIcon : NSColor(hex: 0xC2C2C8)
         let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
@@ -230,6 +271,22 @@ final class SidebarCell: NSTableCellView {
             .withSymbolConfiguration(config)
         icon.contentTintColor = tint
         dirtyDot.isHidden = !isDirty
+    }
+
+    /// Row-level hover state, forwarded by SidebarRowView. Folder rows brighten
+    /// their (otherwise dim) text on hover; file rows keep a static color.
+    func setRowHovered(_ hovered: Bool) {
+        guard rowHovered != hovered else { return }
+        rowHovered = hovered
+        applyTextColor()
+    }
+
+    private func applyTextColor() {
+        if isDirectory {
+            textField?.textColor = rowHovered ? DesignTokens.secondaryText : DesignTokens.placeholderText
+        } else {
+            textField?.textColor = DesignTokens.fileRowText
+        }
     }
 }
 
@@ -1173,6 +1230,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private let tabBarView = NSView()
     private var newTabButton: HoverButton?
     private let commandButton = HoverButton(title: "", target: nil, action: nil)
+    /// The "全部命令" label inside the sidebar footer chip button; recolored on hover.
+    private let commandFooterLabel = NSTextField(labelWithString: "全部命令")
     private let editorContainer = NSView()
     private let editorScrollView = NSScrollView()
     private let editorTextView = PaperTextView(frame: .zero)
@@ -1391,8 +1450,31 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         paletteOverlay = backdrop
         backdrop.alphaValue = 0
-        NSAnimationContext.runAnimationGroup { $0.duration = 0.12; backdrop.animator().alphaValue = 1 }
+        NSAnimationContext.runAnimationGroup { $0.duration = motionDuration(0.12); backdrop.animator().alphaValue = 1 }
+        playPaletteCardIn(paletteView)
         DispatchQueue.main.async { [weak self] in paletteView.focusSearch(in: self?.window) }
+    }
+
+    /// Slide the ⌘K palette card in: alpha 0 -> 1 plus a 4px downward slide over
+    /// 0.12s ease, mirroring the find-bar `overlayIn`. Flat material — no blur.
+    /// Honors reduced motion (snaps in with no animation when enabled).
+    private func playPaletteCardIn(_ card: NSView) {
+        if prefersReducedMotion { return }
+        card.wantsLayer = true
+        guard let layer = card.layer else { return }
+        // Start 4px above the resting position and slide down into place. The card
+        // view is non-flipped, so a positive translation.y starts it higher.
+        let slide = CABasicAnimation(keyPath: "transform.translation.y")
+        slide.fromValue = card.isFlipped ? -4 : 4
+        slide.toValue = 0
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        let group = CAAnimationGroup()
+        group.animations = [slide, fade]
+        group.duration = 0.12
+        group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(group, forKey: "paletteCardIn")
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
@@ -1654,10 +1736,16 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     private func fadeStatusForScroll() {
+        // Reduced motion: keep the status line steady (no fade-out / fade-in).
+        if prefersReducedMotion {
+            statusFadeWork?.cancel()
+            statusLabel.alphaValue = 1
+            return
+        }
         statusFadeWork?.cancel()
         statusLabel.alphaValue = 0
         let work = DispatchWorkItem { [weak self] in
-            NSAnimationContext.runAnimationGroup { $0.duration = 0.3; self?.statusLabel.animator().alphaValue = 1 }
+            NSAnimationContext.runAnimationGroup { $0.duration = motionDuration(0.3); self?.statusLabel.animator().alphaValue = 1 }
         }
         statusFadeWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
@@ -1734,6 +1822,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     private func washHeading(_ range: NSRange) {
+        // Reduced motion: skip the transient amber wash flash (the jump/scroll
+        // still happens, just without the animated highlight).
+        if prefersReducedMotion { return }
         guard let lm = editorTextView.layoutManager else { return }
         lm.addTemporaryAttributes([.backgroundColor: DesignTokens.accent.withAlphaComponent(0.30)], forCharacterRange: range)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
@@ -1754,11 +1845,24 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         return Int((ratio * 100).rounded())
     }
 
+    /// Formats integer counts with grouping separators, e.g. 10485 -> "10,485".
+    private static let countFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.groupingSeparator = ","
+        f.usesGroupingSeparator = true
+        return f
+    }()
+
+    private func grouped(_ value: Int) -> String {
+        MarkdownWindowController.countFormatter.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
     private func refreshStatus() {
         let text = editorTextView.string
         let chars = text.count
         let lines = text.isEmpty ? 0 : text.components(separatedBy: .newlines).count
-        statusLabel.stringValue = "\(chars) 字 · \(lines) 行 · \(scrollProgressPercent())%"
+        statusLabel.stringValue = "\(grouped(chars)) 字 · \(grouped(lines)) 行 · \(scrollProgressPercent())%"
     }
 
     // MARK: - Toast
@@ -1770,7 +1874,15 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let pill = NSView()
         pill.wantsLayer = true
         pill.layer?.backgroundColor = NSColor(hex: 0x1C1C1E, alpha: 0.9).cgColor
-        pill.layer?.cornerRadius = 14
+        // True capsule: corner radius = pill height / 2 (height ≈ 7+18+7 = 32).
+        pill.layer?.cornerRadius = 16
+        // Drop shadow: 0 8px 24px rgba(0,0,0,0.2). AppKit's y axis points up, so a
+        // downward offset is negative y.
+        pill.layer?.masksToBounds = false
+        pill.layer?.shadowColor = NSColor.black.cgColor
+        pill.layer?.shadowOpacity = 0.2
+        pill.layer?.shadowRadius = 12          // blur 24 ≈ 2 × shadowRadius
+        pill.layer?.shadowOffset = CGSize(width: 0, height: -8)
         pill.translatesAutoresizingMaskIntoConstraints = false
         let label = NSTextField(labelWithString: "✓ \(message)")
         label.font = NSFont.systemFont(ofSize: 12)
@@ -1788,10 +1900,10 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         ])
         toastView = pill
         pill.alphaValue = 0
-        NSAnimationContext.runAnimationGroup { $0.duration = 0.12; pill.animator().alphaValue = 1 }
+        NSAnimationContext.runAnimationGroup { $0.duration = motionDuration(0.12); pill.animator().alphaValue = 1 }
         let work = DispatchWorkItem { [weak self] in
             NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.2
+                ctx.duration = motionDuration(0.2)
                 pill.animator().alphaValue = 0
             }, completionHandler: { pill.removeFromSuperview() })
             if self?.toastView === pill { self?.toastView = nil }
@@ -2118,20 +2230,57 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         outlineScrollView.translatesAutoresizingMaskIntoConstraints = false
         outlineScrollView.automaticallyAdjustsContentInsets = false
 
-        commandButton.title = "⌘K    全部命令"
+        // Footer command entry: a small rounded "⌘K" chip followed by the
+        // "全部命令" label (mockup line 85). The clickable HoverButton hosts both as
+        // subviews; the chip is static while the label tracks rest/hover color.
+        commandButton.title = ""
         commandButton.target = self
         commandButton.action = #selector(showCommandPalette(_:))
         commandButton.bezelStyle = .regularSquare
         commandButton.isBordered = false
-        commandButton.alignment = .left
-        commandButton.font = NSFont.systemFont(ofSize: 11.5)
-        commandButton.contentTintColor = NSColor(hex: 0x9A9A9E)
-        commandButton.restTint = NSColor(hex: 0x9A9A9E)
-        commandButton.hoverTint = DesignTokens.secondaryText
         commandButton.wantsLayer = true
         commandButton.layer?.cornerRadius = 6
         commandButton.toolTip = "所有命令与文档 · ⌘K"
         commandButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let kbdChip = NSView()
+        kbdChip.wantsLayer = true
+        kbdChip.layer?.backgroundColor = DesignTokens.hover.cgColor   // rgba(0,0,0,0.05)
+        kbdChip.layer?.cornerRadius = 6
+        kbdChip.translatesAutoresizingMaskIntoConstraints = false
+        kbdChip.setContentHuggingPriority(.required, for: .horizontal)
+        kbdChip.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let kbdText = NSTextField(labelWithString: "⌘K")
+        kbdText.font = NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        kbdText.textColor = DesignTokens.secondaryText
+        kbdText.translatesAutoresizingMaskIntoConstraints = false
+        kbdChip.addSubview(kbdText)
+        NSLayoutConstraint.activate([
+            // chip padding 2px 6px.
+            kbdText.leadingAnchor.constraint(equalTo: kbdChip.leadingAnchor, constant: 6),
+            kbdText.trailingAnchor.constraint(equalTo: kbdChip.trailingAnchor, constant: -6),
+            kbdText.topAnchor.constraint(equalTo: kbdChip.topAnchor, constant: 2),
+            kbdText.bottomAnchor.constraint(equalTo: kbdChip.bottomAnchor, constant: -2)
+        ])
+
+        let restFooterTint = NSColor(hex: 0x9A9A9E)
+        commandFooterLabel.font = NSFont.systemFont(ofSize: 11.5)
+        commandFooterLabel.textColor = restFooterTint
+        commandFooterLabel.translatesAutoresizingMaskIntoConstraints = false
+        commandButton.onHoverChange = { [weak self] inside in
+            self?.commandFooterLabel.textColor = inside ? DesignTokens.secondaryText : restFooterTint
+        }
+
+        commandButton.addSubview(kbdChip)
+        commandButton.addSubview(commandFooterLabel)
+        NSLayoutConstraint.activate([
+            // padding 0 16px on the container, gap 7px, chip padding 2px 6px.
+            kbdChip.leadingAnchor.constraint(equalTo: commandButton.leadingAnchor, constant: 16),
+            kbdChip.centerYAnchor.constraint(equalTo: commandButton.centerYAnchor),
+            commandFooterLabel.leadingAnchor.constraint(equalTo: kbdChip.trailingAnchor, constant: 7),
+            commandFooterLabel.centerYAnchor.constraint(equalTo: commandButton.centerYAnchor),
+            commandFooterLabel.trailingAnchor.constraint(lessThanOrEqualTo: commandButton.trailingAnchor, constant: -12)
+        ])
 
         sidebarView.addSubview(filterField)
         sidebarView.addSubview(outlineScrollView)
@@ -2673,10 +2822,13 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         applyFileFilter()
         updateDocumentState(status: "找到 \(countEditableTextFiles(in: fileTreeRoots)) 个可编辑文本文件")
 
-        // Only auto-open the first file when no document is open yet, so opening
-        // a directory doesn't spam a new tab when the user is already editing.
-        let hasOpenDoc = !tabs.isEmpty && (tabs.count != 1 || tabs[0].url != nil || tabs[0].isDirty)
-        if !hasOpenDoc, let first = firstEditableTextFile(in: fileTreeRoots) {
+        // Auto-open the directory's first editable file unless there is real,
+        // user-meaningful work already open. A fresh/un-edited untitled scratch
+        // (no URL, not dirty — e.g. the launch placeholder) must NOT block the
+        // auto-open; only a file-backed doc or an untitled doc with actual typed
+        // content (dirty) is treated as a real open doc to preserve.
+        let hasRealOpenDoc = tabs.contains { $0.url != nil || dirtyState(of: $0) }
+        if !hasRealOpenDoc, let first = firstEditableTextFile(in: fileTreeRoots) {
             openOrSwitchToFile(first.url)
         }
     }
@@ -3118,9 +3270,36 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         fputs(lines.joined(separator: "\n") + "\n", stderr)
     }
 
+    /// Force the document model back to a single empty untitled scratch tab so
+    /// the self-test starts from the documented precondition (no restored
+    /// file-backed tabs from a previous run's persisted session).
+    private func resetToEmptyScratchForSelfTest() {
+        clearCloseConfirmation()
+        tabs.removeAll()
+        activeTabIndex = nil
+        currentFileURL = nil
+        currentDocumentIsMarkdown = true
+        let scratch = DocumentTab(
+            url: nil,
+            untitledId: nextUntitledId(),
+            isMarkdown: true,
+            text: "",
+            savedText: ""
+        )
+        appendTab(scratch, status: "self-test reset")
+    }
+
     private func performSelfTest(outputDirectory: URL) -> Bool {
         window.setContentSize(NSSize(width: 1180, height: 760))
         rootView.layoutSubtreeIfNeeded()
+
+        // The harness must run against the documented precondition: a single
+        // fresh, empty untitled scratch (no file-backed tabs). A prior self-test
+        // run persists its opened tabs to UserDefaults, which restoreTabSession
+        // would resurrect here and pollute the directory auto-open assertion.
+        // Reset to one empty scratch so the test is deterministic regardless of
+        // any persisted session — this only affects the self-test harness.
+        resetToEmptyScratchForSelfTest()
 
         do {
             try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
@@ -4347,6 +4526,8 @@ final class FindBarView: NSView, NSTextFieldDelegate {
     /// Purely visual (layer transform + opacity), so it never affects layout.
     private func playOverlayIn() {
         guard let layer = layer else { return }
+        // Reduced motion: snap in with no slide/fade animation.
+        if prefersReducedMotion { return }
         // Start 4px above the resting position and slide down into place.
         let slide = CABasicAnimation(keyPath: "transform.translation.y")
         slide.fromValue = isFlipped ? -4 : 4
@@ -4688,7 +4869,9 @@ private final class RailRow: NSView {
         let targetTickAlpha: CGFloat = value ? 0 : 1
         let targetLabelAlpha: CGFloat = value ? 1 : 0
 
-        guard animated else {
+        // Reduced motion: snap to the target state (no height melt, cross-fade,
+        // or per-row stagger).
+        guard animated && !prefersReducedMotion else {
             heightConstraint.constant = targetHeight
             tick.alphaValue = targetTickAlpha
             label.alphaValue = targetLabelAlpha
@@ -4787,8 +4970,10 @@ final class OutlineRailView: NSView {
 
     private func setExpanded(_ value: Bool, animated: Bool) {
         expanded = value
-        rows.forEach { $0.setExpanded(value, animated: animated) }
-        if animated {
+        // Reduced motion: snap the rail width with no animation.
+        let shouldAnimate = animated && !prefersReducedMotion
+        rows.forEach { $0.setExpanded(value, animated: shouldAnimate) }
+        if shouldAnimate {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.2
                 widthConstraint.animator().constant = value ? expandedWidth : collapsedWidth
