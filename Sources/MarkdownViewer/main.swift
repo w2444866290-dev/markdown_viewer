@@ -321,6 +321,28 @@ final class SidebarOutlineView: NSOutlineView {
     override func frameOfOutlineCell(atRow row: Int) -> NSRect { .zero }
 }
 
+/// View that lets mouse events fall through to whatever is behind it, used for
+/// non-interactive overlays (the rail coach pill) so it never steals the hover
+/// that should reach the outline rail.
+final class PassthroughView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// A small left-pointing solid triangle (the coach pill's tail). Color matches
+/// the dark toast surface (mockup line ~202).
+final class TriangleArrowView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath()
+        // Apex on the right (points toward the rail); base on the left.
+        path.move(to: NSPoint(x: 0, y: bounds.maxY))
+        path.line(to: NSPoint(x: 0, y: bounds.minY))
+        path.line(to: NSPoint(x: bounds.maxX, y: bounds.midY))
+        path.close()
+        NSColor(hex: 0x1C1C1E, alpha: 0.92).setFill()
+        path.fill()
+    }
+}
+
 /// A thin drag handle for resizing the sidebar (col-resize), hover = grey line,
 /// drag = blue line, matching the design's RESIZE component.
 final class ResizeHandleView: NSView {
@@ -1311,6 +1333,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private var toastWork: DispatchWorkItem?
     private var fontIndex = 1
 
+    /// First-run outline-rail coach tip ("本页目录 · 悬停展开"). Shown once ever,
+    /// persisted via UserDefaults `mdviewer.railCoach`; dismissed on hover or
+    /// after a few seconds.
+    private var railCoachPill: NSView?
+    private var railCoachWork: [DispatchWorkItem] = []
+    private var railCoachShownThisSession = false
+    private static let railCoachDefaultsKey = "mdviewer.railCoach"
+
     private var outlineEntries: [OutlineEntry] = []
     private var findMatches: [NSTextCheckingResult] = []
     private var findIndex = 0
@@ -1707,6 +1737,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             rail.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -40)
         ])
         rail.onJump = { [weak self] index in self?.jumpToHeading(index) }
+        // Hovering the rail counts as "discovered": dismiss the coach tip early.
+        rail.onReveal = { [weak self] in self?.markRailSeen() }
         rail.isHidden = true
         outlineRail = rail
 
@@ -1878,6 +1910,121 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
             if let bar = self.findBar, !bar.isHidden { self.applyFindHighlights() }
         }
+    }
+
+    // MARK: - Outline rail discovery (coach tip + pulse)
+
+    /// Called when a document becomes active (open/switch). If it has an outline,
+    /// briefly pulse the rail ticks and — the first time ever — show the coach pill.
+    /// Mirrors the mockup's `maybeHintRail` (template lines ~199–204).
+    private func onDocumentActivatedForRail() {
+        guard !outlineEntries.isEmpty, let rail = outlineRail, !rail.isHidden else { return }
+
+        // RAIL PULSE: fires on every doc open/switch that has an outline. The
+        // OutlineRailView no-ops the animation under reduced motion.
+        rail.pulseTicks()
+
+        // FIRST-RUN COACH: show once ever. Skipping when reduced motion is on
+        // satisfies "skip the coach" per the reduced-motion requirement.
+        guard !prefersReducedMotion else { return }
+        guard !railCoachShownThisSession,
+              !UserDefaults.standard.bool(forKey: Self.railCoachDefaultsKey) else { return }
+        railCoachShownThisSession = true
+        UserDefaults.standard.set(true, forKey: Self.railCoachDefaultsKey)
+
+        // Brief delay so the pill arrives just after the pulse draws attention.
+        let show = DispatchWorkItem { [weak self] in self?.showRailCoachPill() }
+        railCoachWork.append(show)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: show)
+        // Auto-dismiss after a few seconds.
+        let hide = DispatchWorkItem { [weak self] in self?.dismissRailCoach() }
+        railCoachWork.append(hide)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0, execute: hide)
+    }
+
+    /// Dark light-blur pill anchored to the right edge, vertically centered, with
+    /// a small left-pointing tail toward the rail (mockup line ~201–202).
+    private func showRailCoachPill() {
+        guard railCoachPill == nil else { return }
+        let host = editorContainer
+
+        // Passthrough so hover/clicks reach the rail underneath.
+        let group = PassthroughView()
+        group.translatesAutoresizingMaskIntoConstraints = false
+
+        // Dark toast material pill (allowed: this is the dark-toast surface).
+        let pill = NSVisualEffectView()
+        pill.material = .hudWindow
+        pill.blendingMode = .withinWindow
+        pill.state = .active
+        pill.wantsLayer = true
+        pill.layer?.cornerRadius = 8
+        pill.layer?.masksToBounds = true
+        pill.translatesAutoresizingMaskIntoConstraints = false
+
+        let bg = NSView()
+        bg.wantsLayer = true
+        bg.layer?.backgroundColor = NSColor(hex: 0x1C1C1E, alpha: 0.92).cgColor
+        bg.translatesAutoresizingMaskIntoConstraints = false
+        pill.addSubview(bg)
+
+        let label = NSTextField(labelWithString: "本页目录 · 悬停展开")
+        label.font = NSFont.systemFont(ofSize: 12)
+        label.textColor = .white
+        label.translatesAutoresizingMaskIntoConstraints = false
+        pill.addSubview(label)
+
+        // Left-pointing tail toward the rail.
+        let tail = TriangleArrowView()
+        tail.translatesAutoresizingMaskIntoConstraints = false
+
+        group.addSubview(pill)
+        group.addSubview(tail)
+        host.addSubview(group)
+
+        NSLayoutConstraint.activate([
+            bg.leadingAnchor.constraint(equalTo: pill.leadingAnchor),
+            bg.trailingAnchor.constraint(equalTo: pill.trailingAnchor),
+            bg.topAnchor.constraint(equalTo: pill.topAnchor),
+            bg.bottomAnchor.constraint(equalTo: pill.bottomAnchor),
+            label.topAnchor.constraint(equalTo: pill.topAnchor, constant: 7),
+            label.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -7),
+            label.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 12),
+            label.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -12),
+            // tail to the right of the pill, pointing at the rail.
+            tail.leadingAnchor.constraint(equalTo: pill.trailingAnchor),
+            tail.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
+            tail.widthAnchor.constraint(equalToConstant: 6),
+            tail.heightAnchor.constraint(equalToConstant: 10),
+            pill.leadingAnchor.constraint(equalTo: group.leadingAnchor),
+            pill.topAnchor.constraint(equalTo: group.topAnchor),
+            pill.bottomAnchor.constraint(equalTo: group.bottomAnchor),
+            tail.trailingAnchor.constraint(equalTo: group.trailingAnchor),
+            // Near the rail: rail collapsed width is 84, so ~46px from the edge.
+            group.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -46),
+            group.centerYAnchor.constraint(equalTo: host.centerYAnchor)
+        ])
+        railCoachPill = group
+
+        group.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { $0.duration = motionDuration(0.2); group.animator().alphaValue = 1 }
+    }
+
+    /// Marks the rail as discovered (hover) and dismisses any coach tip early.
+    private func markRailSeen() {
+        UserDefaults.standard.set(true, forKey: Self.railCoachDefaultsKey)
+        dismissRailCoach()
+    }
+
+    private func dismissRailCoach() {
+        railCoachWork.forEach { $0.cancel() }
+        railCoachWork.removeAll()
+        guard let pill = railCoachPill else { return }
+        railCoachPill = nil
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = motionDuration(0.2)
+            pill.animator().alphaValue = 0
+        }, completionHandler: { pill.removeFromSuperview() })
     }
 
     // MARK: - Status
@@ -2544,6 +2691,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         updateDocumentState(status: status)
         if currentFileURL != nil { selectCurrentFileInOutline() } else { outlineView.deselectAll(nil) }
 
+        // A doc switch dismisses any lingering coach pill from the previous doc.
+        dismissRailCoach()
+
         // Restore scroll after layout settles.
         let targetY = tab.scrollY
         DispatchQueue.main.async { [weak self] in
@@ -2553,6 +2703,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             clip.scroll(to: NSPoint(x: 0, y: min(targetY, maxY)))
             self.editorScrollView.reflectScrolledClipView(clip)
             self.updateActiveHeading()
+            // Pulse the rail (and on first run show the coach) now that the
+            // outline + rail layout have settled for the newly-active document.
+            self.onDocumentActivatedForRail()
         }
     }
 
@@ -4960,6 +5113,56 @@ private final class RailRow: NSView {
         label.textColor = active ? DesignTokens.accent : DesignTokens.tertiaryText
         label.font = NSFont.systemFont(ofSize: level == 1 ? 13 : 12, weight: active ? .semibold : .regular)
     }
+
+    // Rail-discovery flash (mockup `railHint`, keyframes ~line 39): a brief amber
+    // tick flash + slight horizontal scale, ~0.44s, staggered per row (84ms).
+    private static let pulseDuration: CFTimeInterval = 0.44
+    private static let pulseStagger: CFTimeInterval = 0.084
+    private static let pulseEase = CAMediaTimingFunction(controlPoints: 0.85, 0, 0.15, 1)
+
+    func pulse() {
+        // Honored by the caller (OutlineRailView no-ops under reduced motion), but
+        // guard here too so the tick never animates when motion is reduced.
+        guard !prefersReducedMotion, !expanded, let layer = tick.layer else { return }
+        let peak: CGFloat = level == 1 ? 2.05 : 1.7
+        let delay = Double(index) * RailRow.pulseStagger
+
+        // Anchor at the trailing (right) edge so the tick stretches leftward like
+        // the mockup's right-anchored ticks (transform-origin: right center).
+        let oldAnchor = layer.anchorPoint
+        let oldPos = layer.position
+        layer.anchorPoint = CGPoint(x: 1, y: 0.5)
+        layer.position = CGPoint(x: oldPos.x + layer.bounds.width * (1 - oldAnchor.x), y: oldPos.y)
+
+        let scale = CAKeyframeAnimation(keyPath: "transform.scale.x")
+        scale.values = [1, peak, peak, 1]
+        scale.keyTimes = [0, 0.16, 0.54, 1]
+        scale.duration = RailRow.pulseDuration
+        scale.beginTime = CACurrentMediaTime() + delay
+        scale.timingFunction = RailRow.pulseEase
+        scale.fillMode = .backwards
+
+        let amber = DesignTokens.accent.cgColor
+        let rest = (active ? DesignTokens.accent : DesignTokens.tickRest).cgColor
+        let color = CAKeyframeAnimation(keyPath: "backgroundColor")
+        color.values = [rest as Any, amber as Any, amber as Any, rest as Any]
+        color.keyTimes = [0, 0.16, 0.54, 1]
+        color.duration = RailRow.pulseDuration
+        color.beginTime = CACurrentMediaTime() + delay
+        color.timingFunction = RailRow.pulseEase
+        color.fillMode = .backwards
+
+        layer.add(scale, forKey: "railPulseScale")
+        layer.add(color, forKey: "railPulseColor")
+
+        // Restore the anchor after the longest-delayed run finishes so layout/
+        // hover transforms behave normally afterwards.
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay + RailRow.pulseDuration + 0.02) { [weak self] in
+            guard let self, let layer = self.tick.layer else { return }
+            layer.anchorPoint = oldAnchor
+            layer.position = oldPos
+        }
+    }
 }
 
 final class OutlineRailView: NSView {
@@ -5013,6 +5216,14 @@ final class OutlineRailView: NSView {
 
     func setActive(_ index: Int) {
         for (i, row) in rows.enumerated() { row.setActive(i == index) }
+    }
+
+    /// Brief rail-discovery flash across all ticks (mockup `railHint`). No-op
+    /// when collapsed-state is not applicable, when there are no rows, or under
+    /// reduced motion.
+    func pulseTicks() {
+        guard !prefersReducedMotion, !expanded, !rows.isEmpty else { return }
+        rows.forEach { $0.pulse() }
     }
 
     private func setExpanded(_ value: Bool, animated: Bool) {
