@@ -579,6 +579,17 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         return filteredCommands[selectedIndex - filteredDocs.count].id
     }
 
+    /// The absolute selected row index (docs + commands) for assertions.
+    var selectedIndexForTesting: Int { selectedIndex }
+
+    /// Total visible rows (docs + commands) for assertions.
+    var rowCountForTesting: Int { totalCount }
+
+    /// Drive the SAME hover-to-select path a real pointer-enter on a row fires
+    /// (the row button's `onHoverChange` calls `selectRowOnHover`). This routes
+    /// through the production code rather than poking `selectedIndex` directly.
+    func selectRowOnHoverForTesting(_ rowIndex: Int) { selectRowOnHover(rowIndex) }
+
     private func build() {
         wantsLayer = true
         layer?.backgroundColor = DesignTokens.paper.cgColor
@@ -1392,6 +1403,23 @@ final class TooltipController: NSResponder {
         trackingAreas[id] = area
     }
 
+    // MARK: - UI-interaction-test driving
+    //
+    // The delayed dark-pill cannot be reliably rendered headless (it appears
+    // ~480ms after the pointer rests, via a DispatchQueue work item keyed off a
+    // live mouseEntered tracking area there is no synthetic mouse rest for). So
+    // the ui-test asserts REGISTRATION instead of a pixel: each chrome button is
+    // opted into this controller and has its native `.toolTip` cleared (so the
+    // two affordances never both fire). These hooks expose that contract.
+
+    /// Count of chrome elements registered for the custom tooltip.
+    var registeredCountForTesting: Int { texts.count }
+
+    /// Whether `view` is registered with this controller (has custom-tip text).
+    func isRegisteredForTesting(_ view: NSView) -> Bool {
+        texts[ObjectIdentifier(view)] != nil
+    }
+
     override func mouseEntered(with event: NSEvent) {
         guard let area = event.trackingArea,
               let view = viewForTrackingArea(area),
@@ -2016,6 +2044,62 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         if selectedRow >= 0 { outlineView.scrollRowToVisible(selectedRow) }
     }
 
+    // MARK: - Sidebar-filter UI-interaction-test driving
+    //
+    // Mirror the real key paths: typing fires `controlTextDidChange`; ↑/↓/Enter
+    // fire `control(_:textView:doCommandBy:)` with the SAME selectors a real key
+    // event in the filter field delivers (the controller is that field's delegate).
+
+    /// Set the sidebar filter text and run the exact `controlTextDidChange`
+    /// delegate path a keystroke triggers (resets kb index, re-applies filter).
+    func setSidebarFilterForTesting(_ text: String) {
+        filterField.textField.stringValue = text
+        // Build a notification whose object IS the filter field, so the real
+        // `controlTextDidChange` runs against the live control.
+        let note = Notification(name: NSControl.textDidChangeNotification, object: filterField.textField)
+        controlTextDidChange(note)
+    }
+
+    /// Drive ↑/↓/Enter through the SAME `control(_:textView:doCommandBy:)` path a
+    /// real key event in the filter field delivers (control === filterField.textField).
+    @discardableResult
+    func sendSidebarFilterCommandForTesting(_ selector: Selector) -> Bool {
+        let dummy = NSTextView()
+        return control(filterField.textField, textView: dummy, doCommandBy: selector)
+    }
+
+    /// The current keyboard-selected sidebar row index for assertions.
+    var sidebarKbIndexForTesting: Int { sidebarKbIndex }
+
+    /// The filtered, top-to-bottom visible file nodes (the kb-nav universe).
+    var sidebarVisibleFileNodesForTesting: [FileTreeNode] { sidebarVisibleFileNodes() }
+
+    // MARK: - Custom-tooltip UI-interaction-test driving
+    //
+    // The delayed dark-pill cannot be rendered headless (no synthetic mouse rest),
+    // so we assert the REGISTRATION contract instead: chrome buttons are opted
+    // into the TooltipController and their native `.toolTip` is cleared.
+
+    /// Count of chrome elements registered with the custom TooltipController.
+    var tooltipRegisteredCountForTesting: Int { tooltipController?.registeredCountForTesting ?? 0 }
+
+    /// The chrome buttons that should carry a custom tooltip: the ⌘K footer button
+    /// plus the four tab-bar ghost buttons (sidebar toggle, new, find, open). They
+    /// are local vars in buildTabBar() and some are reparented (＋ moves into the
+    /// tab strip), so we recover them by walking the whole live chrome view tree
+    /// and keeping every NSButton the controller has registered. Returns
+    /// (registered-with-controller, native-toolTip-is-nil) for each found button.
+    func tooltipChromeButtonContractForTesting() -> [(registered: Bool, nativeTipCleared: Bool)] {
+        guard let controller = tooltipController else { return [] }
+        var buttons: [NSView] = []
+        func walk(_ view: NSView) {
+            if view is NSButton, controller.isRegisteredForTesting(view) { buttons.append(view) }
+            view.subviews.forEach(walk)
+        }
+        walk(rootView)
+        return buttons.map { (controller.isRegisteredForTesting($0), $0.toolTip == nil) }
+    }
+
     func textDidChange(_ notification: Notification) {
         applyCurrentDocumentStyling()
         updateDocumentState(status: "正在编辑")
@@ -2323,6 +2407,26 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         // Track common modes so the easing runs during scroll/menu tracking too.
         RunLoop.main.add(timer, forMode: .common)
     }
+
+    // MARK: - Outline-jump UI-interaction-test driving
+
+    /// Number of outline headings in the active document, for assertions.
+    var outlineEntryCountForTesting: Int { outlineEntries.count }
+
+    /// Compute the SAME clamped scroll target `jumpToHeading` eases toward, so the
+    /// ui-test can assert the final landing lands exactly on the target heading
+    /// (not merely "scrolled"). Returns nil if the index/rect can't be resolved.
+    func jumpTargetForTesting(_ index: Int) -> CGFloat? {
+        guard outlineEntries.indices.contains(index),
+              let rect = headingLineRect(outlineEntries[index].charIndex) else { return nil }
+        let docHeight = editorTextView.frame.height
+        let viewHeight = editorScrollView.contentView.bounds.height
+        return max(0, min(rect.minY - 40, max(0, docHeight - viewHeight)))
+    }
+
+    /// True while a jump-scroll easing timer is still in flight (so the ui-test
+    /// can pump the runloop until the ~0.3s ease settles).
+    var isJumpEasingForTesting: Bool { jumpScrollTimer != nil }
 
     private func washHeading(_ range: NSRange) {
         // Reduced motion: skip the transient amber wash flash (the jump/scroll
@@ -2851,6 +2955,43 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         if findBar?.isHidden == false { closeFind() }
         // showCommandPalette toggles; only open when not already showing.
         if paletteOverlay == nil { showCommandPalette(self) }
+    }
+
+    /// Drive the double-tap-Shift sequence through the REAL `handleFlagsChanged`
+    /// path (the exact method the local `flagsMonitor` closure calls). The system
+    /// `NSEvent.addLocalMonitorForEvents` monitor cannot be fed a synthetic event,
+    /// so we synthesize the two `.flagsChanged` press-down edges (with an
+    /// intervening Shift-release so `shiftIsDown` toggles false→true→false→true,
+    /// matching what a real key-up/key-down produces) and feed them to the same
+    /// handler. Timestamps are < 350ms apart so the second press triggers the
+    /// palette. Returns false only if AppKit refuses to build the events.
+    @discardableResult
+    func simulateDoubleShiftForTesting() -> Bool {
+        // Reset the pending-press window so this is a clean double-tap.
+        lastShiftPressTime = 0
+        shiftIsDown = false
+        let base = ProcessInfo.processInfo.systemUptime
+        func flagsEvent(shift: Bool, at t: TimeInterval) -> NSEvent? {
+            NSEvent.keyEvent(
+                with: .flagsChanged,
+                location: .zero,
+                modifierFlags: shift ? .shift : [],
+                timestamp: t,
+                windowNumber: window.windowNumber,
+                context: nil,
+                characters: "",
+                charactersIgnoringModifiers: "",
+                isARepeat: false,
+                keyCode: 56 // left Shift
+            )
+        }
+        guard let press1 = flagsEvent(shift: true, at: base),
+              let release1 = flagsEvent(shift: false, at: base + 0.05),
+              let press2 = flagsEvent(shift: true, at: base + 0.10) else { return false }
+        handleFlagsChanged(press1)   // first Shift press-down → arms lastShiftPressTime
+        handleFlagsChanged(release1) // Shift release → shiftIsDown back to false
+        handleFlagsChanged(press2)   // second press-down within 350ms → opens palette
+        return true
     }
 
     private func setSidebarWidth(_ raw: CGFloat) {
@@ -4630,6 +4771,246 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             return f
         }
 
+        // Steps 11–16 drive the recently-added behaviors. Step 9 closed every tab,
+        // so reload the fixture directory (the real loadDirectory path) to restore
+        // an active markdown document with a 3-heading outline + rail.
+        loadDirectory(fixtureRoot)
+        settleLayout()
+
+        // STEP 11 (A) — Double-tap Shift opens the ⌘K command palette.
+        // Mechanism: simulateDoubleShiftForTesting() synthesizes two pure-Shift
+        // `.flagsChanged` press-down edges (<350ms apart, with an intervening
+        // Shift-release so shiftIsDown toggles) and feeds them to the SAME
+        // handleFlagsChanged the local flagsMonitor closure calls — the production
+        // double-Shift path. (The system addLocalMonitorForEvents monitor itself
+        // cannot be driven with a synthetic event, so we call its handler directly,
+        // as the prompt's fallback allows.)
+        step("double-shift-opens-palette") {
+            var f: [String] = []
+            // Ensure no palette is open first.
+            if paletteOverlay != nil {
+                currentPaletteViewForTesting?.cancel()
+                settleLayout()
+            }
+            if paletteOverlay != nil {
+                f.append("palette should be closed before the double-Shift test")
+            }
+            if !simulateDoubleShiftForTesting() {
+                f.append("could not synthesize the .flagsChanged events for double-Shift")
+            }
+            settleLayout()
+            if paletteOverlay == nil || currentPaletteViewForTesting == nil {
+                f.append("double-tap Shift should open the command palette")
+            }
+            return f
+        }
+        // Leave the palette OPEN for step 12's hover test (screenshot already taken).
+
+        // STEP 12 (C) — Palette hover-to-select changes selectedIndex.
+        // Mechanism: selectRowOnHoverForTesting(index) drives the SAME
+        // selectRowOnHover the row button's onHoverChange closure fires on a real
+        // pointer-enter. We pick a row != current selection and assert the model
+        // moved to it.
+        step("palette-hover-to-select") {
+            var f: [String] = []
+            guard let palette = currentPaletteViewForTesting else {
+                f.append("palette not open for hover test (step 11 should have opened it)")
+                return f
+            }
+            // Clear any filter so all docs+commands are visible (>=2 rows).
+            palette.setQueryForTesting("")
+            settleLayout()
+            let total = palette.rowCountForTesting
+            if total < 2 {
+                f.append("expected >=2 palette rows for a meaningful hover test, got \(total)")
+                return f
+            }
+            let before = palette.selectedIndexForTesting
+            // Hover a different row (the last one, guaranteed != selection at index 0).
+            let hoverTarget = total - 1
+            palette.selectRowOnHoverForTesting(hoverTarget)
+            settleLayout()
+            if palette.selectedIndexForTesting != hoverTarget {
+                f.append("hover should move palette selectedIndex to \(hoverTarget) (was \(before)), got \(palette.selectedIndexForTesting)")
+            }
+            return f
+        }
+        // Close the palette before the remaining steps.
+        currentPaletteViewForTesting?.cancel()
+        settleLayout()
+        if paletteOverlay != nil {
+            failures.append("[ui-test][post-step 12] palette did not close after hover test")
+        }
+
+        // STEP 13 (B) — Sidebar filter ↑/↓/Enter navigation opens a file.
+        // Mechanism: setSidebarFilterForTesting drives the real controlTextDidChange;
+        // moveDown:/insertNewline: go through control(_:textView:doCommandBy:) — the
+        // SAME selectors a real key event in the filter field delivers (the
+        // controller is that field's delegate). We filter to ".md" so both alpha.md
+        // and beta.md match (>=2 files), move the kb-selection down one, then Enter.
+        step("sidebar-filter-arrow-nav") {
+            var f: [String] = []
+            // Make beta.md the active doc first, so Enter on a DIFFERENT row proves
+            // the active document actually changed.
+            openOrSwitchToFile(secondURL)
+            settleLayout()
+            let activeBefore = currentFileURL
+            // Filter to "md" → matches both markdown files (alpha.md, beta.md).
+            setSidebarFilterForTesting("md")
+            settleLayout()
+            let visible = sidebarVisibleFileNodesForTesting
+            if visible.count < 2 {
+                f.append("filter 'md' should match >=2 files, got \(visible.count): \(visible.map { $0.url.lastPathComponent })")
+                setSidebarFilterForTesting("")
+                return f
+            }
+            // After typing, kb index resets to 0 (mockup parity).
+            if sidebarKbIndexForTesting != 0 {
+                f.append("kb index should reset to 0 after filtering, got \(sidebarKbIndexForTesting)")
+            }
+            // ↓ moves the kb selection to index 1.
+            if !sendSidebarFilterCommandForTesting(#selector(NSResponder.moveDown(_:))) {
+                f.append("moveDown: was not handled by the filter field delegate")
+            }
+            settleLayout()
+            if sidebarKbIndexForTesting != 1 {
+                f.append("moveDown should advance kb index to 1, got \(sidebarKbIndexForTesting)")
+            }
+            let expectedURL = visible[1].url
+            // Enter opens the kb-selected file.
+            if !sendSidebarFilterCommandForTesting(#selector(NSResponder.insertNewline(_:))) {
+                f.append("insertNewline: was not handled by the filter field delegate")
+            }
+            settleLayout()
+            if !sameFileURL(currentFileURL, expectedURL) {
+                f.append("Enter should open the kb-selected file \(expectedURL.lastPathComponent), active=\(currentFileURL?.lastPathComponent ?? "nil")")
+            }
+            if sameFileURL(currentFileURL, activeBefore) && !sameFileURL(activeBefore, expectedURL) {
+                f.append("active document did not change after Enter (still \(activeBefore?.lastPathComponent ?? "nil"))")
+            }
+            // Clear the filter so later steps see the full tree.
+            setSidebarFilterForTesting("")
+            settleLayout()
+            return f
+        }
+
+        // STEP 14 (D) — Rail per-row hover: exactly one row reports hovered.
+        // Mechanism: rail.mouseEntered (real expand) then a SPECIFIC row's real
+        // mouseEntered(with:) via simulateRowHoverForTesting (which flips that row's
+        // hover + fires onHover, clearing the others). Assert that row is hovered
+        // and the others are not.
+        step("rail-per-row-hover") {
+            var f: [String] = []
+            // Ensure alpha.md (3 headings) is active so the rail has >=3 rows.
+            openOrSwitchToFile(firstURL)
+            settleLayout()
+            guard let rail = outlineRail, !rail.isHidden else {
+                f.append("outline rail not visible for a markdown doc with headings")
+                return f
+            }
+            if rail.rowCountForTesting < 3 {
+                f.append("expected >=3 outline rows for the per-row hover test, got \(rail.rowCountForTesting)")
+                return f
+            }
+            // Expand the rail (per-row hover only registers while expanded).
+            if let enter = syntheticMouseEvent() { rail.mouseEntered(with: enter) }
+            settleLayout()
+            if !rail.isExpandedForTesting {
+                f.append("rail should be expanded before per-row hover")
+            }
+            // Hover row 1 (the middle heading) via its REAL mouseEntered handler.
+            let hoverRow = 1
+            if let enter = syntheticMouseEvent() {
+                rail.simulateRowHoverForTesting(hoverRow, event: enter)
+            } else {
+                f.append("could not synthesize a mouse event for the row hover")
+            }
+            settleLayout()
+            if !rail.isRowHoveredForTesting(hoverRow) {
+                f.append("row \(hoverRow) should report hovered after mouseEntered")
+            }
+            // Every OTHER row must NOT be hovered (onHover clears the rest).
+            for i in 0..<rail.rowCountForTesting where i != hoverRow {
+                if rail.isRowHoveredForTesting(i) {
+                    f.append("row \(i) should NOT be hovered while row \(hoverRow) is")
+                }
+            }
+            return f
+        }
+
+        // STEP 15 (E) — Outline jump easing lands EXACTLY on the target heading.
+        // Mechanism: real onClick→onJump via simulateRowClickForTesting, then pump
+        // the runloop past the ~0.3s ease and assert the final clip offset equals
+        // the production target (jumpTargetForTesting mirrors the same clamp math).
+        // Distinct from step 6 (which only asserts "scrolled down"): this asserts
+        // the exact landing after easing.
+        step("jump-easing-lands-on-target") {
+            var f: [String] = []
+            guard let rail = outlineRail, !rail.isHidden, rail.rowCountForTesting >= 3 else {
+                f.append("outline rail with >=3 rows required for the jump-easing test")
+                return f
+            }
+            if outlineEntryCountForTesting < 3 {
+                f.append("expected >=3 outline entries, got \(outlineEntryCountForTesting)")
+                return f
+            }
+            // First scroll to the top so the jump to a mid/late heading is a real,
+            // measurable downward ease.
+            let clip = editorScrollView.contentView
+            clip.scroll(to: NSPoint(x: 0, y: 0))
+            editorScrollView.reflectScrolledClipView(clip)
+            settleLayout()
+            // Jump to the LAST heading (largest, clearest target).
+            let targetIndex = outlineEntryCountForTesting - 1
+            guard let expectedTarget = jumpTargetForTesting(targetIndex) else {
+                f.append("could not compute jump target for index \(targetIndex)")
+                return f
+            }
+            rail.simulateRowClickForTesting(targetIndex)
+            // Pump the runloop until the easing timer finishes (~0.3s), bounded.
+            var guardSpins = 0
+            while isJumpEasingForTesting && guardSpins < 40 {
+                guardSpins += 1
+                RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+            }
+            settleLayout()
+            if isJumpEasingForTesting {
+                f.append("jump easing did not finish within the pumped window")
+            }
+            let landed = editorScrollView.contentView.bounds.origin.y
+            if abs(landed - expectedTarget) > 2 {
+                f.append("jump should land on target heading offset \(expectedTarget) after easing, landed at \(landed)")
+            }
+            return f
+        }
+
+        // STEP 16 (F) — Custom tooltip REGISTRATION contract (documented as a
+        // registration-level check, not a pixel check). The delayed dark pill can't
+        // be rendered headless (it needs a ~480ms real pointer rest on a live
+        // tracking area), so we assert that the chrome buttons are registered with
+        // the TooltipController AND have their native `.toolTip` cleared (so the two
+        // affordances never both fire). Expect >=5 registered chrome elements.
+        step("tooltip-registration-contract") {
+            var f: [String] = []
+            let count = tooltipRegisteredCountForTesting
+            if count < 5 {
+                f.append("expected >=5 chrome elements registered with the TooltipController, got \(count)")
+            }
+            let contract = tooltipChromeButtonContractForTesting()
+            if contract.count < 5 {
+                f.append("expected to locate >=5 registered chrome buttons (⌘K + sidebar/new/find/open), found \(contract.count)")
+            }
+            for (i, entry) in contract.enumerated() {
+                if !entry.registered {
+                    f.append("chrome button #\(i) is not registered with the TooltipController")
+                }
+                if !entry.nativeTipCleared {
+                    f.append("chrome button #\(i) still has a native .toolTip set (should be cleared so the two tooltips never both fire)")
+                }
+            }
+            return f
+        }
+
         if failures.isEmpty {
             print("[MarkdownViewer][ui-test] PASS steps=\(stepCount)")
             return true
@@ -6394,6 +6775,16 @@ private final class RailRow: NSView {
 
     @objc private func clicked() { onClick?(index) }
 
+    // MARK: - UI-interaction-test driving
+
+    /// Observable per-row hover state (drives the scaled label + recolor) for
+    /// assertions.
+    var isHoveredForTesting: Bool { hovered }
+
+    /// Whether this row is currently expanded (labels visible) — `mouseEntered`
+    /// only registers a hover while expanded, mirroring the mockup.
+    var isExpandedForTesting: Bool { expanded }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach { removeTrackingArea($0) }
@@ -6701,6 +7092,20 @@ final class OutlineRailView: NSView {
     func simulateRowClickForTesting(_ index: Int) {
         guard rows.indices.contains(index) else { return }
         onJump?(index)
+    }
+
+    /// Drive a specific row's REAL `mouseEntered(with:)` handler (the same method
+    /// a pointer-enter on that row invokes). It flips the row's hover state and
+    /// fires `onHover`, which clears every other row — exactly the production
+    /// hover path. The event payload is ignored by the handler.
+    func simulateRowHoverForTesting(_ index: Int, event: NSEvent) {
+        guard rows.indices.contains(index) else { return }
+        rows[index].mouseEntered(with: event)
+    }
+
+    /// Whether the row at `index` currently reports a hover (scaled/recolored).
+    func isRowHoveredForTesting(_ index: Int) -> Bool {
+        rows.indices.contains(index) ? rows[index].isHoveredForTesting : false
     }
 }
 
