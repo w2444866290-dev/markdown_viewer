@@ -676,11 +676,12 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
 
         if !filteredDocs.isEmpty { addFullWidth(sectionHeader("文档")) }
         for (i, doc) in filteredDocs.enumerated() {
-            addFullWidth(docRow(doc, isSelected: i == selectedIndex))
+            addFullWidth(docRow(doc, rowIndex: i, isSelected: i == selectedIndex))
         }
         if !filteredCommands.isEmpty { addFullWidth(sectionHeader("命令")) }
         for (i, cmd) in filteredCommands.enumerated() {
-            addFullWidth(commandRow(cmd, isSelected: filteredDocs.count + i == selectedIndex))
+            let rowIndex = filteredDocs.count + i
+            addFullWidth(commandRow(cmd, rowIndex: rowIndex, isSelected: rowIndex == selectedIndex))
         }
 
         stack.layoutSubtreeIfNeeded()
@@ -694,20 +695,37 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         stack.addArrangedSubview(view)
     }
 
-    private func rowButton(isSelected: Bool, action: Selector) -> NSButton {
-        let button = NSButton(title: "", target: self, action: action)
+    // Mockup parity (html 1214/1223): hovering a palette row sets the selection
+    // to that row's absolute index (so the row under the cursor is the
+    // highlighted/selectable one) and re-renders, mirroring `onHover` setting
+    // `palSel`. HoverButton gives an instant highlight; renderRows() then
+    // rebuilds so the keyboard-selection model stays consistent with hover.
+    private func rowButton(rowIndex: Int, isSelected: Bool, action: Selector) -> NSButton {
+        let button = HoverButton(title: "", target: self, action: action)
         button.isBordered = false
         button.bezelStyle = .regularSquare
         button.wantsLayer = true
         button.layer?.cornerRadius = 6
+        button.restBackground = isSelected ? DesignTokens.hover : .clear
+        button.hoverBackground = DesignTokens.hover
         button.layer?.backgroundColor = isSelected ? DesignTokens.hover.cgColor : NSColor.clear.cgColor
+        button.onHoverChange = { [weak self] inside in
+            guard inside, let self else { return }
+            self.selectRowOnHover(rowIndex)
+        }
         button.translatesAutoresizingMaskIntoConstraints = false
         button.heightAnchor.constraint(equalToConstant: 36).isActive = true
         return button
     }
 
-    private func docRow(_ doc: PaletteDoc, isSelected: Bool) -> NSButton {
-        let button = rowButton(isSelected: isSelected, action: #selector(runDocButton(_:)))
+    private func selectRowOnHover(_ rowIndex: Int) {
+        guard rowIndex >= 0, rowIndex < totalCount, rowIndex != selectedIndex else { return }
+        selectedIndex = rowIndex
+        renderRows()
+    }
+
+    private func docRow(_ doc: PaletteDoc, rowIndex: Int, isSelected: Bool) -> NSButton {
+        let button = rowButton(rowIndex: rowIndex, isSelected: isSelected, action: #selector(runDocButton(_:)))
         button.identifier = NSUserInterfaceItemIdentifier("doc:\(doc.key)")
 
         let icon = NSImageView()
@@ -747,8 +765,8 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         return button
     }
 
-    private func commandRow(_ command: PaletteCommand, isSelected: Bool) -> NSButton {
-        let button = rowButton(isSelected: isSelected, action: #selector(runCommandButton(_:)))
+    private func commandRow(_ command: PaletteCommand, rowIndex: Int, isSelected: Bool) -> NSButton {
+        let button = rowButton(rowIndex: rowIndex, isSelected: isSelected, action: #selector(runCommandButton(_:)))
         button.identifier = NSUserInterfaceItemIdentifier(command.id)
 
         let titleLabel = NSTextField(labelWithString: command.title)
