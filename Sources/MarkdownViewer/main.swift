@@ -1375,6 +1375,13 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private var railCoachShownThisSession = false
     private static let railCoachDefaultsKey = "mdviewer.railCoach"
 
+    /// Active outline-jump scroll easing timer (mockup `jump` rAF loop). Held so a
+    /// new jump cancels an in-flight one.
+    private var jumpScrollTimer: Timer?
+    /// Active wash-fade timers keyed by nothing — held in a set so we can cancel
+    /// all on teardown. Mirrors the mockup's `washHeading` 900ms fade.
+    private var washTimers: [Timer] = []
+
     private var outlineEntries: [OutlineEntry] = []
     private var findMatches: [NSTextCheckingResult] = []
     private var findIndex = 0
@@ -1921,7 +1928,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private func updateActiveHeading() {
         guard !outlineEntries.isEmpty else { return }
         let scrollTop = editorScrollView.contentView.bounds.origin.y
-        let threshold = scrollTop + 80
+        // Mockup `syncScroll` uses `scrollTop + 140` (ui/Markdown Viewer.dc.html
+        // line 662) to decide the active heading.
+        let threshold = scrollTop + 140
         var active = 0
         for (i, entry) in outlineEntries.enumerated() {
             guard let rect = headingLineRect(entry.charIndex) else { continue }
@@ -1935,12 +1944,55 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let docHeight = editorTextView.frame.height
         let viewHeight = editorScrollView.contentView.bounds.height
         let target = max(0, min(rect.minY - 40, max(0, docHeight - viewHeight)))
-        editorScrollView.contentView.scroll(to: NSPoint(x: 0, y: target))
-        editorScrollView.reflectScrolledClipView(editorScrollView.contentView)
         let lineRange = (editorTextView.string as NSString).lineRange(for: NSRange(location: outlineEntries[index].charIndex, length: 0))
-        washHeading(lineRange)
-        refreshStatus()
-        updateActiveHeading()
+
+        // Cancel any in-flight jump easing (mockup `cancelAnimationFrame(this._jumpRaf)`).
+        jumpScrollTimer?.invalidate()
+        jumpScrollTimer = nil
+
+        let clip = editorScrollView.contentView
+        let start = clip.bounds.origin.y
+        let dist = target - start
+
+        // Reduced motion (or no movement): land instantly + wash now. Mockup
+        // `jump`: when dist === 0 it washes immediately.
+        guard !prefersReducedMotion, abs(dist) > 0.5 else {
+            clip.scroll(to: NSPoint(x: 0, y: target))
+            editorScrollView.reflectScrolledClipView(clip)
+            refreshStatus()
+            updateActiveHeading()
+            washHeading(lineRange)
+            return
+        }
+
+        // Animate the clip-view scroll over ~300ms ease-out (cubic), mirroring the
+        // mockup `jump` rAF loop (ui/Markdown Viewer.dc.html lines 741–760):
+        //   ease = 1 - (1 - t)^3, scrollTop = start + dist * ease, then washHeading.
+        let duration: CFTimeInterval = 0.3
+        let begin = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            let t = min(1, (CACurrentMediaTime() - begin) / duration)
+            let ease = 1 - pow(1 - t, 3)
+            let y = start + dist * ease
+            let clip = self.editorScrollView.contentView
+            clip.scroll(to: NSPoint(x: 0, y: y))
+            self.editorScrollView.reflectScrolledClipView(clip)
+            self.updateActiveHeading()
+            if t >= 1 {
+                timer.invalidate()
+                self.jumpScrollTimer = nil
+                // Snap exactly to target, then wash.
+                clip.scroll(to: NSPoint(x: 0, y: target))
+                self.editorScrollView.reflectScrolledClipView(clip)
+                self.refreshStatus()
+                self.updateActiveHeading()
+                self.washHeading(lineRange)
+            }
+        }
+        jumpScrollTimer = timer
+        // Track common modes so the easing runs during scroll/menu tracking too.
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func washHeading(_ range: NSRange) {
@@ -1948,12 +2000,34 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         // still happens, just without the animated highlight).
         if prefersReducedMotion { return }
         guard let lm = editorTextView.layoutManager else { return }
-        lm.addTemporaryAttributes([.backgroundColor: DesignTokens.accent.withAlphaComponent(0.30)], forCharacterRange: range)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
-            guard let self, let lm = self.editorTextView.layoutManager else { return }
-            lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
-            if let bar = self.findBar, !bar.isHidden { self.applyFindHighlights() }
+
+        // Fade the amber background 0.30 → 0 over 900ms ease-out, mirroring the
+        // mockup `washHeading` (ui/Markdown Viewer.dc.html lines 730–738):
+        //   [{ bg: rgba(232,163,61,0.30) } → { bg: rgba(232,163,61,0) }], 900ms ease-out.
+        let duration: CFTimeInterval = 0.9
+        let peak: CGFloat = 0.30
+        let begin = CACurrentMediaTime()
+        // Paint the initial peak immediately so the first frame shows full amber.
+        lm.addTemporaryAttributes([.backgroundColor: DesignTokens.accent.withAlphaComponent(peak)],
+                                  forCharacterRange: range)
+
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            guard let self, let lm = self.editorTextView.layoutManager else { timer.invalidate(); return }
+            let t = min(1, (CACurrentMediaTime() - begin) / duration)
+            let ease = 1 - pow(1 - t, 3) // ease-out cubic
+            let alpha = peak * (1 - ease)
+            if t >= 1 || alpha <= 0.001 {
+                timer.invalidate()
+                self.washTimers.removeAll { $0 === timer }
+                lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+                if let bar = self.findBar, !bar.isHidden { self.applyFindHighlights() }
+            } else {
+                lm.addTemporaryAttributes([.backgroundColor: DesignTokens.accent.withAlphaComponent(alpha)],
+                                          forCharacterRange: range)
+            }
         }
+        washTimers.append(timer)
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     // MARK: - Outline rail discovery (coach tip + pulse)
@@ -2724,6 +2798,13 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
     /// Load `tab` into the shared editor and restore its scroll position.
     private func loadTabIntoEditor(_ tab: DocumentTab, status: String?) {
+        // Cancel any in-flight outline-jump easing / wash fade tied to the
+        // outgoing document's text + scroll offset.
+        jumpScrollTimer?.invalidate()
+        jumpScrollTimer = nil
+        washTimers.forEach { $0.invalidate() }
+        washTimers.removeAll()
+
         isSwitchingTab = true
         currentFileURL = tab.url
         currentDocumentIsMarkdown = tab.isMarkdown
@@ -3972,9 +4053,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             if !rail.isExpandedForTesting {
                 f.append("rail should be expanded after hover-enter")
             }
-            // Click the last heading row → scroll moves to it.
+            // Click the last heading row → scroll moves to it. jumpToHeading now
+            // EASES the scroll over ~0.3s (mockup `jump`), so pump the runloop
+            // until that easing settles before asserting the final offset. We give
+            // it generous wall-clock headroom (the easing is 0.3s).
             let scrollBefore = editorScrollView.contentView.bounds.origin.y
             rail.simulateRowClickForTesting(rail.rowCountForTesting - 1)
+            // Two settle passes (~0.32s+ of runloop spinning) cover the 0.3s ease.
+            settleLayout()
             settleLayout()
             let scrollAfter = editorScrollView.contentView.bounds.origin.y
             if scrollAfter <= scrollBefore {
@@ -5845,9 +5931,18 @@ private final class RailRow: NSView {
     private let level: Int
     let index: Int
     var onClick: ((Int) -> Void)?
+    /// Notify the rail a row was hovered (drives the mockup's `hoverIdx`).
+    var onHover: ((Int) -> Void)?
     private var active = false
     private var expanded = false
+    private var hovered = false
     private var heightConstraint: NSLayoutConstraint!
+
+    // Per-row hover (ui/Markdown Viewer.dc.html: hovered → label scale(1.14) +
+    // color #1d1d1f, transitions `transform 0.12s ease, color 0.15s ease`).
+    private static let hoverScale: CGFloat = 1.14
+    private static let hoverTransformDuration: CFTimeInterval = 0.12
+    private static let hoverColorDuration: CFTimeInterval = 0.15
 
     // Design motion (ui/Design System.dc.html · Motion / OUTLINE):
     // row height 18→26 over 0.24s easeOutQuint, label fade 0.18s, 12ms per-row stagger on expand.
@@ -5874,6 +5969,10 @@ private final class RailRow: NSView {
         label.lineBreakMode = .byTruncatingTail
         label.font = NSFont.systemFont(ofSize: level == 1 ? 13 : 12)
         label.alphaValue = 0
+        // Layer-backed so the hover scale can animate. We anchor the scale at the
+        // trailing (right) edge manually (see `applyHoverTransform`) to match the
+        // mockup's `transform-origin: right center` without fighting Auto Layout.
+        label.wantsLayer = true
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
@@ -5898,6 +5997,77 @@ private final class RailRow: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     @objc private func clicked() { onClick?(index) }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(rect: bounds,
+                                       options: [.activeInActiveApp, .mouseEnteredAndExited, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func layout() {
+        super.layout()
+        // Re-apply the hover transform after layout so the right-edge anchor math
+        // uses the current label width.
+        applyHoverTransform(animated: false)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        // Per-row hover only matters while the rail is expanded (labels visible),
+        // mirroring the mockup's `hovered = s.railOpen && s.hoverIdx === i`.
+        guard expanded else { return }
+        onHover?(index)
+        setHovered(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setHovered(false)
+    }
+
+    private func setHovered(_ value: Bool) {
+        guard value != hovered else { return }
+        hovered = value
+        refresh()
+        applyHoverTransform(animated: true)
+    }
+
+    /// Scale the label to 1.14 around its right edge when hovered, matching the
+    /// mockup `labelTf: hovered ? 'scale(1.14)' : 'scale(1)'` with
+    /// `transform-origin: right center` and `transform 0.12s ease`.
+    private func applyHoverTransform(animated: Bool) {
+        guard let layer = label.layer else { return }
+        let scale: CGFloat = hovered ? RailRow.hoverScale : 1
+        // Anchor the scale at the trailing (right) edge: scale about the layer's
+        // right-center by translating by the width the right edge would move.
+        let w = label.bounds.width
+        var tf = CGAffineTransform(scaleX: scale, y: scale)
+        // After scaling about the layer origin (bottom-left), shift left so the
+        // right edge stays put: tx = w - w*scale = w*(1 - scale).
+        tf.tx = w * (1 - scale)
+
+        if prefersReducedMotion || !animated {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.setAffineTransform(tf)
+            CATransaction.commit()
+        } else {
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(RailRow.hoverTransformDuration)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+            layer.setAffineTransform(tf)
+            CATransaction.commit()
+        }
+    }
+
+    /// Clear hover state instantly (used when the rail collapses), so a row never
+    /// stays scaled/recolored once labels fade out.
+    func clearHover() {
+        guard hovered else { return }
+        hovered = false
+        refresh()
+        applyHoverTransform(animated: false)
+    }
 
     func setActive(_ value: Bool) {
         guard value != active else { return }
@@ -5952,7 +6122,8 @@ private final class RailRow: NSView {
 
     private func refresh() {
         tick.layer?.backgroundColor = (active ? DesignTokens.accent : DesignTokens.tickRest).cgColor
-        label.textColor = active ? DesignTokens.accent : DesignTokens.tertiaryText
+        // Mockup label color precedence: hovered (#1d1d1f) > active (#E8A33D) > rest (#86868b).
+        label.textColor = hovered ? DesignTokens.titleText : (active ? DesignTokens.accent : DesignTokens.tertiaryText)
         label.font = NSFont.systemFont(ofSize: level == 1 ? 13 : 12, weight: active ? .semibold : .regular)
     }
 
@@ -6017,6 +6188,12 @@ final class OutlineRailView: NSView {
     private let collapsedWidth: CGFloat = 84
     private let expandedWidth: CGFloat = 250
 
+    /// Pending collapse after the cursor leaves the rail. Mockup `onRailLeave`
+    /// debounces the collapse by 180ms; re-entering cancels it (ui/Markdown
+    /// Viewer.dc.html line 1261).
+    private var collapseWork: DispatchWorkItem?
+    private static let railLeaveDelay: TimeInterval = 0.18
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         translatesAutoresizingMaskIntoConstraints = false
@@ -6048,6 +6225,12 @@ final class OutlineRailView: NSView {
         for (i, entry) in entries.enumerated() {
             let row = RailRow(entry: entry, index: i)
             row.onClick = { [weak self] idx in self?.onJump?(idx) }
+            // Mockup `hoverIdx`: a single hovered row at a time. Clear the others
+            // when a new one is entered.
+            row.onHover = { [weak self] idx in
+                guard let self else { return }
+                for r in self.rows where r.index != idx { r.clearHover() }
+            }
             rows.append(row)
             stack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -6070,6 +6253,8 @@ final class OutlineRailView: NSView {
 
     private func setExpanded(_ value: Bool, animated: Bool) {
         expanded = value
+        // Collapsing clears any lingering per-row hover (labels are fading out).
+        if !value { rows.forEach { $0.clearHover() } }
         // Reduced motion: snap the rail width with no animation.
         let shouldAnimate = animated && !prefersReducedMotion
         rows.forEach { $0.setExpanded(value, animated: shouldAnimate) }
@@ -6084,12 +6269,27 @@ final class OutlineRailView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        // Re-entering cancels a pending collapse (mockup `onRailEnter`:
+        // `clearTimeout(this._railT)`).
+        collapseWork?.cancel()
+        collapseWork = nil
         onReveal?()
         if !expanded { setExpanded(true, animated: true) }
     }
 
     override func mouseExited(with event: NSEvent) {
-        if expanded { setExpanded(false, animated: true) }
+        guard expanded else { return }
+        // Debounce the collapse by 180ms; a re-enter cancels it (mockup
+        // `onRailLeave`, ui/Markdown Viewer.dc.html line 1261). Under reduced
+        // motion still honor the debounce semantics (no flicker), then snap.
+        collapseWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.collapseWork = nil
+            if self.expanded { self.setExpanded(false, animated: true) }
+        }
+        collapseWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + OutlineRailView.railLeaveDelay, execute: work)
     }
 
     // MARK: - UI-interaction-test driving
