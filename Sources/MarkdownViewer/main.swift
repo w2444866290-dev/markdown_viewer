@@ -883,6 +883,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         fileMenu.addItem(.separator())
 
+        let closeTabItem = NSMenuItem(title: "关闭标签页", action: #selector(MarkdownWindowController.closeActiveTab(_:)), keyEquivalent: "w")
+        closeTabItem.target = target
+        fileMenu.addItem(closeTabItem)
+
+        let reopenTabItem = NSMenuItem(title: "重新打开已关闭的标签页", action: #selector(MarkdownWindowController.reopenClosedTab(_:)), keyEquivalent: "T")
+        reopenTabItem.keyEquivalentModifierMask = [.command, .shift]
+        reopenTabItem.target = target
+        fileMenu.addItem(reopenTabItem)
+
+        fileMenu.addItem(.separator())
+
         let saveItem = NSMenuItem(title: "保存", action: #selector(MarkdownWindowController.saveDocument(_:)), keyEquivalent: "s")
         saveItem.target = target
         fileMenu.addItem(saveItem)
@@ -1458,12 +1469,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         if sameFileURL(node.url, currentFileURL) { return }
 
-        guard confirmDiscardChangesIfNeeded() else {
-            selectCurrentFileInOutline()
-            return
-        }
-
-        loadDocument(from: node.url)
+        // Multi-doc: open the file in (or switch to) its own tab; no discard
+        // prompt — each open document keeps its own buffer.
+        openOrSwitchToFile(node.url)
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -1528,8 +1536,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private func runPaletteDocument(_ key: String) {
         closeCommandPalette()
         let url = URL(fileURLWithPath: key)
-        guard confirmDiscardChangesIfNeeded() else { return }
-        loadDocument(from: url)
+        openOrSwitchToFile(url)
     }
 
     private func runPaletteCommand(_ id: String) {
@@ -2049,6 +2056,32 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let defaults = UserDefaults.standard
         defaults.set(Double(sidebarWidth), forKey: "mdviewer.sideW")
         defaults.set(fontIndex, forKey: "mdviewer.fontIdx")
+        persistTabSession(into: defaults)
+    }
+
+    /// Persist the open *file-backed* tabs, the active tab, and per-tab scroll.
+    /// Untitled (unsaved) docs are intentionally skipped: they have no on-disk
+    /// content and we don't write scratch files, so restoring them would only
+    /// resurrect empty buffers. The active index is expressed against the
+    /// file-only list so it stays valid after untitled docs are dropped.
+    private func persistTabSession(into defaults: UserDefaults) {
+        // Make sure the live editor's text + scroll is reflected in the model.
+        captureActiveTabState()
+
+        var paths: [String] = []
+        var scroll: [String: Double] = [:]
+        var activeFileIndex = -1
+        for (index, tab) in tabs.enumerated() {
+            guard let url = tab.url else { continue }
+            let path = url.standardizedFileURL.path
+            if index == activeTabIndex { activeFileIndex = paths.count }
+            paths.append(path)
+            scroll[path] = Double(tab.scrollY)
+        }
+
+        defaults.set(paths, forKey: "mdviewer.tabs")
+        defaults.set(activeFileIndex, forKey: "mdviewer.activeTab")
+        defaults.set(scroll, forKey: "mdviewer.scroll")
     }
 
     private func buildSidebar() -> NSView {
@@ -2557,12 +2590,58 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     private func configureInitialDocument() {
-        currentDocumentIsMarkdown = true
-        editorTextView.string = "# 未命名\n\n"
-        lastSavedText = editorTextView.string
         applyFileFilter()
-        applyCurrentDocumentStyling()
-        updateDocumentState(status: "就绪")
+        // Try to restore the previous session's file tabs first; fall back to a
+        // single fresh untitled doc so the app never launches into empty state.
+        if restoreTabSession() { return }
+
+        let tab = DocumentTab(
+            url: nil,
+            untitledId: nextUntitledId(),
+            isMarkdown: true,
+            text: "# 未命名\n\n",
+            savedText: "# 未命名\n\n"
+        )
+        appendTab(tab, status: "就绪")
+    }
+
+    /// Reopen the file tabs persisted by `persistTabSession`. Validates each path
+    /// still exists (dropping the missing) and restores the active tab + scroll.
+    /// Returns false when nothing could be restored (caller opens a fresh doc).
+    @discardableResult
+    private func restoreTabSession() -> Bool {
+        let defaults = UserDefaults.standard
+        guard let paths = defaults.stringArray(forKey: "mdviewer.tabs"), !paths.isEmpty else {
+            return false
+        }
+        let savedActive = defaults.object(forKey: "mdviewer.activeTab") as? Int ?? -1
+        let scroll = (defaults.dictionary(forKey: "mdviewer.scroll") as? [String: Double]) ?? [:]
+
+        var restoredActiveIndex: Int? = nil
+        for (fileIndex, path) in paths.enumerated() {
+            let url = URL(fileURLWithPath: path)
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let tab = DocumentTab(
+                url: url,
+                untitledId: nil,
+                isMarkdown: isMarkdownFile(url),
+                text: text,
+                savedText: text
+            )
+            tab.scrollY = CGFloat(scroll[url.standardizedFileURL.path] ?? 0)
+            tabs.append(tab)
+            if fileIndex == savedActive { restoredActiveIndex = tabs.count - 1 }
+        }
+
+        guard !tabs.isEmpty else { return false }
+        let activeIndex = restoredActiveIndex ?? 0
+        activeTabIndex = activeIndex
+        emptyStateView?.isHidden = true
+        editorScrollView.isHidden = false
+        statusLabel.isHidden = false
+        loadTabIntoEditor(tabs[activeIndex], status: "已恢复 \(tabs.count) 个文档")
+        return true
     }
 
     private func makeGhostButton(title: String, action: Selector) -> HoverButton {
@@ -2594,24 +2673,11 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         applyFileFilter()
         updateDocumentState(status: "找到 \(countEditableTextFiles(in: fileTreeRoots)) 个可编辑文本文件")
 
-        if let first = firstEditableTextFile(in: fileTreeRoots) {
-            loadDocument(from: first.url)
-        }
-    }
-
-    private func loadDocument(from url: URL) {
-        do {
-            let text = try String(contentsOf: url, encoding: .utf8)
-            currentFileURL = url
-            currentDocumentIsMarkdown = isMarkdownFile(url)
-            editorTextView.string = text
-            lastSavedText = text
-            applyCurrentDocumentStyling()
-            updateDocumentState(status: "已打开 \(url.lastPathComponent)")
-            selectCurrentFileInOutline()
-        } catch {
-            showAlert(title: "无法打开文件", message: error.localizedDescription)
-            updateDocumentState(status: "打开失败")
+        // Only auto-open the first file when no document is open yet, so opening
+        // a directory doesn't spam a new tab when the user is already editing.
+        let hasOpenDoc = !tabs.isEmpty && (tabs.count != 1 || tabs[0].url != nil || tabs[0].isDirty)
+        if !hasOpenDoc, let first = firstEditableTextFile(in: fileTreeRoots) {
+            openOrSwitchToFile(first.url)
         }
     }
 
@@ -2621,7 +2687,17 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             try text.write(to: url, atomically: true, encoding: .utf8)
             currentFileURL = url
             lastSavedText = text
+            // Sync the active tab's saved baseline + identity (an untitled doc
+            // becomes file-backed here) so its own dirty flag clears even after
+            // switching away, and persistence records the real path.
+            if let tab = activeTab {
+                tab.url = url
+                tab.text = text
+                tab.savedText = text
+                tab.isMarkdown = isMarkdownFile(url)
+            }
             updateDocumentState(status: "已保存 \(url.lastPathComponent)")
+            persistSession()
             flash("已保存 \(url.lastPathComponent)")
             return true
         } catch {
@@ -2882,6 +2958,47 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         default:
             return false
         }
+    }
+
+    /// App-/window-close guard across the whole tabbed model. Returns true when
+    /// it is safe to proceed (no unsaved docs, or the user chose to save / discard).
+    /// "保存全部" saves every dirty doc (switching to each so the shared editor
+    /// holds its text); a save failure cancels the close.
+    private func confirmDiscardAllIfNeeded() -> Bool {
+        // Mirror the live editor into the active tab so its dirty state is current.
+        captureActiveTabState()
+
+        let dirtyCount = tabs.filter { $0.isDirty }.count
+        guard dirtyCount > 0 else { return true }
+
+        let alert = NSAlert()
+        alert.messageText = dirtyCount == 1 ? "有 1 个文档尚未保存" : "有 \(dirtyCount) 个文档尚未保存"
+        alert.informativeText = "你可以先保存全部，也可以放弃这些修改。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "保存全部")
+        alert.addButton(withTitle: "不保存")
+        alert.addButton(withTitle: "取消")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return saveAllDirtyTabs()
+        case .alertSecondButtonReturn:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Save every dirty tab. Activates each in turn so the shared editor holds the
+    /// right text for `saveDocument`. Returns false (cancelling the close) if any
+    /// save fails or is cancelled (e.g. the user dismisses the Save panel for an
+    /// untitled doc).
+    private func saveAllDirtyTabs() -> Bool {
+        for index in tabs.indices where tabs[index].isDirty {
+            activateTab(at: index, status: nil)
+            guard saveDocument(nil) else { return false }
+        }
+        return true
     }
 
     private var isDirty: Bool {
