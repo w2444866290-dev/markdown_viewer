@@ -90,6 +90,14 @@ final class PaperTextView: NSTextView {
 
 final class SidebarRowView: NSTableRowView {
     private var mouseInside = false
+    /// Keyboard-navigation selection from the sidebar filter field (↑/↓). Drawn
+    /// with the same subtle 5% fill the mockup uses for `kbSel`
+    /// (Markdown Viewer.dc.html ~line 1134, bg rgba(0,0,0,0.05)). Distinct from
+    /// the outline's real selection (`isSelected`) so it can highlight a row the
+    /// user is arrowing over before they commit with Enter.
+    var kbSelected = false {
+        didSet { if kbSelected != oldValue { needsDisplay = true } }
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -130,7 +138,13 @@ final class SidebarRowView: NSTableRowView {
 
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
-        if !isSelected && mouseInside {
+        if isSelected { return }
+        // kb-selection (filter ↑/↓) wins over plain hover, matching the mockup's
+        // kbSel > hover precedence in mapItem (bg rgba(0,0,0,0.05) vs 0.045).
+        if kbSelected {
+            DesignTokens.hover.setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
+        } else if mouseInside {
             DesignTokens.sidebarHover.setFill()
             NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
         }
@@ -1382,6 +1396,19 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     /// all on teardown. Mirrors the mockup's `washHeading` 900ms fade.
     private var washTimers: [Timer] = []
 
+    // MARK: Sidebar filter keyboard navigation (mockup kbSel / onSideFilterKey)
+    /// Index of the keyboard-selected row among the currently-visible filtered
+    /// files (mockup `state.kbSel`). Reset to 0 whenever the filter text changes.
+    private var sidebarKbIndex = 0
+    /// Local monitor for double-tap-Shift → command palette (mockup `_onKey` /
+    /// `_lastShift`, Markdown Viewer.dc.html ~lines 476-491).
+    private var flagsMonitor: Any?
+    /// Timestamp (seconds) of the last pure-Shift press, for the <350ms window.
+    private var lastShiftPressTime: TimeInterval = 0
+    /// Tracks whether Shift is currently held, so we fire on press-down only
+    /// (not on the release flagsChanged, and not while held).
+    private var shiftIsDown = false
+
     private var outlineEntries: [OutlineEntry] = []
     private var findMatches: [NSTextCheckingResult] = []
     private var findIndex = 0
@@ -1465,6 +1492,21 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         confirmDiscardAllIfNeeded()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        removeDoubleShiftMonitor()
+    }
+
+    private func removeDoubleShiftMonitor() {
+        if let flagsMonitor {
+            NSEvent.removeMonitor(flagsMonitor)
+            self.flagsMonitor = nil
+        }
+    }
+
+    deinit {
+        removeDoubleShiftMonitor()
     }
 
     @objc func newDocument(_ sender: Any?) {
@@ -1684,7 +1726,89 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     func controlTextDidChange(_ obj: Notification) {
+        // Mockup onSideFilter resets kbSel to 0 on every keystroke
+        // (Markdown Viewer.dc.html ~line 1242).
+        sidebarKbIndex = 0
         applyFileFilter()
+    }
+
+    /// Sidebar filter field keyboard navigation (mockup `onSideFilterKey`,
+    /// Markdown Viewer.dc.html ~lines 893-898). ↑/↓ move a keyboard selection over
+    /// the currently-visible filtered file rows; Enter opens the selected file.
+    /// The controller is only the delegate of `filterField.textField`, but we
+    /// guard on identity so this never disturbs the find bar / palette, which use
+    /// their own `control(_:textView:doCommandBy:)` on separate delegate objects.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard control === filterField.textField else { return false }
+        let visible = sidebarVisibleFileNodes()
+
+        switch selector {
+        case #selector(NSResponder.moveDown(_:)):
+            guard !visible.isEmpty else { return true }
+            sidebarKbIndex = min(sidebarKbIndex + 1, visible.count - 1)
+            refreshSidebarKbSelection()
+            return true
+        case #selector(NSResponder.moveUp(_:)):
+            guard !visible.isEmpty else { return true }
+            sidebarKbIndex = max(sidebarKbIndex - 1, 0)
+            refreshSidebarKbSelection()
+            return true
+        case #selector(NSResponder.insertNewline(_:)):
+            guard !visible.isEmpty else { return true }
+            let clamped = min(max(sidebarKbIndex, 0), visible.count - 1)
+            openOrSwitchToFile(visible[clamped].url)
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Files currently shown in the sidebar (filter applied), flattened in the
+    /// outline's visible top-to-bottom row order. Mirrors the mockup's
+    /// `sideVisibleFiles()` (non-folder rows matching the filter).
+    private func sidebarVisibleFileNodes() -> [FileTreeNode] {
+        var result: [FileTreeNode] = []
+        let rows = outlineView.numberOfRows
+        if rows > 0 {
+            for row in 0..<rows {
+                if let node = outlineView.item(atRow: row) as? FileTreeNode, !node.isDirectory {
+                    result.append(node)
+                }
+            }
+            return result
+        }
+        // Fallback (no rows realized yet): walk the filtered tree depth-first.
+        func walk(_ nodes: [FileTreeNode]) {
+            for node in nodes {
+                if node.isDirectory { walk(node.children) } else { result.append(node) }
+            }
+        }
+        walk(filteredTreeRoots)
+        return result
+    }
+
+    /// Paint the kb-selected row (and clear the rest) using the SidebarRowView
+    /// `kbSelected` flag, then scroll it into view. Visual style = mockup `kbSel`
+    /// bg (rgba(0,0,0,0.05) = DesignTokens.hover).
+    private func refreshSidebarKbSelection() {
+        let visible = sidebarVisibleFileNodes()
+        let selectedNode: FileTreeNode? = {
+            guard !visible.isEmpty else { return nil }
+            let clamped = min(max(sidebarKbIndex, 0), visible.count - 1)
+            return visible[clamped]
+        }()
+
+        let rows = outlineView.numberOfRows
+        guard rows > 0 else { return }
+        var selectedRow = -1
+        for row in 0..<rows {
+            guard let rowView = outlineView.rowView(atRow: row, makeIfNecessary: false) as? SidebarRowView else { continue }
+            let node = outlineView.item(atRow: row) as? FileTreeNode
+            let isSel = node != nil && node === selectedNode
+            rowView.kbSelected = isSel
+            if isSel { selectedRow = row }
+        }
+        if selectedRow >= 0 { outlineView.scrollRowToVisible(selectedRow) }
     }
 
     func textDidChange(_ notification: Notification) {
@@ -2450,11 +2574,78 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         handle.onCommit = { [weak self] in self?.persistSession() }
         resizeHandle = handle
 
+        installDoubleShiftMonitor()
+
         DispatchQueue.main.async { [weak self] in
             self?.rootView.needsLayout = true
             self?.rootView.layoutSubtreeIfNeeded()
             self?.logLayout("after-build-interface")
         }
+    }
+
+    /// Double-tap Shift → open the command palette (mockup `_onKey` / `_lastShift`,
+    /// Markdown Viewer.dc.html ~lines 476-491). A local monitor detects a pure
+    /// Shift *press-down* (no ⌘/⌃/⌥, Shift is the only modifier) via `.flagsChanged`;
+    /// two within 350ms open the palette via the exact ⌘K path
+    /// (`showCommandPalette`). Normal Shift-typing is unaffected: we fire only on
+    /// the Shift press-down edge (never while held), and any `.keyDown` (e.g. a
+    /// capitalised letter) clears the pending single press, mirroring the mockup.
+    private func installDoubleShiftMonitor() {
+        guard flagsMonitor == nil else { return }
+        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
+            guard let self else { return event }
+            if event.type == .keyDown {
+                // Any actual key press breaks the Shift-Shift sequence, so plain
+                // capitalised typing ("Hi") never opens the palette. Mirrors the
+                // mockup's `this._lastShift = 0` on every non-Shift key (line 491).
+                self.lastShiftPressTime = 0
+            } else {
+                self.handleFlagsChanged(event)
+            }
+            return event
+        }
+    }
+
+    private func handleFlagsChanged(_ event: NSEvent) {
+        // Only consider events for our own window.
+        guard event.window == nil || event.window === window else { return }
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let shiftHeld = flags.contains(.shift)
+        // Reject if any non-Shift modifier is part of the chord (mockup checks
+        // !metaKey && !ctrlKey && !altKey). CapsLock is ignored so the feature
+        // still works when CapsLock happens to be on.
+        let otherModifiers: NSEvent.ModifierFlags = [.command, .control, .option]
+        let hasOtherModifier = !flags.isDisjoint(with: otherModifiers)
+
+        // flagsChanged fires for both press and release of Shift. We act on the
+        // press-down edge only (shiftIsDown false → true).
+        if shiftHeld && !hasOtherModifier {
+            if !shiftIsDown {
+                shiftIsDown = true
+                let now = event.timestamp
+                if lastShiftPressTime != 0, now - lastShiftPressTime < 0.350 {
+                    lastShiftPressTime = 0
+                    openPaletteFromDoubleShift()
+                } else {
+                    lastShiftPressTime = now
+                }
+            }
+        } else {
+            // Shift released, or a different modifier became active: drop the
+            // pending single-press and the held flag. A modifier other than
+            // Shift also invalidates the sequence (mockup resets _lastShift).
+            shiftIsDown = false
+            if hasOtherModifier { lastShiftPressTime = 0 }
+        }
+    }
+
+    /// Open the palette exactly the way ⌘K does. If the find bar is open, close
+    /// it first (mockup: `if (this.state.findOpen) this.closeFind();`).
+    private func openPaletteFromDoubleShift() {
+        if findBar?.isHidden == false { closeFind() }
+        // showCommandPalette toggles; only open when not already showing.
+        if paletteOverlay == nil { showCommandPalette(self) }
     }
 
     private func setSidebarWidth(_ raw: CGFloat) {
