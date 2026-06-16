@@ -3651,416 +3651,6 @@ enum LiveMarkdownStyler {
     }
 }
 
-enum MarkdownRenderer {
-    private static let bodyFont = NSFont.systemFont(ofSize: 15)
-    private static let boldBodyFont = NSFont.boldSystemFont(ofSize: 15)
-    private static let italicBodyFont = NSFontManager.shared.convert(bodyFont, toHaveTrait: .italicFontMask)
-    private static let codeFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    private static let boldCodeFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
-
-    static func render(_ markdown: String) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
-        let lines = normalized.components(separatedBy: "\n")
-        var index = 0
-
-        while index < lines.count {
-            let line = lines[index]
-
-            if line.trimmingCharacters(in: .whitespaces).isEmpty {
-                appendNewlineIfNeeded(to: result)
-                index += 1
-                continue
-            }
-
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                var codeLines: [String] = []
-                index += 1
-                while index < lines.count && !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                    codeLines.append(lines[index])
-                    index += 1
-                }
-                if index < lines.count { index += 1 }
-                appendCodeBlock(codeLines.joined(separator: "\n"), to: result)
-                continue
-            }
-
-            if let heading = parseHeading(line) {
-                appendHeading(level: heading.level, text: heading.text, to: result)
-                index += 1
-                continue
-            }
-
-            if line.trimmingCharacters(in: .whitespaces) == "---" {
-                appendRule(to: result)
-                index += 1
-                continue
-            }
-
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix(">") {
-                var quoteLines: [String] = []
-                while index < lines.count {
-                    let current = lines[index].trimmingCharacters(in: .whitespaces)
-                    guard current.hasPrefix(">") else { break }
-                    quoteLines.append(String(current.dropFirst()).trimmingCharacters(in: .whitespaces))
-                    index += 1
-                }
-                appendQuote(quoteLines.joined(separator: " "), to: result)
-                continue
-            }
-
-            if isTableStart(at: index, lines: lines) {
-                var tableLines: [String] = [line, lines[index + 1]]
-                index += 2
-                while index < lines.count && lines[index].contains("|") && !lines[index].trimmingCharacters(in: .whitespaces).isEmpty {
-                    tableLines.append(lines[index])
-                    index += 1
-                }
-                appendTable(tableLines, to: result)
-                continue
-            }
-
-            if let item = parseListItem(line) {
-                var items: [(marker: String, text: String)] = [item]
-                index += 1
-                while index < lines.count, let nextItem = parseListItem(lines[index]) {
-                    items.append(nextItem)
-                    index += 1
-                }
-                appendList(items, to: result)
-                continue
-            }
-
-            var paragraphLines = [line.trimmingCharacters(in: .whitespaces)]
-            index += 1
-            while index < lines.count && !startsBlock(lines[index], nextLine: index + 1 < lines.count ? lines[index + 1] : nil) {
-                let next = lines[index].trimmingCharacters(in: .whitespaces)
-                if !next.isEmpty {
-                    paragraphLines.append(next)
-                }
-                index += 1
-            }
-
-            appendParagraph(paragraphLines.joined(separator: " "), to: result)
-        }
-
-        if result.length == 0 {
-            appendParagraph("空白文档", color: .secondaryLabelColor, to: result)
-        }
-
-        return result
-    }
-
-    private static func startsBlock(_ line: String, nextLine: String?) -> Bool {
-        if line.trimmingCharacters(in: .whitespaces).isEmpty { return true }
-        if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") { return true }
-        if parseHeading(line) != nil { return true }
-        if line.trimmingCharacters(in: .whitespaces) == "---" { return true }
-        if line.trimmingCharacters(in: .whitespaces).hasPrefix(">") { return true }
-        if parseListItem(line) != nil { return true }
-        if let nextLine, line.contains("|"), isTableSeparator(nextLine) { return true }
-        return false
-    }
-
-    private static func parseHeading(_ line: String) -> (level: Int, text: String)? {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        var level = 0
-
-        for character in trimmed {
-            if character == "#" {
-                level += 1
-            } else {
-                break
-            }
-        }
-
-        guard (1...6).contains(level) else { return nil }
-        let markerEnd = trimmed.index(trimmed.startIndex, offsetBy: level)
-        guard markerEnd < trimmed.endIndex, trimmed[markerEnd] == " " else { return nil }
-
-        let textStart = trimmed.index(after: markerEnd)
-        return (level, String(trimmed[textStart...]))
-    }
-
-    private static func parseListItem(_ line: String) -> (marker: String, text: String)? {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return nil }
-
-        for marker in ["- ", "* ", "+ "] {
-            if trimmed.hasPrefix(marker) {
-                return ("•", String(trimmed.dropFirst(marker.count)))
-            }
-        }
-
-        var digits = ""
-        var cursor = trimmed.startIndex
-        while cursor < trimmed.endIndex && trimmed[cursor].isNumber {
-            digits.append(trimmed[cursor])
-            cursor = trimmed.index(after: cursor)
-        }
-
-        if !digits.isEmpty,
-           cursor < trimmed.endIndex,
-           trimmed[cursor] == ".",
-           trimmed.index(after: cursor) < trimmed.endIndex,
-           trimmed[trimmed.index(after: cursor)] == " " {
-            let textStart = trimmed.index(cursor, offsetBy: 2)
-            return ("\(digits).", String(trimmed[textStart...]))
-        }
-
-        return nil
-    }
-
-    private static func isTableStart(at index: Int, lines: [String]) -> Bool {
-        guard index + 1 < lines.count else { return false }
-        return lines[index].contains("|") && isTableSeparator(lines[index + 1])
-    }
-
-    private static func isTableSeparator(_ line: String) -> Bool {
-        let cells = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard cells.count >= 2 else { return false }
-        return cells.allSatisfy { cell in
-            let stripped = cell.replacingOccurrences(of: ":", with: "")
-            return stripped.count >= 3 && stripped.allSatisfy { $0 == "-" }
-        }
-    }
-
-    private static func appendHeading(level: Int, text: String, to result: NSMutableAttributedString) {
-        appendNewlineIfNeeded(to: result)
-
-        let size: CGFloat
-        switch level {
-        case 1: size = 28
-        case 2: size = 23
-        case 3: size = 19
-        default: size = 16
-        }
-
-        let font = NSFont.boldSystemFont(ofSize: size)
-        let style = paragraphStyle(spacingBefore: level == 1 ? 2 : 8, spacingAfter: level == 1 ? 14 : 10)
-        let attrs = baseAttributes(font: font, color: .labelColor, paragraphStyle: style)
-        result.append(inline(text, attributes: attrs))
-        result.append(NSAttributedString(string: "\n"))
-    }
-
-    private static func appendParagraph(_ text: String, color: NSColor = .labelColor, to result: NSMutableAttributedString) {
-        appendNewlineIfNeeded(to: result)
-        let attrs = baseAttributes(font: bodyFont, color: color, paragraphStyle: paragraphStyle(spacingAfter: 10))
-        result.append(inline(text, attributes: attrs))
-        result.append(NSAttributedString(string: "\n"))
-    }
-
-    private static func appendQuote(_ text: String, to result: NSMutableAttributedString) {
-        appendNewlineIfNeeded(to: result)
-        let style = paragraphStyle(spacingAfter: 12)
-        style.headIndent = 18
-        style.firstLineHeadIndent = 18
-        let attrs = baseAttributes(font: bodyFont, color: .secondaryLabelColor, paragraphStyle: style).merging([
-            .backgroundColor: NSColor.controlBackgroundColor
-        ]) { lhs, _ in lhs }
-        result.append(inline(text, attributes: attrs))
-        result.append(NSAttributedString(string: "\n"))
-    }
-
-    private static func appendCodeBlock(_ code: String, to result: NSMutableAttributedString) {
-        appendNewlineIfNeeded(to: result)
-        let style = paragraphStyle(spacingAfter: 12)
-        let attrs = baseAttributes(font: codeFont, color: .labelColor, paragraphStyle: style).merging([
-            .backgroundColor: NSColor.controlBackgroundColor
-        ]) { lhs, _ in lhs }
-        result.append(NSAttributedString(string: code + "\n", attributes: attrs))
-    }
-
-    private static func appendTable(_ lines: [String], to result: NSMutableAttributedString) {
-        appendNewlineIfNeeded(to: result)
-        let style = paragraphStyle(spacingAfter: 12)
-        let attrs = baseAttributes(font: codeFont, color: .labelColor, paragraphStyle: style).merging([
-            .backgroundColor: NSColor.controlBackgroundColor
-        ]) { lhs, _ in lhs }
-        let headerAttrs = baseAttributes(font: boldCodeFont, color: .labelColor, paragraphStyle: style).merging([
-            .backgroundColor: NSColor.controlBackgroundColor
-        ]) { lhs, _ in lhs }
-        let rows = lines.enumerated()
-            .filter { !isTableSeparator($0.element) }
-            .map { splitTableCells($0.element) }
-        let columnCount = rows.map(\.count).max() ?? 0
-        let widths = (0..<columnCount).map { column in
-            rows.map { row in row.indices.contains(column) ? row[column].count : 0 }.max() ?? 0
-        }
-
-        for (rowIndex, row) in rows.enumerated() {
-            let paddedCells = (0..<columnCount).map { column in
-                let value = row.indices.contains(column) ? row[column] : ""
-                return value.padding(toLength: widths[column], withPad: " ", startingAt: 0)
-            }
-            let rowText = "  " + paddedCells.joined(separator: "    ") + "  \n"
-            result.append(NSAttributedString(string: rowText, attributes: rowIndex == 0 ? headerAttrs : attrs))
-        }
-    }
-
-    private static func appendList(_ items: [(marker: String, text: String)], to result: NSMutableAttributedString) {
-        appendNewlineIfNeeded(to: result)
-        let style = paragraphStyle(spacingAfter: 4)
-        style.firstLineHeadIndent = 0
-        style.headIndent = 24
-        let attrs = baseAttributes(font: bodyFont, color: .labelColor, paragraphStyle: style)
-        let markerAttrs = baseAttributes(font: boldBodyFont, color: .secondaryLabelColor, paragraphStyle: style)
-
-        for item in items {
-            result.append(NSAttributedString(string: "\(item.marker) ", attributes: markerAttrs))
-            result.append(inline(item.text, attributes: attrs))
-            result.append(NSAttributedString(string: "\n"))
-        }
-    }
-
-    private static func appendRule(to result: NSMutableAttributedString) {
-        appendNewlineIfNeeded(to: result)
-        let attrs = baseAttributes(font: bodyFont, color: .tertiaryLabelColor, paragraphStyle: paragraphStyle(spacingAfter: 12))
-        result.append(NSAttributedString(string: "────────────────────────\n", attributes: attrs))
-    }
-
-    private static func splitTableCells(_ line: String) -> [String] {
-        var cells = line.split(separator: "|", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-
-        if cells.first == "" {
-            cells.removeFirst()
-        }
-
-        if cells.last == "" {
-            cells.removeLast()
-        }
-
-        return cells
-    }
-
-    private static func appendNewlineIfNeeded(to result: NSMutableAttributedString) {
-        guard result.length > 0 else { return }
-        let string = result.string
-        if !string.hasSuffix("\n") {
-            result.append(NSAttributedString(string: "\n"))
-        }
-    }
-
-    private static func paragraphStyle(spacingBefore: CGFloat = 0, spacingAfter: CGFloat = 8) -> NSMutableParagraphStyle {
-        let style = NSMutableParagraphStyle()
-        style.lineSpacing = 3
-        style.paragraphSpacingBefore = spacingBefore
-        style.paragraphSpacing = spacingAfter
-        return style
-    }
-
-    private static func baseAttributes(font: NSFont, color: NSColor, paragraphStyle: NSParagraphStyle) -> [NSAttributedString.Key: Any] {
-        [
-            .font: font,
-            .foregroundColor: color,
-            .paragraphStyle: paragraphStyle
-        ]
-    }
-
-    private static func inline(_ text: String, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        var index = text.startIndex
-
-        while index < text.endIndex {
-            if text[index...].hasPrefix("`"),
-               let closing = text[text.index(after: index)...].firstIndex(of: "`") {
-                let start = text.index(after: index)
-                let code = String(text[start..<closing])
-                var codeAttrs = attributes
-                codeAttrs[.font] = codeFont
-                codeAttrs[.backgroundColor] = NSColor.controlBackgroundColor
-                result.append(NSAttributedString(string: code, attributes: codeAttrs))
-                index = text.index(after: closing)
-                continue
-            }
-
-            if text[index...].hasPrefix("**") {
-                let start = text.index(index, offsetBy: 2)
-                if let range = text[start...].range(of: "**") {
-                    let content = String(text[start..<range.lowerBound])
-                    var boldAttrs = attributes
-                    boldAttrs[.font] = boldFont(for: attributes)
-                    result.append(NSAttributedString(string: content, attributes: boldAttrs))
-                    index = range.upperBound
-                    continue
-                }
-            }
-
-            if text[index...].hasPrefix("*") {
-                let start = text.index(after: index)
-                if let closing = text[start...].firstIndex(of: "*") {
-                    let content = String(text[start..<closing])
-                    var italicAttrs = attributes
-                    italicAttrs[.font] = italicFont(for: attributes)
-                    result.append(NSAttributedString(string: content, attributes: italicAttrs))
-                    index = text.index(after: closing)
-                    continue
-                }
-            }
-
-            if text[index...].hasPrefix("![") {
-                if let parsed = parseLink(in: text, from: index, image: true) {
-                    var imageAttrs = attributes
-                    imageAttrs[.foregroundColor] = NSColor.secondaryLabelColor
-                    imageAttrs[.font] = italicBodyFont
-                    result.append(NSAttributedString(string: "[图片: \(parsed.label)]", attributes: imageAttrs))
-                    index = parsed.endIndex
-                    continue
-                }
-            }
-
-            if text[index...].hasPrefix("[") {
-                if let parsed = parseLink(in: text, from: index, image: false) {
-                    var linkAttrs = attributes
-                    linkAttrs[.foregroundColor] = NSColor.linkColor
-                    linkAttrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
-                    linkAttrs[.link] = parsed.url
-                    result.append(NSAttributedString(string: parsed.label, attributes: linkAttrs))
-                    index = parsed.endIndex
-                    continue
-                }
-            }
-
-            let next = text.index(after: index)
-            result.append(NSAttributedString(string: String(text[index..<next]), attributes: attributes))
-            index = next
-        }
-
-        return result
-    }
-
-    private static func parseLink(in text: String, from index: String.Index, image: Bool) -> (label: String, url: String, endIndex: String.Index)? {
-        let labelStart = image ? text.index(index, offsetBy: 2) : text.index(after: index)
-        guard labelStart < text.endIndex,
-              let labelEnd = text[labelStart...].firstIndex(of: "]") else {
-            return nil
-        }
-
-        let parenStart = text.index(after: labelEnd)
-        guard parenStart < text.endIndex,
-              text[parenStart] == "(",
-              let parenEnd = text[text.index(after: parenStart)...].firstIndex(of: ")") else {
-            return nil
-        }
-
-        let urlStart = text.index(after: parenStart)
-        let label = String(text[labelStart..<labelEnd])
-        let url = String(text[urlStart..<parenEnd])
-        return (label, url, text.index(after: parenEnd))
-    }
-
-    private static func boldFont(for attributes: [NSAttributedString.Key: Any]) -> NSFont {
-        let font = attributes[.font] as? NSFont ?? bodyFont
-        return NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
-    }
-
-    private static func italicFont(for attributes: [NSAttributedString.Key: Any]) -> NSFont {
-        let font = attributes[.font] as? NSFont ?? bodyFont
-        return NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
-    }
-}
-
 // MARK: - Find / Replace floating panel
 
 /// Toggle chip used for case / whole-word / regex switches.
@@ -4068,9 +3658,11 @@ final class ChipButton: HoverButton {
     var active = false { didSet { refreshChip() } }
 
     func refreshChip() {
-        restBackground = active ? NSColor.black.withAlphaComponent(0.10) : .clear
-        restTint = active ? DesignTokens.titleText : DesignTokens.placeholderText
-        hoverTint = active ? DesignTokens.titleText : DesignTokens.secondaryText
+        // Active toggle chips use the system-blue 14% fill per the Design System
+        // rule "激活态用系统蓝 14% 底" (system-blue is a legal toggle-control color).
+        restBackground = active ? DesignTokens.systemBlue.withAlphaComponent(0.14) : .clear
+        restTint = active ? DesignTokens.systemBlue : DesignTokens.placeholderText
+        hoverTint = active ? DesignTokens.systemBlue : DesignTokens.secondaryText
         needsLayout = true
     }
 }
@@ -4102,6 +3694,32 @@ final class FindBarView: NSView, NSTextFieldDelegate {
 
     var query: String { findInput.stringValue }
     var replacement: String { replaceInput.stringValue }
+
+    override var isHidden: Bool {
+        didSet {
+            // Play the design's "overlayIn" only on a hidden -> shown transition,
+            // matching the mockup's `animation: overlayIn 0.12s ease`.
+            if oldValue && !isHidden { playOverlayIn() }
+        }
+    }
+
+    /// Subtle enter animation: fade 0 -> 1 plus a 4px downward slide over 0.12s ease.
+    /// Purely visual (layer transform + opacity), so it never affects layout.
+    private func playOverlayIn() {
+        guard let layer = layer else { return }
+        // Start 4px above the resting position and slide down into place.
+        let slide = CABasicAnimation(keyPath: "transform.translation.y")
+        slide.fromValue = isFlipped ? -4 : 4
+        slide.toValue = 0
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        let group = CAAnimationGroup()
+        group.animations = [slide, fade]
+        group.duration = 0.12
+        group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(group, forKey: "overlayIn")
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
