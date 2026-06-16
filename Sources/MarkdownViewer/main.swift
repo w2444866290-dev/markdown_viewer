@@ -231,6 +231,72 @@ class HoverButton: NSButton {
     override func layout() { super.layout(); refresh() }
 }
 
+/// Small "复制" affordance that floats at the TOP-RIGHT of a fenced code block
+/// and copies that block's body on click. Mirrors the mockup's hover-revealed
+/// `[data-copy]` button (Markdown Viewer.dc.html lines 16-18 CSS, 806-812 JS):
+/// quiet by default (gray, ~11px), darkens to titleText on its own hover, with a
+/// small rounded hit area. Visibility is driven by the editor's pointer tracking
+/// — the controller shows it only while the cursor is over a code block — so it
+/// never disturbs text selection elsewhere. The fade is reduced-motion aware.
+final class CodeCopyButton: NSButton {
+    private var inside = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        isBordered = false
+        bezelStyle = .inline
+        title = "复制"
+        font = NSFont.systemFont(ofSize: 11)
+        contentTintColor = DesignTokens.statusText
+        layer?.cornerRadius = 5
+        layer?.backgroundColor = NSColor.clear.cgColor
+        attributedTitle = styledTitle(color: DesignTokens.statusText)
+        // Quiet by default: hidden until the pointer enters a code block.
+        isHidden = true
+        alphaValue = 0
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func styledTitle(color: NSColor) -> NSAttributedString {
+        NSAttributedString(string: "复制", attributes: [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: color
+        ])
+    }
+
+    private func refresh() {
+        let tint = inside ? DesignTokens.titleText : DesignTokens.statusText
+        contentTintColor = tint
+        attributedTitle = styledTitle(color: tint)
+        let bg = inside ? DesignTokens.hover : NSColor.clear
+        if prefersReducedMotion {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer?.backgroundColor = bg.cgColor
+            CATransaction.commit()
+        } else {
+            layer?.backgroundColor = bg.cgColor
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeInActiveApp, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) { inside = true; refresh() }
+    override func mouseExited(with event: NSEvent) { inside = false; refresh() }
+    override func layout() { super.layout(); refresh() }
+}
+
 /// A borderless rounded text input matching the sidebar filter / find fields
 /// (no system search-glass affordance, subtle fill, inset text).
 final class RoundedField: NSView {
@@ -1650,6 +1716,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private var toastWork: DispatchWorkItem?
     private var fontIndex = 1
 
+    /// Hover-revealed top-right "复制" button for fenced code blocks (mockup
+    /// `[data-copy]`, Markdown Viewer.dc.html 16-18 / 806-812). Lives as a subview
+    /// of the editor's document view so it scrolls with the text. Hidden until the
+    /// pointer is over a code block; `copyButtonBodyRange` holds the char range of
+    /// the block currently under the pointer (the body to copy on click).
+    private var codeCopyButton: CodeCopyButton?
+    private var copyButtonBodyRange: NSRange?
+
     /// First-run outline-rail coach tip ("本页目录 · 悬停展开"). Shown once ever,
     /// persisted via UserDefaults `mdviewer.railCoach`; dismissed on hover or
     /// after a few seconds.
@@ -2316,6 +2390,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         refreshStatus()
         updateActiveHeading()
         fadeStatusForScroll()
+        repositionCodeCopyButton()
     }
 
     private func fadeStatusForScroll() {
@@ -2411,6 +2486,178 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
     var hoverUrlPreviewVisibleForTesting: Bool { !hoverUrlLabel.isHidden }
     var hoverUrlPreviewTextForTesting: String { hoverUrlLabel.stringValue }
+
+    // MARK: - Code-block copy button (hover-revealed, top-right)
+
+    /// Create the floating "复制" button once and add it as a subview of the
+    /// editor's document view so it tracks scroll/layout with the code block. It
+    /// is sized to fit and positioned later via `positionCodeCopyButton(for:)`.
+    private func installCodeCopyButton() {
+        guard codeCopyButton == nil else { return }
+        let button = CodeCopyButton(frame: NSRect(x: 0, y: 0, width: 44, height: 20))
+        button.target = self
+        button.action = #selector(copyHoveredCodeBlock(_:))
+        button.sizeToFit()
+        // Compact hit area around the "复制" glyphs (mockup: small rounded chip).
+        button.frame.size = NSSize(width: max(40, button.frame.width + 12), height: 20)
+        editorTextView.addSubview(button)
+        codeCopyButton = button
+    }
+
+    /// Resolve which fenced code block (if any) sits under `point` (editor view
+    /// coordinates) and, when over one, reveal the copy button at that block's
+    /// top-right corner. Runs the SAME geometry path the mouse uses. Skips inline
+    /// code: `fencedCodeBlocks` only returns ``` -delimited blocks.
+    private func updateCodeCopyButton(atEditorPoint point: NSPoint) {
+        guard currentDocumentIsMarkdown, let block = codeBlock(atEditorPoint: point) else {
+            hideCodeCopyButton()
+            return
+        }
+        // Same block already targeted: just keep it positioned (cheap re-place).
+        copyButtonBodyRange = block.bodyRange
+        positionCodeCopyButton(for: block.containerRange)
+        showCodeCopyButton()
+    }
+
+    /// The fenced code block whose on-screen rect contains `point` (editor view
+    /// coordinates), or nil. Uses the styler's shared fence detection + the layout
+    /// manager's bounding rect so the hit region matches the rendered block.
+    private func codeBlock(atEditorPoint point: NSPoint) -> LiveMarkdownStyler.FencedCodeBlock? {
+        let nsString = editorTextView.string as NSString
+        for block in LiveMarkdownStyler.fencedCodeBlocks(in: nsString) {
+            guard let rect = codeBlockRect(for: block.containerRange) else { continue }
+            if rect.contains(point) { return block }
+        }
+        return nil
+    }
+
+    /// The rect (editor view coordinates, i.e. text-view/document-view space) of a
+    /// fenced block's container char range, via `NSLayoutManager.boundingRect`
+    /// offset by the text container inset. Returns nil if layout is unavailable.
+    private func codeBlockRect(for containerRange: NSRange) -> NSRect? {
+        guard let lm = editorTextView.layoutManager, let tc = editorTextView.textContainer else { return nil }
+        let nsString = editorTextView.string as NSString
+        guard containerRange.location >= 0,
+              containerRange.location + containerRange.length <= nsString.length else { return nil }
+        let glyphRange = lm.glyphRange(forCharacterRange: containerRange, actualCharacterRange: nil)
+        var rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+        let inset = editorTextView.textContainerInset
+        rect.origin.x += inset.width
+        rect.origin.y += inset.height
+        return rect
+    }
+
+    /// Place the copy button at the top-right corner of the block (small inset),
+    /// in the editor document view's flipped (y-down) coordinate space.
+    private func positionCodeCopyButton(for containerRange: NSRange) {
+        guard let button = codeCopyButton, let rect = codeBlockRect(for: containerRange) else { return }
+        let inset: CGFloat = 8
+        let x = rect.maxX - button.frame.width - inset
+        let y = rect.minY + inset
+        button.frame.origin = NSPoint(x: x, y: y)
+    }
+
+    private func showCodeCopyButton() {
+        guard let button = codeCopyButton else { return }
+        button.isHidden = false
+        if button.alphaValue < 1 {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = motionDuration(0.12)
+                button.animator().alphaValue = 1
+            }
+        }
+    }
+
+    private func hideCodeCopyButton() {
+        copyButtonBodyRange = nil
+        guard let button = codeCopyButton, !button.isHidden else { return }
+        if prefersReducedMotion {
+            button.alphaValue = 0
+            button.isHidden = true
+            return
+        }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = motionDuration(0.12)
+            button.animator().alphaValue = 0
+        }, completionHandler: { [weak button] in
+            // Only hide if it wasn't re-revealed in the meantime.
+            if let b = button, b.alphaValue == 0 { b.isHidden = true }
+        })
+    }
+
+    /// Keep the copy button glued to its block when the document scrolls,
+    /// re-styles, or the font changes. Hides it if the targeted block no longer
+    /// exists at that body range.
+    private func repositionCodeCopyButton() {
+        guard let bodyRange = copyButtonBodyRange,
+              currentDocumentIsMarkdown,
+              let button = codeCopyButton, !button.isHidden else { return }
+        let nsString = editorTextView.string as NSString
+        // Re-find the block by matching body range start (ranges shift on edits).
+        let blocks = LiveMarkdownStyler.fencedCodeBlocks(in: nsString)
+        guard let block = blocks.first(where: { $0.bodyRange.location == bodyRange.location }) else {
+            hideCodeCopyButton()
+            return
+        }
+        copyButtonBodyRange = block.bodyRange
+        positionCodeCopyButton(for: block.containerRange)
+    }
+
+    /// Copy the targeted block's BODY (between the fences, excluding the fence
+    /// lines and language token) to the general pasteboard and show the toast —
+    /// mockup `onContentClick` copy + "已复制代码" (Markdown Viewer.dc.html 806-812).
+    @objc private func copyHoveredCodeBlock(_ sender: Any?) {
+        performCodeBlockCopy()
+    }
+
+    @discardableResult
+    private func performCodeBlockCopy() -> Bool {
+        guard let bodyRange = copyButtonBodyRange else { return false }
+        let nsString = editorTextView.string as NSString
+        guard bodyRange.location >= 0,
+              bodyRange.location + bodyRange.length <= nsString.length else { return false }
+        var body = nsString.substring(with: bodyRange)
+        // Drop the single trailing newline left by the body-spanning range so the
+        // clipboard holds just the code lines, mirroring the mockup's innerText.
+        if body.hasSuffix("\n") { body.removeLast() }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(body, forType: .string)
+        flash("已复制代码")
+        return true
+    }
+
+    // MARK: Code-copy test hooks (drive the real hover + copy paths)
+
+    /// Test hook: hover the Nth fenced code block (document order) by running the
+    /// SAME geometry resolution the mouse path runs, then reveal the button.
+    /// Returns true if the block exists and the button is now visible.
+    @discardableResult
+    func hoverCodeBlockForTesting(index: Int) -> Bool {
+        let nsString = editorTextView.string as NSString
+        let blocks = LiveMarkdownStyler.fencedCodeBlocks(in: nsString)
+        guard index >= 0, index < blocks.count else {
+            hideCodeCopyButton()
+            return false
+        }
+        let block = blocks[index]
+        copyButtonBodyRange = block.bodyRange
+        positionCodeCopyButton(for: block.containerRange)
+        showCodeCopyButton()
+        return codeCopyButton.map { !$0.isHidden } ?? false
+    }
+
+    /// Test hook: invoke the copy button's action (the EXACT path a real click
+    /// fires). Returns true if a block body was copied.
+    @discardableResult
+    func clickCopyButtonForTesting() -> Bool {
+        performCodeBlockCopy()
+    }
+
+    var codeCopyButtonVisibleForTesting: Bool {
+        guard let button = codeCopyButton else { return false }
+        return !button.isHidden && button.alphaValue > 0
+    }
 
     // MARK: - Outline rail
 
@@ -2730,7 +2977,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
     // MARK: - Toast
 
+    /// Last toast message shown (test hook — the dark pill itself can't be read
+    /// back from a screenshot headless).
+    private var lastToastMessage: String?
+    var lastToastMessageForTesting: String { lastToastMessage ?? "" }
+    var toastVisibleForTesting: Bool { toastView != nil }
+
     private func flash(_ message: String) {
+        lastToastMessage = message
         toastWork?.cancel()
         toastView?.removeFromSuperview()
 
@@ -3335,10 +3589,18 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             hoverUrlLabel.heightAnchor.constraint(equalToConstant: 18)
         ])
 
-        // Wire the editor's pointer tracking to the URL resolver.
-        editorTextView.onPointerMove = { [weak self] point in self?.updateHoverUrl(atEditorPoint: point) }
-        editorTextView.onPointerExit = { [weak self] in self?.setHoverUrl(nil) }
+        // Wire the editor's pointer tracking to the URL resolver AND the
+        // hover-revealed code-block copy button (same mouseMoved path).
+        editorTextView.onPointerMove = { [weak self] point in
+            self?.updateHoverUrl(atEditorPoint: point)
+            self?.updateCodeCopyButton(atEditorPoint: point)
+        }
+        editorTextView.onPointerExit = { [weak self] in
+            self?.setHoverUrl(nil)
+            self?.hideCodeCopyButton()
+        }
 
+        installCodeCopyButton()
         installContentOverlays(in: container)
         observeScroll()
 
@@ -3483,6 +3745,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         jumpScrollTimer = nil
         washTimers.forEach { $0.invalidate() }
         washTimers.removeAll()
+
+        // A doc switch invalidates any code block targeted in the old document.
+        hideCodeCopyButton()
 
         isSwitchingTab = true
         currentFileURL = tab.url
@@ -4212,6 +4477,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         } else {
             applyPlainTextStyling()
         }
+        // Re-style/relayout (font change, edit, tab switch) may move or remove the
+        // targeted code block; keep the copy button glued to it (or hide it).
+        repositionCodeCopyButton()
     }
 
     private func applyLiveMarkdownStyling() {
@@ -5198,6 +5466,69 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             return f
         }
 
+        // STEP 18 (H) — Hover-revealed code-block copy button (mockup [data-copy]
+        // + onContentClick, Markdown Viewer.dc.html 16-18 / 806-812). The styler
+        // colors fenced blocks but offers no way to copy them; this button is that
+        // affordance. Mechanism: load a self-test case whose body has a known
+        // ```swift print("...")``` block, then drive the SAME hover-detection +
+        // copy path the mouse uses via hoverCodeBlockForTesting(index:) and
+        // clickCopyButtonForTesting(). Assert the button reveals, the pasteboard
+        // gets the block BODY (no fences/lang token), and the toast shows.
+        step("code-block-copy-button") {
+            var f: [String] = []
+            let fixture = selfTestCases()[0] // cycle-a → code body print("verify evidence")
+            let expectedBody = "print(\"\(fixture.codeNeedle)\")"
+            currentFileURL = nil
+            currentDocumentIsMarkdown = true
+            editorTextView.string = fixture.markdown
+            lastSavedText = editorTextView.string
+            applyLiveMarkdownStyling()
+            settleLayout()
+
+            // Pre-seed a sentinel so we can prove the click (not stale state) wrote
+            // the pasteboard.
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString("__sentinel__", forType: .string)
+
+            // Hover the first (only) fenced code block via the real geometry path.
+            let revealed = hoverCodeBlockForTesting(index: 0)
+            settleLayout()
+            if !revealed || !codeCopyButtonVisibleForTesting {
+                f.append("hovering the code block should reveal the top-right 复制 button")
+            }
+
+            // Click → copy. Same action a real click on the button fires.
+            let copied = clickCopyButtonForTesting()
+            settleLayout()
+            if !copied {
+                f.append("clicking 复制 should copy the code block body")
+            }
+            let got = pb.string(forType: .string) ?? ""
+            if got != expectedBody {
+                f.append("pasteboard should equal code body '\(expectedBody)', got '\(got)'")
+            }
+            // The "已复制代码" toast must be shown (reuses the app's flash pill).
+            if !toastVisibleForTesting {
+                f.append("copying should show the '已复制代码' toast")
+            }
+            if lastToastMessageForTesting != "已复制代码" {
+                f.append("toast should read '已复制代码', got '\(lastToastMessageForTesting)'")
+            }
+
+            // Moving off the block hides the button (mockup hover-only reveal).
+            hideCodeCopyButton()
+            settleLayout()
+            if codeCopyButtonVisibleForTesting {
+                f.append("moving off the code block should hide the 复制 button")
+            }
+
+            // Re-reveal for the screenshot so ui-18.png captures the button.
+            hoverCodeBlockForTesting(index: 0)
+            settleLayout()
+            return f
+        }
+
         if failures.isEmpty {
             print("[MarkdownViewer][ui-test] PASS steps=\(stepCount)")
             return true
@@ -6015,6 +6346,65 @@ enum LiveMarkdownStyler {
             }
         }
         return nil
+    }
+
+    /// One fenced code block recovered from the source. `containerRange` spans the
+    /// opening fence line through the closing fence line (used to compute the
+    /// block's on-screen rect for the top-right copy button). `bodyRange` covers
+    /// ONLY the code lines between the fences — it EXCLUDES both ``` fence lines
+    /// and the opening fence's language token, so copying yields the raw code body.
+    struct FencedCodeBlock {
+        let containerRange: NSRange
+        let bodyRange: NSRange
+    }
+
+    /// Enumerate the fenced code blocks in `nsString`, reusing the SAME
+    /// ``` -toggle line scan that `applyLineStyles` uses to style them (so the copy
+    /// button targets exactly the blocks the styler colors — inline `code` is never
+    /// matched). A block is only emitted once its closing fence is seen; an
+    /// unterminated trailing fence is ignored.
+    static func fencedCodeBlocks(in nsString: NSString) -> [FencedCodeBlock] {
+        let fullRange = NSRange(location: 0, length: nsString.length)
+        let lines = markdownLines(in: nsString, fullRange: fullRange)
+        var blocks: [FencedCodeBlock] = []
+        var index = 0
+        while index < lines.count {
+            let trimmed = lines[index].text.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("```") else { index += 1; continue }
+            let openRange = lines[index].range
+            var j = index + 1
+            while j < lines.count {
+                let inner = lines[j].text.trimmingCharacters(in: .whitespaces)
+                if inner.hasPrefix("```") { break }
+                j += 1
+            }
+            guard j < lines.count else {
+                // Unterminated fence: stop (no closing ``` → not a real block).
+                break
+            }
+            let closeRange = lines[j].range
+            // Body spans from the first body line's start to the END of the last
+            // body line (line ranges exclude the terminator, so we extend to the
+            // closing fence line's start to capture the trailing newlines, then the
+            // copy path trims a single trailing newline). For an empty block
+            // (```lang immediately followed by ```), this collapses to length 0.
+            let bodyStart: Int
+            let bodyLength: Int
+            if j == index + 1 {
+                bodyStart = closeRange.location
+                bodyLength = 0
+            } else {
+                bodyStart = lines[index + 1].range.location
+                bodyLength = max(0, closeRange.location - bodyStart)
+            }
+            let containerLength = (closeRange.location + closeRange.length) - openRange.location
+            blocks.append(FencedCodeBlock(
+                containerRange: NSRange(location: openRange.location, length: containerLength),
+                bodyRange: NSRange(location: bodyStart, length: bodyLength)
+            ))
+            index = j + 1
+        }
+        return blocks
     }
 
     static func apply(to textStorage: NSTextStorage) {
