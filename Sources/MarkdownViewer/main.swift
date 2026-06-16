@@ -69,6 +69,16 @@ extension NSColor {
 }
 
 final class PaperTextView: NSTextView {
+    /// Pointer moved over the paper (in view coordinates). The controller uses
+    /// this to resolve whether a link sits under the cursor and surface its URL
+    /// in the bottom-left preview — matching the mockup's onContentOver/hoverUrl
+    /// (Markdown Viewer.dc.html lines 211-214, 785-790). Non-destructive: it only
+    /// reads geometry; editing/selection is untouched.
+    var onPointerMove: ((NSPoint) -> Void)?
+    /// Pointer left the paper; hide the URL preview (mockup onContentLeave).
+    var onPointerExit: (() -> Void)?
+    private var hoverTrackingArea: NSTrackingArea?
+
     override func layout() {
         super.layout()
         updatePaperGeometry()
@@ -77,6 +87,28 @@ final class PaperTextView: NSTextView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         updatePaperGeometry()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = hoverTrackingArea { removeTrackingArea(existing) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeInKeyWindow, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        onPointerMove?(convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onPointerExit?()
     }
 
     private func updatePaperGeometry() {
@@ -1555,6 +1587,12 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private let outlineView = SidebarOutlineView()
     private let outlineScrollView = NSScrollView()
     private let statusLabel = NSTextField(labelWithString: "就绪")
+    /// Bottom-left link-URL preview (browser convention). Mirrors statusLabel on
+    /// the left and surfaces the destination of the link under the pointer, since
+    /// the styler hides the `[...](url)` destination. Matches the mockup div at
+    /// Markdown Viewer.dc.html lines 211-214 (bottom-left, 11.5px, #767676,
+    /// max-width 42%, single-line ellipsis, pointer-events:none).
+    private let hoverUrlLabel = NSTextField(labelWithString: "")
     private let tabBarView = NSView()
     private var newTabButton: HoverButton?
     private let commandButton = HoverButton(title: "", target: nil, action: nil)
@@ -1666,6 +1704,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
         window.backgroundColor = DesignTokens.paper
+        // Deliver mouseMoved to the editor's tracking area so the bottom-left
+        // link-URL preview can follow the pointer (mockup hoverUrl convention).
+        window.acceptsMouseMovedEvents = true
         window.center()
         let initialContentSize = window.contentView?.bounds.size ?? NSSize(width: 1180, height: 760)
         rootView.frame = NSRect(origin: .zero, size: initialContentSize)
@@ -2292,6 +2333,84 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         statusFadeWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
     }
+
+    // MARK: - Link hover-URL preview (bottom-left)
+
+    /// Resolve whether a link sits under `point` (editor view coordinates) and
+    /// surface its URL in the bottom-left preview. Mirrors the mockup's
+    /// onContentOver/hoverUrl (Markdown Viewer.dc.html 785-790). The styler does
+    /// NOT store an `NSAttributedString.Key.link` attribute (it only colors the
+    /// link text and hides the `[...](url)` destination — see the linkRegex pass
+    /// in LiveMarkdownStyler.applyInlineStyles), so we recover the destination by
+    /// re-matching `linkRegex` against the source and finding the link whose
+    /// label OR raw `[label](url)` span covers the hovered character index.
+    private func updateHoverUrl(atEditorPoint point: NSPoint) {
+        guard currentDocumentIsMarkdown,
+              let index = characterIndex(forEditorPoint: point) else {
+            setHoverUrl(nil)
+            return
+        }
+        setHoverUrl(linkURL(atCharacterIndex: index))
+    }
+
+    /// Map a point in the editor's view coordinates to a character index, or nil
+    /// if the point falls outside any glyph (so trailing whitespace / margins do
+    /// not spuriously latch onto a nearby link).
+    private func characterIndex(forEditorPoint point: NSPoint) -> Int? {
+        guard let lm = editorTextView.layoutManager,
+              let tc = editorTextView.textContainer else { return nil }
+        let inset = editorTextView.textContainerInset
+        let containerPoint = NSPoint(x: point.x - inset.width, y: point.y - inset.height)
+        guard containerPoint.x >= 0, containerPoint.y >= 0 else { return nil }
+        var fraction: CGFloat = 0
+        let glyphIndex = lm.glyphIndex(for: containerPoint, in: tc, fractionOfDistanceThroughGlyph: &fraction)
+        // Reject points beyond the last glyph on the line (fraction ~1 with no
+        // real glyph hit) so we only report a URL when truly over link text.
+        let glyphRect = lm.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: tc)
+        guard glyphRect.contains(containerPoint) else { return nil }
+        return lm.characterIndexForGlyph(at: glyphIndex)
+    }
+
+    /// Find the markdown link whose source span `[label](url)` covers `index` and
+    /// return its destination URL string, or nil. Skips image links (`![...]`).
+    private func linkURL(atCharacterIndex index: Int) -> String? {
+        let nsString = editorTextView.string as NSString
+        guard index >= 0, index < nsString.length else { return nil }
+        return LiveMarkdownStyler.linkDestination(in: nsString, coveringIndex: index)
+    }
+
+    /// Show `url` in the bottom-left preview, or hide the label when nil/empty.
+    /// Instant (no animation): the mockup uses no transition on hoverUrl.
+    private func setHoverUrl(_ url: String?) {
+        let text = url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if text.isEmpty {
+            if !hoverUrlLabel.isHidden {
+                hoverUrlLabel.isHidden = true
+                hoverUrlLabel.stringValue = ""
+            }
+            return
+        }
+        if hoverUrlLabel.stringValue != text { hoverUrlLabel.stringValue = text }
+        hoverUrlLabel.isHidden = false
+    }
+
+    /// Test hook: run the EXACT same resolution + label path the mouseMoved
+    /// handler runs, but locate the link by its visible label text. Returns true
+    /// if a destination was found and the preview is now showing it.
+    @discardableResult
+    func hoverLinkForTesting(linkText: String) -> Bool {
+        let nsString = editorTextView.string as NSString
+        let labelRange = nsString.range(of: linkText)
+        guard labelRange.location != NSNotFound else {
+            setHoverUrl(nil)
+            return false
+        }
+        setHoverUrl(linkURL(atCharacterIndex: labelRange.location))
+        return !hoverUrlLabel.isHidden
+    }
+
+    var hoverUrlPreviewVisibleForTesting: Bool { !hoverUrlLabel.isHidden }
+    var hoverUrlPreviewTextForTesting: String { hoverUrlLabel.stringValue }
 
     // MARK: - Outline rail
 
@@ -3172,6 +3291,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         container.addSubview(editorScrollView)
         container.addSubview(tabBar)
         container.addSubview(statusLabel)
+        container.addSubview(hoverUrlLabel)
 
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         editorScrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -3179,6 +3299,19 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         statusLabel.font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
         statusLabel.textColor = DesignTokens.statusText
         statusLabel.alignment = .right
+
+        // Bottom-left link-URL preview. Same baseline/size/color as the status
+        // label, anchored to the leading edge with single-line truncation and a
+        // ~42%-of-content max width (mockup lines 211-214). Hidden until a link
+        // is hovered; pointer-events disabled so it never blocks editing.
+        hoverUrlLabel.translatesAutoresizingMaskIntoConstraints = false
+        hoverUrlLabel.font = NSFont.systemFont(ofSize: 11.5)
+        hoverUrlLabel.textColor = DesignTokens.statusText
+        hoverUrlLabel.alignment = .left
+        hoverUrlLabel.lineBreakMode = .byTruncatingTail
+        hoverUrlLabel.maximumNumberOfLines = 1
+        hoverUrlLabel.cell?.usesSingleLineMode = true
+        hoverUrlLabel.isHidden = true
 
         NSLayoutConstraint.activate([
             tabBar.topAnchor.constraint(equalTo: container.topAnchor),
@@ -3194,8 +3327,17 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             statusLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
             statusLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14),
             statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
-            statusLabel.heightAnchor.constraint(equalToConstant: 18)
+            statusLabel.heightAnchor.constraint(equalToConstant: 18),
+
+            hoverUrlLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            hoverUrlLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14),
+            hoverUrlLabel.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, multiplier: 0.42),
+            hoverUrlLabel.heightAnchor.constraint(equalToConstant: 18)
         ])
+
+        // Wire the editor's pointer tracking to the URL resolver.
+        editorTextView.onPointerMove = { [weak self] point in self?.updateHoverUrl(atEditorPoint: point) }
+        editorTextView.onPointerExit = { [weak self] in self?.setHoverUrl(nil) }
 
         installContentOverlays(in: container)
         observeScroll()
@@ -5011,6 +5153,51 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             return f
         }
 
+        // STEP 17 (G) — Bottom-left link-URL preview (mockup hoverUrl, lines
+        // 211-214 / JS onContentOver 785-790). The styler HIDES a link's
+        // destination, so the preview is the only way to see where a link points.
+        // Mechanism: load a self-test case whose body contains a known link
+        // ([证据链接](https://example.com/cycle-a)), then drive the SAME
+        // url-resolution + show-label path the mouseMoved handler runs via
+        // hoverLinkForTesting(linkText:). Assert the preview becomes visible and
+        // its string equals the expected destination; then assert moving off the
+        // link (resolving at a non-link index) hides it again.
+        step("link-hover-url-preview") {
+            var f: [String] = []
+            let fixture = selfTestCases()[0] // cycle-a → linkText "证据链接"
+            let expectedURL = "https://example.com/\(fixture.id)"
+            currentFileURL = nil
+            currentDocumentIsMarkdown = true
+            editorTextView.string = fixture.markdown
+            lastSavedText = editorTextView.string
+            applyLiveMarkdownStyling()
+            settleLayout()
+
+            let shown = hoverLinkForTesting(linkText: fixture.linkText)
+            settleLayout()
+            if !shown || !hoverUrlPreviewVisibleForTesting {
+                f.append("hovering link '\(fixture.linkText)' should show the bottom-left URL preview")
+            }
+            if hoverUrlPreviewTextForTesting != expectedURL {
+                f.append("preview should read \(expectedURL), got '\(hoverUrlPreviewTextForTesting)'")
+            }
+            // Sanity: the right-side status label must NOT be displaced/overlapped
+            // by the new left-side preview (they share the bottom edge).
+            if statusLabel.isHidden {
+                f.append("bottom-right status label must remain present alongside the URL preview")
+            }
+            // Move off the link → preview hides (mockup onContentLeave).
+            setHoverUrl(nil)
+            settleLayout()
+            if hoverUrlPreviewVisibleForTesting {
+                f.append("moving off the link should hide the URL preview")
+            }
+            // Re-show for the screenshot so ui-17.png captures the preview.
+            hoverLinkForTesting(linkText: fixture.linkText)
+            settleLayout()
+            return f
+        }
+
         if failures.isEmpty {
             print("[MarkdownViewer][ui-test] PASS steps=\(stepCount)")
             return true
@@ -5807,6 +5994,28 @@ enum LiveMarkdownStyler {
     private static let inlineCodeRegex = try! NSRegularExpression(pattern: "`([^`\\n]+)`")
     private static let imageRegex = try! NSRegularExpression(pattern: "!\\[([^\\]\\n]*)\\]\\(([^)\\n]+)\\)")
     private static let linkRegex = try! NSRegularExpression(pattern: "\\[([^\\]\\n]+)\\]\\(([^)\\n]+)\\)")
+
+    /// Source-parse the markdown for the link `[label](url)` whose full span (or
+    /// label span) covers `index`, returning its destination URL. The styler
+    /// never stores an `NSAttributedString.Key.link`, so the hover preview relies
+    /// on this single shared `linkRegex` rather than reading attributes. Image
+    /// links (`![...]`) are skipped, mirroring the linkRegex pass in
+    /// applyInlineStyles which `continue`s when the char before `[` is `!`.
+    static func linkDestination(in nsString: NSString, coveringIndex index: Int) -> String? {
+        let fullRange = NSRange(location: 0, length: nsString.length)
+        for match in linkRegex.matches(in: nsString as String, range: fullRange) {
+            if match.range.location > 0,
+               nsString.character(at: match.range.location - 1) == 33 { // '!' → image
+                continue
+            }
+            if NSLocationInRange(index, match.range) {
+                let urlRange = match.range(at: 2)
+                guard urlRange.location != NSNotFound else { return nil }
+                return nsString.substring(with: urlRange)
+            }
+        }
+        return nil
+    }
 
     static func apply(to textStorage: NSTextStorage) {
         let fullRange = NSRange(location: 0, length: textStorage.length)
