@@ -802,6 +802,18 @@ final class FlippedStackView: NSStackView {
     override var isFlipped: Bool { true }
 }
 
+/// Non-bezeled text-field cell that insets its drawn text and field editor by
+/// `xInset` horizontally, so a borderless palette search field gets the design's
+/// 18px left/right padding (mockup L229 `padding: 0 18px`) — the default cell
+/// draws flush-left and reframes the field editor to the bare cell bounds.
+final class PaddedTextFieldCell: NSTextFieldCell {
+    var xInset: CGFloat = 18
+    override func drawingRect(forBounds r: NSRect) -> NSRect { super.drawingRect(forBounds: r.insetBy(dx: xInset, dy: 0)) }
+    override func titleRect(forBounds r: NSRect) -> NSRect { super.titleRect(forBounds: r.insetBy(dx: xInset, dy: 0)) }
+    override func edit(withFrame r: NSRect, in v: NSView, editor t: NSText, delegate d: Any?, event e: NSEvent?) { super.edit(withFrame: r.insetBy(dx: xInset, dy: 0), in: v, editor: t, delegate: d, event: e) }
+    override func select(withFrame r: NSRect, in v: NSView, editor t: NSText, delegate d: Any?, start s: Int, length l: Int) { super.select(withFrame: r.insetBy(dx: xInset, dy: 0), in: v, editor: t, delegate: d, start: s, length: l) }
+}
+
 /// ⌘K palette: a documents section + a commands section, arrow-navigable,
 /// matching the design's segmented command palette.
 final class CommandPaletteView: NSView, NSTextFieldDelegate {
@@ -919,6 +931,13 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         layer?.shadowRadius = 30
         layer?.shadowOffset = NSSize(width: 0, height: -24)  // 终稿 L228: 0 24px 60px
 
+        // Swap in a padded cell so the text/field-editor get the design's 18px
+        // horizontal padding (mockup L229); the field's leading constraint is then 0.
+        let paddedCell = PaddedTextFieldCell(textCell: "")
+        paddedCell.isScrollable = true
+        paddedCell.wraps = false
+        paddedCell.usesSingleLineMode = true
+        searchField.cell = paddedCell
         searchField.placeholderString = "搜索文档或命令…"
         searchField.font = NSFont.systemFont(ofSize: 14)
         searchField.isBordered = false
@@ -953,8 +972,9 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: 460),
             searchField.topAnchor.constraint(equalTo: topAnchor),
-            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            // Leading/trailing are 0: the PaddedTextFieldCell provides the 18px inset.
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor),
             searchField.heightAnchor.constraint(equalToConstant: 46),
 
             divider.topAnchor.constraint(equalTo: searchField.bottomAnchor),
@@ -989,8 +1009,15 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
 
     private func sectionHeader(_ title: String) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.font = NSFont.systemFont(ofSize: 10.5)
+        let font = NSFont.systemFont(ofSize: 10.5)
+        label.font = font
         label.textColor = DesignTokens.placeholderText
+        // letter-spacing: 0.5px (mockup L232/L244).
+        label.attributedStringValue = NSAttributedString(string: title, attributes: [
+            .font: font,
+            .foregroundColor: DesignTokens.placeholderText,
+            .kern: 0.5
+        ])
         label.translatesAutoresizingMaskIntoConstraints = false
         let wrap = NSView()
         wrap.translatesAutoresizingMaskIntoConstraints = false
@@ -2094,14 +2121,21 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
     @objc func openFile(_ sender: Any?) {
         let panel = NSOpenPanel()
-        panel.title = "打开 Markdown 文档"
+        panel.title = "打开 Markdown 文件或文件夹"
+        // Allow picking either a single .md file or a directory. A directory loads
+        // the sidebar tree via the existing loadDirectory path; a file opens as before.
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = markdownContentTypes()
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        openOrSwitchToFile(url)
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+            loadDirectory(url)
+        } else {
+            openOrSwitchToFile(url)
+        }
     }
 
     @objc func openDirectory(_ sender: Any?) {
@@ -2156,18 +2190,19 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         // Layer order (back → front): blur → dim wash → card. The blur gives the
         // design's `backdrop-filter: blur(6px)` over the app content; the light
-        // dim wash sits on top of the blur (unchanged rgba(248,248,250,0.6)); the
-        // card stays a solid modal (built opaque in buildCommandPaletteView).
+        // dim wash sits on top of the blur at rgba(248,248,250,0.4) — kept light so
+        // the blur reads as glass; the card stays a solid modal (built opaque in
+        // buildCommandPaletteView).
         let blur = NSVisualEffectView()
         blur.blendingMode = .withinWindow
-        blur.material = .popover
+        blur.material = .underWindowBackground
         blur.state = .active
         blur.translatesAutoresizingMaskIntoConstraints = false
         backdrop.addSubview(blur)
 
         let dim = NSView()
         dim.wantsLayer = true
-        dim.layer?.backgroundColor = NSColor(hex: 0xF8F8FA, alpha: 0.6).cgColor
+        dim.layer?.backgroundColor = NSColor(hex: 0xF8F8FA, alpha: 0.4).cgColor
         dim.translatesAutoresizingMaskIntoConstraints = false
         backdrop.addSubview(dim)
 
@@ -2557,7 +2592,11 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             rail.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             rail.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             rail.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor, constant: 60),
-            rail.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -40)
+            rail.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -40),
+            // Floor the rail height so its tracking area is never empty (mockup
+            // L188 `min-height: 130px`); otherwise centerY + two inequalities give
+            // it ~0 height and hover never fires.
+            rail.heightAnchor.constraint(greaterThanOrEqualToConstant: 130)
         ])
         rail.onJump = { [weak self] index in self?.jumpToHeading(index) }
         // Hovering the rail counts as "discovered": dismiss the coach tip early.
@@ -3691,6 +3730,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         outlineScrollView.documentView = outlineView
         outlineScrollView.hasVerticalScroller = true
+        // Overlay (6px thumb, mockup L25-28) + autohide so no legacy 15px gutter.
+        outlineScrollView.scrollerStyle = .overlay
+        outlineScrollView.autohidesScrollers = true
         outlineScrollView.drawsBackground = false
         outlineScrollView.translatesAutoresizingMaskIntoConstraints = false
         outlineScrollView.automaticallyAdjustsContentInsets = false
@@ -3776,6 +3818,10 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         editorScrollView.documentView = editorTextView
         editorScrollView.hasVerticalScroller = true
+        // Overlay (6px thumb, mockup L25-28) + autohide so no legacy 15px gutter
+        // and the thumb no longer fights the outline rail at the right edge.
+        editorScrollView.scrollerStyle = .overlay
+        editorScrollView.autohidesScrollers = true
         editorScrollView.hasHorizontalScroller = false
         editorScrollView.drawsBackground = true
         editorScrollView.backgroundColor = DesignTokens.paper
@@ -3875,7 +3921,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let findButton = makeGhostIconButton(symbol: "magnifyingglass", title: "查找 / 替换", action: #selector(toggleFindBar(_:)))
         tooltipController?.register(view: findButton, text: "查找 / 替换 · ⌘F")
         let openButton = makeGhostIconButton(symbol: "folder", title: "打开", action: #selector(openFile(_:)))
-        tooltipController?.register(view: openButton, text: "打开 · ⌘O")
+        tooltipController?.register(view: openButton, text: "打开文件 / 文件夹 · ⌘O")
 
         [toggleButton, tabStrip, newButton, findButton, openButton].forEach {
             tabBarView.addSubview($0)
@@ -5248,6 +5294,16 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             }
             if rail.rowCountForTesting < 3 {
                 f.append("expected >=3 outline rows, got \(rail.rowCountForTesting)")
+            }
+            // Regression guard: the rail must have real height (not collapse to ~0)
+            // so its tracking area is non-empty and a real pointer-enter can fire.
+            // Tests below call mouseEntered directly and would falsely PASS otherwise.
+            rail.updateTrackingAreas()
+            if rail.bounds.height <= 0 {
+                f.append("outline rail height collapsed to 0 (bounds=\(rail.bounds)) — hover can never fire")
+            }
+            if rail.trackingAreaRectAreaForTesting <= 0 {
+                f.append("outline rail tracking-area rect is empty — hover can never fire from a real pointer")
             }
             // Hover-enter (real handler).
             if let hover = syntheticMouseEvent() {
@@ -6677,6 +6733,8 @@ enum LiveMarkdownStyler {
 
     private static let markerFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
     private static let codeFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+    // Inline `code` runs are 13px (mockup); the fenced code BLOCK stays 12.5.
+    private static let inlineCodeFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     private static let boldCodeFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .semibold)
     private static let markerColor = DesignTokens.placeholderText
     private static let mutedColor = DesignTokens.secondaryText
@@ -6797,16 +6855,43 @@ enum LiveMarkdownStyler {
         let lines = markdownLines(in: nsString, fullRange: fullRange)
         var insideCodeBlock = false
         var index = 0
+        // Tracks whether the immediately preceding line was a (non-code) blank, so
+        // consecutive blanks in a run collapse instead of each rendering at full
+        // body line-height (the "too much vertical spacing" bug).
+        var prevWasBlank = false
 
         while index < lines.count {
             let current = lines[index]
             let substringRange = current.range
             let line = current.text
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Blank line (empty or whitespace-only) outside a fenced code block:
+            // collapse to a small fixed gap. First blank in a run ≈ 8px, each
+            // subsequent blank in the same run ≈ 2px. Inside a code block, blanks
+            // fall through to the code-line styling below.
+            if trimmed.isEmpty && !insideCodeBlock {
+                if substringRange.length > 0 {
+                    let blankStyle = NSMutableParagraphStyle()
+                    let h: CGFloat = prevWasBlank ? 2 : 8
+                    blankStyle.minimumLineHeight = h
+                    blankStyle.maximumLineHeight = h
+                    blankStyle.lineHeightMultiple = 1
+                    textStorage.addAttributes([
+                        .font: NSFont.systemFont(ofSize: 1),
+                        .paragraphStyle: blankStyle
+                    ], range: substringRange)
+                }
+                prevWasBlank = true
+                index += 1
+                continue
+            }
+            prevWasBlank = false
+
             guard substringRange.length > 0 else {
                 index += 1
                 continue
             }
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if trimmed.hasPrefix("```") {
                 let isOpeningFence = !insideCodeBlock
@@ -6899,11 +6984,10 @@ enum LiveMarkdownStyler {
             }
 
             if trimmed.hasPrefix(">") {
+                // Mockup blockquote: color #767676, padding-left 0 (no head indent).
                 let style = paragraphStyle(spacingAfter: 9)
-                style.headIndent = 18
-                style.firstLineHeadIndent = 18
                 textStorage.addAttributes([
-                    .foregroundColor: DesignTokens.tertiaryText,
+                    .foregroundColor: NSColor(hex: 0x767676),
                     .backgroundColor: quoteBackground,
                     .paragraphStyle: style
                 ], range: substringRange)
@@ -6924,7 +7008,7 @@ enum LiveMarkdownStyler {
 
             if let list = firstMatch(listRegex, in: nsString, exactly: substringRange) {
                 let markerRange = list.range(at: 1)
-                let style = paragraphStyle(spacingAfter: 3)
+                let style = paragraphStyle(spacingAfter: 6)
                 style.headIndent = 24
                 textStorage.addAttributes([.paragraphStyle: style], range: substringRange)
                 textStorage.addAttributes(markerAttributes(font: markerFont), range: markerRange)
@@ -6945,7 +7029,7 @@ enum LiveMarkdownStyler {
 
         for match in inlineCodeRegex.matches(in: nsString as String, range: fullRange).reversed() {
             textStorage.addAttributes([
-                .font: codeFont,
+                .font: inlineCodeFont,
                 .foregroundColor: DesignTokens.titleText
             ], range: match.range)
             // Mark ONLY the code content (not the backticks, which dimMarkup hides)
@@ -7335,7 +7419,8 @@ enum LiveMarkdownStyler {
     private static func codeBlockAttributes(role: CodeLineRole = .body) -> [NSAttributedString.Key: Any] {
         [
             .font: codeFont,
-            .foregroundColor: DesignTokens.bodyText,
+            // Fenced `pre` color is #444 (mockup), slightly lighter than body #333336.
+            .foregroundColor: NSColor(hex: 0x444444),
             .mvCodeBlock: true,
             .paragraphStyle: codeParagraphStyle(role: role)
         ]
@@ -7395,7 +7480,10 @@ enum LiveMarkdownStyler {
     }
 
     private static func headingParagraphStyle(level: Int) -> NSParagraphStyle {
-        paragraphStyle(spacingBefore: level == 1 ? 8 : 40, spacingAfter: level == 1 ? 24 : 16)
+        // Tighter rhythm (mockup): H1 keeps a small lead; H2/H3 lead 40 → 18 so the
+        // gap before a heading is ~26px total, not 150-250px. After-spacing: H1 24,
+        // others 12.
+        paragraphStyle(spacingBefore: level == 1 ? 8 : 18, spacingAfter: level == 1 ? 24 : 12)
     }
 
     private static func paragraphStyle(spacingBefore: CGFloat = 0, spacingAfter: CGFloat = 8) -> NSMutableParagraphStyle {
@@ -7575,9 +7663,10 @@ final class FindBarView: NSView, NSTextFieldDelegate {
         glassBacking.translatesAutoresizingMaskIntoConstraints = false
         addSubview(glassBacking) // inserted first → sits UNDER the content stack
 
-        // Frosted-white tint over the blur for the design's rgba(255,255,255,0.97).
+        // Frosted-white tint over the blur. Kept at 0.6 (not 0.97) so the
+        // within-window blur shows through as frosted glass (mockup L135).
         glassTint.wantsLayer = true
-        glassTint.layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.97).cgColor
+        glassTint.layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.6).cgColor
         glassTint.layer?.cornerRadius = 10
         glassTint.layer?.masksToBounds = true
         glassTint.translatesAutoresizingMaskIntoConstraints = false
@@ -8114,7 +8203,11 @@ final class OutlineRailView: NSView {
         NSLayoutConstraint.activate([
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8)
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
+            // Pin the stack vertically (mockup L188 `padding: 30px ... 30px`) so its
+            // intrinsic height propagates to the rail → non-empty tracking area.
+            stack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 30),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -30)
         ])
     }
 
@@ -8203,6 +8296,14 @@ final class OutlineRailView: NSView {
 
     /// Observable expansion state for assertions.
     var isExpandedForTesting: Bool { expanded }
+
+    /// The area of the rail's first tracking-area rect (0 if none), so a test can
+    /// assert the rail is hit-testable — a collapsed (~0-height) rail has an empty
+    /// tracking rect and `mouseEntered` would never fire from a real pointer.
+    var trackingAreaRectAreaForTesting: CGFloat {
+        guard let area = trackingAreas.first else { return 0 }
+        return area.rect.width * area.rect.height
+    }
 
     /// Number of rendered rows (== outline entries) for assertions.
     var rowCountForTesting: Int { rows.count }
