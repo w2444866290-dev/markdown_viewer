@@ -858,7 +858,7 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         layer?.shadowColor = NSColor.black.cgColor
         layer?.shadowOpacity = 0.22
         layer?.shadowRadius = 30
-        layer?.shadowOffset = NSSize(width: 0, height: -10)
+        layer?.shadowOffset = NSSize(width: 0, height: -24)  // 终稿 L228: 0 24px 60px
 
         searchField.placeholderString = "搜索文档或命令…"
         searchField.font = NSFont.systemFont(ofSize: 14)
@@ -3620,7 +3620,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         outlineView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         outlineView.headerView = nil
         outlineView.rowHeight = 28
-        outlineView.indentationPerLevel = 14
+        outlineView.indentationPerLevel = 16  // 终稿 L1131: pad = 10 + indent*16
         outlineView.style = .sourceList
         outlineView.backgroundColor = DesignTokens.sidebar
         outlineView.dataSource = self
@@ -7450,7 +7450,7 @@ final class FindBarView: NSView, NSTextFieldDelegate {
         layer?.shadowColor = NSColor.black.cgColor
         layer?.shadowOpacity = 0.14
         layer?.shadowRadius = 14
-        layer?.shadowOffset = NSSize(width: 0, height: -4)
+        layer?.shadowOffset = NSSize(width: 0, height: -8)  // 终稿 L135: 0 8px 28px
         layer?.borderWidth = 1
         layer?.borderColor = DesignTokens.ring.cgColor
 
@@ -7463,9 +7463,9 @@ final class FindBarView: NSView, NSTextFieldDelegate {
         glassBacking.translatesAutoresizingMaskIntoConstraints = false
         addSubview(glassBacking) // inserted first → sits UNDER the content stack
 
-        // Frosted-white tint over the blur for the design's rgba(255,255,255,0.92).
+        // Frosted-white tint over the blur for the design's rgba(255,255,255,0.97).
         glassTint.wantsLayer = true
-        glassTint.layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.92).cgColor
+        glassTint.layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.97).cgColor
         glassTint.layer?.cornerRadius = 10
         glassTint.layer?.masksToBounds = true
         glassTint.translatesAutoresizingMaskIntoConstraints = false
