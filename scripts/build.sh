@@ -7,8 +7,9 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/MarkdownViewer.app"
 EXECUTABLE="$APP_DIR/Contents/MacOS/MarkdownViewer"
 
-mkdir -p "$BUILD_DIR" "$APP_DIR/Contents/MacOS"
+mkdir -p "$BUILD_DIR" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$ROOT_DIR/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
+cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 
 swiftc -O \
   -target arm64-apple-macos13.0 \
