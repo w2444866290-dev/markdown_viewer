@@ -87,6 +87,11 @@ extension NSAttributedString.Key {
     /// Marks a table BODY row → draws a #F4F4F5 hairline along its bottom edge
     /// (mockup `td` border-bottom, Markdown Viewer.dc.html ~324). Boolean `true`.
     static let mvTableBodyRule = NSAttributedString.Key("mvTableBodyRule")
+    /// Marks a thematic-break line (`---`/`***`/`___`) → draws a 1px #F0F0F1
+    /// divider across the text measure (final mockup has no `<hr>` example, so
+    /// this uses the Design System divider token, DesignTokens.divider).
+    /// Boolean `true`.
+    static let mvHorizontalRule = NSAttributedString.Key("mvHorizontalRule")
 }
 
 /// `NSLayoutManager` that renders the design's code CARD, inline-code PILL, and
@@ -112,6 +117,7 @@ final class CardLayoutManager: NSLayoutManager {
     private let pillPadX: CGFloat = 4
     private let headerRule = NSColor(hex: 0xECECEE)
     private let bodyRule = DesignTokens.line                      // #F4F4F5
+    private let hrRule = DesignTokens.divider                     // #F0F0F1
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         // Let the base class paint any residual per-glyph backgrounds (e.g. the
@@ -122,6 +128,33 @@ final class CardLayoutManager: NSLayoutManager {
         drawInlineCodePills(glyphsToShow, at: origin, storage: storage)
         drawCodeCards(glyphsToShow, at: origin, storage: storage)
         drawTableRules(glyphsToShow, at: origin, storage: storage)
+        drawHorizontalRules(glyphsToShow, at: origin, storage: storage)
+    }
+
+    /// Draw a 1px divider centered in each thematic-break (`---`) line fragment,
+    /// spanning the text measure. Reuses the table-rule drawing pattern.
+    private func drawHorizontalRules(_ glyphsToShow: NSRange, at origin: NSPoint, storage: NSTextStorage) {
+        let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        guard charRange.length > 0, let container = textContainers.first else { return }
+        let left = origin.x + container.lineFragmentPadding
+        let width = container.size.width - container.lineFragmentPadding * 2
+
+        storage.enumerateAttribute(.mvHorizontalRule, in: charRange, options: []) { value, runCharRange, _ in
+            guard (value as? Bool) == true, runCharRange.length > 0 else { return }
+            let runGlyphRange = self.glyphRange(forCharacterRange: runCharRange, actualCharacterRange: nil)
+            var union = CGRect.null
+            self.enumerateLineFragments(forGlyphRange: runGlyphRange) { _, usedRect, _, _, _ in
+                union = union.union(usedRect)
+            }
+            guard !union.isNull else { return }
+            let y = (origin.y + union.midY).rounded() - 0.5
+            self.hrRule.setStroke()
+            let line = NSBezierPath()
+            line.lineWidth = 1
+            line.move(to: NSPoint(x: left, y: y))
+            line.line(to: NSPoint(x: left + width, y: y))
+            line.stroke()
+        }
     }
 
     /// Paint one rounded card+border per contiguous `mvCodeBlock` run, spanning
@@ -292,6 +325,16 @@ final class SidebarRowView: NSTableRowView {
         didSet { if kbSelected != oldValue { needsDisplay = true } }
     }
 
+    /// Keep the selected row "emphasized" regardless of window/first-responder
+    /// focus so the selected cell's backgroundStyle stays `.emphasized` (driving
+    /// SidebarCell's title-color text). Mirrors `drawSelection`, which already
+    /// paints the selected fill unconditionally — the active file stays
+    /// highlighted in the mockup even when the sidebar isn't focused.
+    override var isEmphasized: Bool {
+        get { true }
+        set { }
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach { removeTrackingArea($0) }
@@ -326,7 +369,7 @@ final class SidebarRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
         DesignTokens.selected.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6).fill()
     }
 
     override func drawBackground(in dirtyRect: NSRect) {
@@ -336,10 +379,10 @@ final class SidebarRowView: NSTableRowView {
         // kbSel > hover precedence in mapItem (bg rgba(0,0,0,0.05) vs 0.045).
         if kbSelected {
             DesignTokens.hover.setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6).fill()
         } else if mouseInside {
             DesignTokens.sidebarHover.setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6).fill()
         }
     }
 }
@@ -505,6 +548,17 @@ final class SidebarCell: NSTableCellView {
     private var isDirectory = false
     private var isExpanded = false
     private var rowHovered = false
+    private var isDirty = false
+
+    /// AppKit flips this to `.emphasized` when the row is selected (the outline
+    /// uses `selectionHighlightStyle = .regular`). The mockup's selected file row
+    /// switches its label to the title color #1d1d1f at weight 600
+    /// (Markdown Viewer.dc.html ~line 1133: `active ? '#1d1d1f' : '#3f3f46'`,
+    /// ~line 1134: `weight: active ? 600 : 400`).
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet { applyTextStyle() }
+    }
+    private var isSelected: Bool { backgroundStyle == .emphasized }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -559,11 +613,11 @@ final class SidebarCell: NSTableCellView {
     func configure(name: String, isDirectory: Bool, isExpanded: Bool, isDirty: Bool) {
         self.isDirectory = isDirectory
         self.isExpanded = isExpanded
+        self.isDirty = isDirty
         textField?.stringValue = name
-        textField?.font = NSFont.systemFont(ofSize: 13, weight: isDirty ? .semibold : .regular)
         chevron.isHidden = !isDirectory
         chevron.stringValue = isExpanded ? "▾" : "▸"
-        applyTextColor()
+        applyTextStyle()
         let symbol = isDirectory ? "folder.fill" : "doc.text"
         let tint = isDirectory ? DesignTokens.folderIcon : NSColor(hex: 0xC2C2C8)
         let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
@@ -578,17 +632,22 @@ final class SidebarCell: NSTableCellView {
     func setRowHovered(_ hovered: Bool) {
         guard rowHovered != hovered else { return }
         rowHovered = hovered
-        applyTextColor()
+        applyTextStyle()
     }
 
-    private func applyTextColor() {
+    private func applyTextStyle() {
         if isDirectory {
             // Chevron + folder text both follow placeholder (rest) → secondary (hover).
             let color = rowHovered ? DesignTokens.secondaryText : DesignTokens.placeholderText
             textField?.textColor = color
             chevron.textColor = color
+            textField?.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         } else {
-            textField?.textColor = DesignTokens.fileRowText
+            // Selected file row: title color + semibold (mockup active state);
+            // otherwise the rest file-row color, going semibold only when dirty.
+            textField?.textColor = isSelected ? DesignTokens.titleText : DesignTokens.fileRowText
+            let bold = isSelected || isDirty
+            textField?.font = NSFont.systemFont(ofSize: 13, weight: bold ? .semibold : .regular)
         }
     }
 }
@@ -6821,13 +6880,18 @@ enum LiveMarkdownStyler {
                 continue
             }
 
-            if trimmed == "---" || trimmed == "***" {
-                let style = paragraphStyle(spacingAfter: 12)
-                style.minimumLineHeight = 1
-                style.maximumLineHeight = 1
+            if trimmed == "---" || trimmed == "***" || trimmed == "___" {
+                // Keep the raw `---` text hidden (clear) as before, but give the
+                // line enough height for a centered divider and stamp
+                // `mvHorizontalRule` so CardLayoutManager paints a visible 1px
+                // #F0F0F1 hairline across the text measure.
+                let style = paragraphStyle(spacingBefore: 8, spacingAfter: 12)
+                style.minimumLineHeight = 14
+                style.maximumLineHeight = 14
                 textStorage.addAttributes([
                     .foregroundColor: NSColor.clear,
                     .font: NSFont.systemFont(ofSize: 1),
+                    .mvHorizontalRule: true,
                     .paragraphStyle: style
                 ], range: substringRange)
                 index += 1
@@ -7023,7 +7087,7 @@ enum LiveMarkdownStyler {
         let columnWidths: [CGFloat] = (0..<columnCount).map { columnIndex in
             parsedRows.map { parsedRow in
                 guard parsedRow.cells.indices.contains(columnIndex) else { return CGFloat(0) }
-                let font = parsedRow.row.isHeader ? boldCodeFont : codeFont
+                let font = parsedRow.row.isHeader ? boldCodeFont : bodyFont
                 return measuredWidth(parsedRow.cells[columnIndex].visibleText, font: font)
             }.max() ?? 0
         }
@@ -7062,13 +7126,18 @@ enum LiveMarkdownStyler {
         style.firstLineHeadIndent = 8
         style.lineBreakMode = .byClipping
         // Borderless white row; `mvTableBodyRule` draws only the #F4F4F5 hairline
-        // under the row (mockup `td` border-bottom).
+        // under the row (mockup `td` border-bottom). Prose body cells render in the
+        // document body sans font, matching the final mockup's shortcuts table
+        // whose `td` prose column has no font-family override and inherits the
+        // body sans at the table's font-size (Markdown Viewer.dc.html ~line 350:
+        // `<td style="padding: 9px 0; border-bottom: 1px solid #F4F4F5;">查找 / 替换`).
+        // Monospace stays content-specific (inline code), not a table-row rule.
         textStorage.addAttributes([
-            .font: codeFont,
+            .font: bodyFont,
             .mvTableBodyRule: true,
             .paragraphStyle: style
         ], range: range)
-        alignTableCells(cells, columnWidths: columnWidths, rowFont: codeFont, textStorage: textStorage)
+        alignTableCells(cells, columnWidths: columnWidths, rowFont: bodyFont, textStorage: textStorage)
     }
 
     private static func applyHiddenTableSeparator(range: NSRange, to textStorage: NSTextStorage) {
@@ -7086,16 +7155,26 @@ enum LiveMarkdownStyler {
     private static func alignTableCells(_ cells: [TableCell], columnWidths: [CGFloat], rowFont: NSFont, textStorage: NSTextStorage) {
         let columnGap: CGFloat = 30
 
+        let full = textStorage.string as NSString
         for (index, cell) in cells.enumerated() {
             if cell.contentRange.length > 0 {
                 textStorage.addAttributes([.font: rowFont], range: cell.contentRange)
+                // The visible text is trimmed, but contentRange spans the cell's
+                // intra-pipe whitespace too. The kern alignment math measures only
+                // `visibleText`, so render that surrounding whitespace at a hidden
+                // (~zero) metric — otherwise a sans body row and the monospace
+                // header would offset column 0 by their differing space widths.
+                hideCellPadding(cell.contentRange, in: full, textStorage: textStorage)
             }
 
             guard let trailingPipeRange = cell.trailingPipeRange else { continue }
             let currentWidth = measuredWidth(cell.visibleText, font: rowFont)
             let targetWidth = columnWidths.indices.contains(index) ? columnWidths[index] : currentWidth
             let addedSpace = max(columnGap, targetWidth - currentWidth + columnGap)
-            var attrs = hiddenMarkupAttributes(font: rowFont)
+            // Collapse the pipe glyph to ~zero width (size-1 font); the column gap
+            // comes entirely from `.kern`, so a monospace header pipe and a sans
+            // body pipe no longer drift the following columns apart.
+            var attrs = hiddenMarkupAttributes()
             if index < cells.count - 1 {
                 attrs[.kern] = addedSpace
             }
@@ -7103,9 +7182,42 @@ enum LiveMarkdownStyler {
         }
 
         if let first = cells.first?.leadingPipeRange {
-            textStorage.addAttributes(hiddenMarkupAttributes(font: rowFont), range: first)
+            // Collapse the leading pipe to ~zero width (size-1 font) so column 0
+            // starts at the same x for header (monospace) and body (sans) rows.
+            textStorage.addAttributes(hiddenMarkupAttributes(), range: first)
         }
     }
+
+    /// Collapse the leading/trailing whitespace inside a table cell's content
+    /// range to a hidden (~zero-width) metric so the visible text starts exactly
+    /// at the cell boundary regardless of the row's font. Keeps columns aligned
+    /// when the body uses sans and the header uses monospace.
+    private static func hideCellPadding(_ contentRange: NSRange, in full: NSString, textStorage: NSTextStorage) {
+        guard contentRange.length > 0 else { return }
+        // Collapse to a 1pt font so the whitespace contributes ~zero width.
+        let collapsed = hiddenMarkupAttributes()
+        let s = full.substring(with: contentRange) as NSString
+        var leading = 0
+        while leading < s.length, isASCIISpaceOrTab(s.character(at: leading)) { leading += 1 }
+        // Whole cell is whitespace (empty cell): collapse it all.
+        if leading == s.length {
+            textStorage.addAttributes(collapsed, range: contentRange)
+            return
+        }
+        var trailing = s.length - 1
+        while trailing >= 0, isASCIISpaceOrTab(s.character(at: trailing)) { trailing -= 1 }
+        if leading > 0 {
+            textStorage.addAttributes(collapsed,
+                                      range: NSRange(location: contentRange.location, length: leading))
+        }
+        let trailCount = (s.length - 1) - trailing
+        if trailCount > 0 {
+            textStorage.addAttributes(collapsed,
+                                      range: NSRange(location: contentRange.location + contentRange.length - trailCount, length: trailCount))
+        }
+    }
+
+    private static func isASCIISpaceOrTab(_ c: unichar) -> Bool { c == 32 || c == 9 }
 
     private struct TableCell {
         let visibleText: String
