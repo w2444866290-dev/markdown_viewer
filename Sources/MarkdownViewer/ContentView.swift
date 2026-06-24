@@ -68,10 +68,7 @@ struct ContentView: View {
             guard !hasInitialized else { return }
             hasInitialized = true
             if docManager.tabs.isEmpty {
-                docManager.newDocument()
-                if let idx = docManager.tabs.firstIndex(where: { $0.id == docManager.activeTabID }) {
-                    docManager.tabs[idx].text = sampleText
-                }
+                docManager.newDocument(text: sampleText)
             }
         }
     }
