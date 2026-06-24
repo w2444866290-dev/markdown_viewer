@@ -10,19 +10,17 @@ struct ContentView: View {
     @State private var hasInitialized = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // ── 44px title-bar area: sidebar toggle + tabs + actions ──
-            UnifiedHeader(findState: findState)
-                .frame(height: 44)
+        HStack(spacing: 0) {
+            if docManager.sidebarOpen {
+                SidebarView()
+                    .frame(width: docManager.sidebarWidth)
+            }
 
-            // ── Body: sidebar + content ──
-            HStack(spacing: 0) {
-                if docManager.sidebarOpen {
-                    SidebarView()
-                        .frame(width: docManager.sidebarWidth)
-                }
+            // Editor pane: tab bar (44px) on top of editor
+            VStack(spacing: 0) {
+                EditorHeader(findState: findState)
+                    .frame(height: 44)
 
-                // ── Content area ──
                 ZStack(alignment: .topTrailing) {
                     if docManager.activeTab != nil {
                         ZStack(alignment: .trailing) {
@@ -48,7 +46,7 @@ struct ContentView: View {
                 .overlay(alignment: .bottomTrailing) { statusBar }
             }
         }
-        .background(DesignTokens.swiftUI.appBackground)
+        .background(DesignTokens.swiftUI.paper)
         .overlay {
             if docManager.paletteOpen {
                 CommandPaletteView()
@@ -145,17 +143,16 @@ struct ContentView: View {
     """
 }
 
-// MARK: - Unified header (44px, matches the spec's title-bar area)
+// MARK: - Editor header (44px): sidebar toggle + tabs + actions
 
-private struct UnifiedHeader: View {
+private struct EditorHeader: View {
     @EnvironmentObject var docManager: DocumentManager
     @ObservedObject var findState: FindState
 
     var body: some View {
         HStack(spacing: 0) {
-            // Sidebar toggle — spec: always visible, clears traffic lights (~62px left)
-            Spacer().frame(width: docManager.sidebarOpen ? 0 : 62)
-
+            // Sidebar toggle — always on left edge, clears traffic lights when
+            // sidebar is closed (matching the old AppKit tabBarLeftPadding logic).
             Button(action: { docManager.sidebarOpen.toggle() }) {
                 CIcon { CustomIcons.sidebarToggle }
                     .frame(width: 16, height: 13)
@@ -164,56 +161,51 @@ private struct UnifiedHeader: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .cornerRadius(6)
 
             // Tabs
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
                     ForEach(docManager.tabs) { tab in
-                        TabPill(tab: tab)
+                        EditorTabPill(tab: tab)
                     }
                     Button(action: { docManager.newDocument() }) {
                         Text("＋")
-                            .font(.system(size: 13))
+                            .font(.system(size: 16))
                             .foregroundColor(DesignTokens.swiftUI.placeholderText)
                             .frame(width: 26, height: 26)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .cornerRadius(6)
                 }
                 .padding(.horizontal, 8)
             }
-            .frame(height: 44)
 
-            // Action buttons
+            // Actions
             HStack(spacing: 2) {
                 Button(action: { findState.toggleOpen() }) {
                     CIcon { CustomIcons.find }
                         .frame(width: 14, height: 14)
                         .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                        .padding(6)
+                        .frame(width: 28, height: 26)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .cornerRadius(6)
 
                 Button(action: { docManager.openFile() }) {
                     CIcon { CustomIcons.openFolder }
                         .frame(width: 15, height: 14)
                         .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                        .padding(6)
+                        .frame(width: 28, height: 26)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .cornerRadius(6)
             }
             .padding(.trailing, 12)
         }
     }
 }
 
-private struct TabPill: View {
+private struct EditorTabPill: View {
     @EnvironmentObject var docManager: DocumentManager
     let tab: DocumentTab
 
