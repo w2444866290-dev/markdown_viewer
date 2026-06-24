@@ -1291,6 +1291,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MarkdownWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // `--render-doc <file.md> <out.png>`: headless visual-QA mode. Render a real
+        // markdown file to a PNG with the SAME styling/offscreen-bitmap path the
+        // self-test snapshots use, then exit — no window, no run loop.
+        if let (input, output) = renderDocArguments() {
+            let ok = DocumentRenderer.renderDocument(inputPath: input, outputPath: output)
+            fflush(stdout)
+            fflush(stderr)
+            exit(ok ? 0 : 1)
+        }
+
         let controller = MarkdownWindowController()
         windowController = controller
         configureMenu(target: controller)
@@ -1303,6 +1313,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if let outputDirectory = uiTestOutputDirectory() {
             controller.runUITest(outputDirectory: outputDirectory)
         }
+    }
+
+    /// Parse `--render-doc <input> <output>` into (inputPath, outputPath) if present.
+    private func renderDocArguments() -> (String, String)? {
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "--render-doc"),
+              arguments.indices.contains(index + 2) else {
+            return nil
+        }
+        return (arguments[index + 1], arguments[index + 2])
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -1332,16 +1352,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func firstNonFlagArgument() -> String? {
-        var skipNext = false
+        var skip = 0
 
         for argument in CommandLine.arguments.dropFirst() {
-            if skipNext {
-                skipNext = false
+            if skip > 0 {
+                skip -= 1
                 continue
             }
 
             if argument == "--self-test" || argument == "--ui-test" {
-                skipNext = true
+                skip = 1
+                continue
+            }
+
+            if argument == "--render-doc" {
+                // Consumes two positional args (input + output).
+                skip = 2
                 continue
             }
 
@@ -1477,6 +1503,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    }
+}
+
+/// Headless `--render-doc` renderer: loads a markdown file, lays it out in a paper
+/// text view (width 1180, paper column 540 centered) at its full content height
+/// (capped at 6000px), and writes a PNG via the same `bitmapImageRepForCachingDisplay`
+/// / `cacheDisplay` path the self-test snapshots use. No window, no run loop — for
+/// visual QA of real documents.
+enum DocumentRenderer {
+    static let canvasWidth: CGFloat = 1180
+    static let maxHeight: CGFloat = 6000
+
+    static func renderDocument(inputPath: String, outputPath: String) -> Bool {
+        let inputURL = URL(fileURLWithPath: inputPath)
+        let text: String
+        do {
+            text = try String(contentsOf: inputURL, encoding: .utf8)
+        } catch {
+            fputs("[MarkdownViewer][render-doc] cannot read \(inputPath): \(error.localizedDescription)\n", stderr)
+            return false
+        }
+
+        // Paper column is 540 centered inside the 1180 canvas, matching the editor's
+        // geometry (PaperTextView.updatePaperGeometry / configureEditorTextView).
+        let paperWidth = DesignTokens.paperWidth
+        let inset = max(70, (canvasWidth - paperWidth) / 2)
+
+        let textView = PaperTextView(frame: NSRect(x: 0, y: 0, width: canvasWidth, height: maxHeight))
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.font = LiveMarkdownStyler.bodyFont
+        textView.textColor = DesignTokens.bodyText
+        textView.backgroundColor = DesignTokens.paper
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.textContainerInset = NSSize(width: inset, height: 44)
+
+        guard let container = textView.textContainer,
+              let storage = textView.textStorage else {
+            fputs("[MarkdownViewer][render-doc] text view has no container/storage\n", stderr)
+            return false
+        }
+        // Swap in the card-drawing layout manager (same as the live editor) so code
+        // cards / inline pills / table rules render.
+        container.replaceLayoutManager(CardLayoutManager())
+        container.widthTracksTextView = false
+        container.lineFragmentPadding = 0
+        container.containerSize = NSSize(width: paperWidth, height: CGFloat.greatestFiniteMagnitude)
+
+        textView.string = text
+        LiveMarkdownStyler.apply(to: storage)
+        textView.typingAttributes = LiveMarkdownStyler.typingAttributes()
+
+        // Lay out the full document and measure its content height.
+        guard let layoutManager = textView.layoutManager else {
+            fputs("[MarkdownViewer][render-doc] no layout manager\n", stderr)
+            return false
+        }
+        layoutManager.ensureLayout(for: container)
+        let used = layoutManager.usedRect(for: container)
+        let contentHeight = used.height + textView.textContainerInset.height * 2
+        // Cap at 6000px: if the doc is taller, render only the first 6000px.
+        let renderHeight = min(max(contentHeight, 1), maxHeight)
+
+        textView.setFrameSize(NSSize(width: canvasWidth, height: renderHeight))
+        textView.layoutSubtreeIfNeeded()
+        layoutManager.ensureLayout(for: container)
+
+        let bounds = NSRect(x: 0, y: 0, width: canvasWidth, height: renderHeight)
+        guard let bitmap = textView.bitmapImageRepForCachingDisplay(in: bounds) else {
+            fputs("[MarkdownViewer][render-doc] cannot create bitmap\n", stderr)
+            return false
+        }
+        textView.cacheDisplay(in: bounds, to: bitmap)
+
+        guard let data = bitmap.representation(using: .png, properties: [:]) else {
+            fputs("[MarkdownViewer][render-doc] cannot encode PNG\n", stderr)
+            return false
+        }
+
+        let outputURL = URL(fileURLWithPath: outputPath)
+        do {
+            try data.write(to: outputURL)
+        } catch {
+            fputs("[MarkdownViewer][render-doc] cannot write \(outputPath): \(error.localizedDescription)\n", stderr)
+            return false
+        }
+        print("[MarkdownViewer][render-doc] wrote \(outputURL.path) (\(Int(canvasWidth))x\(Int(renderHeight)))")
+        return true
     }
 }
 
@@ -4919,8 +5034,11 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         // Case D: render the design's SKILL.md "Dependencies And Tooling" page so
         // the owner can eyeball our code CARD / inline PILL / borderless TABLE
         // against the mockup (ui/Markdown Viewer.dc.html DOCS['SKILL.md']).
-        let caseCount = cases.count + 1
+        // Case E: a fenced code block with an empty line in the middle — asserts the
+        // card stays a single continuous run (no grid-line split at the blank).
+        let caseCount = cases.count + 2
         failures.append(contentsOf: renderDesignVerificationCase(index: cases.count, outputDirectory: outputDirectory))
+        failures.append(contentsOf: renderCodeCardContiguityCase(index: cases.count + 1, outputDirectory: outputDirectory))
 
         if failures.isEmpty {
             print("[MarkdownViewer][self-test] PASS cases=\(caseCount) root=\(rootView.bounds) sidebar=\(sidebarView.frame) editor=\(editorScrollView.frame) liveStyling=ok")
@@ -6353,6 +6471,80 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         return failures
     }
 
+    /// A fenced code block whose body contains a TRULY EMPTY line in the middle
+    /// (e.g. a directory tree). Asserts the `.mvCodeBlock` marker is CONTIGUOUS from
+    /// just after the opening fence through the line before the closing fence — no
+    /// gap at the empty line. A gap there makes `CardLayoutManager.drawCodeCards`
+    /// split the rounded card into pieces with a visible hairline (the "grid").
+    private func renderCodeCardContiguityCase(index: Int, outputDirectory: URL) -> [String] {
+        var failures: [String] = []
+        let prefix = "[case \(index + 1) cycle-e]"
+
+        let markdown = """
+        # Code card contiguity
+
+        ```text
+        project/
+        ├── src
+
+        └── README.md
+        ```
+        """
+
+        currentFileURL = nil
+        currentDocumentIsMarkdown = true
+        editorTextView.string = markdown
+        lastSavedText = editorTextView.string
+        applyLiveMarkdownStyling()
+        editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+        updateDocumentState(status: "Live Markdown 自测 代码卡连续性")
+        rootView.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        logLayout("self-test-cycle-e")
+        writeSnapshot(named: "snapshot-cycle-e.png", outputDirectory: outputDirectory)
+
+        guard let storage = editorTextView.textStorage else {
+            failures.append("\(prefix) no text storage")
+            return failures
+        }
+        let nsString = editorTextView.string as NSString
+
+        // The code body spans from just after the opening fence's newline through the
+        // line before the closing fence. Find those anchors by content.
+        guard let firstBody = first(of: "project/", in: nsString),
+              let lastBody = first(of: "README.md", in: nsString) else {
+            failures.append("\(prefix) could not locate code body anchors")
+            return failures
+        }
+        let blockStart = firstBody.location
+        let blockEnd = lastBody.location + lastBody.length
+        // Every character from the first body char to the last must carry mvCodeBlock
+        // — INCLUDING the empty line's newline. Any unmarked char means a gap.
+        var i = blockStart
+        var gapFound = false
+        while i < blockEnd {
+            let marked = storage.attributes(at: i, effectiveRange: nil)[.mvCodeBlock] as? Bool == true
+            if !marked {
+                gapFound = true
+                break
+            }
+            i += 1
+        }
+        if gapFound {
+            failures.append("\(prefix) .mvCodeBlock run is NOT contiguous (gap at the empty line splits the card)")
+        }
+
+        // Sanity: the whole body must resolve to a SINGLE longestEffectiveRange run
+        // covering [blockStart, blockEnd) — i.e. one card, not several.
+        var effective = NSRange(location: 0, length: 0)
+        _ = storage.attribute(.mvCodeBlock, at: blockStart, longestEffectiveRange: &effective,
+                              in: NSRange(location: 0, length: storage.length))
+        if effective.location > blockStart || effective.location + effective.length < blockEnd {
+            failures.append("\(prefix) code block resolves to multiple mvCodeBlock runs (card split)")
+        }
+        return failures
+    }
+
     private func first(of needle: String, in nsString: NSString) -> NSRange? {
         let r = nsString.range(of: needle)
         return r.location == NSNotFound ? nil : r
@@ -6981,6 +7173,16 @@ enum LiveMarkdownStyler {
             prevWasBlank = false
 
             guard substringRange.length > 0 else {
+                // A truly-empty line (length 0) INSIDE a fenced code block must still
+                // join the card: its own range has no characters to mark, so we mark
+                // the trailing newline that follows it. Combined with the newline
+                // marking done for every code body/fence line below, this keeps the
+                // `.mvCodeBlock` character run CONTIGUOUS across the blank — otherwise
+                // `CardLayoutManager.drawCodeCards` would split the card into pieces
+                // with a hairline gap at the empty line (the directory-tree "grid").
+                if insideCodeBlock {
+                    markCodeBlockNewline(after: substringRange, in: nsString, textStorage: textStorage)
+                }
                 index += 1
                 continue
             }
@@ -7014,6 +7216,13 @@ enum LiveMarkdownStyler {
                     // Bare ``` (no language) or the closing fence: hide entirely.
                     textStorage.addAttributes(hiddenMarkupAttributes(), range: substringRange)
                 }
+                // Mark the newline AFTER the opening fence so its `.mvCodeBlock` run
+                // touches the first body line — keeps the card a single piece even if
+                // the body starts with an empty line. (The closing fence needs no
+                // trailing extension; the card ends there.)
+                if isOpeningFence {
+                    markCodeBlockNewline(after: substringRange, in: nsString, textStorage: textStorage)
+                }
                 insideCodeBlock.toggle()
                 index += 1
                 continue
@@ -7021,6 +7230,10 @@ enum LiveMarkdownStyler {
 
             if insideCodeBlock {
                 textStorage.addAttributes(codeBlockAttributes(), range: substringRange)
+                // Extend the marker over the trailing newline so this body line's
+                // `.mvCodeBlock` run touches the next line's run — empty lines in the
+                // block can't break card contiguity.
+                markCodeBlockNewline(after: substringRange, in: nsString, textStorage: textStorage)
                 index += 1
                 continue
             }
@@ -7574,7 +7787,31 @@ enum LiveMarkdownStyler {
         style.firstLineHeadIndent = codeCardPadX
         style.headIndent = codeCardPadX
         style.tailIndent = -codeCardPadX
+        // The mockup's `<pre>` is `overflow-x: auto` — long lines do NOT soft-wrap.
+        // `.byClipping` makes an over-long code line clip at the card edge instead of
+        // wrapping to a second line, matching that behavior without breaking the
+        // single-text-view layout or the card drawing (the card spans line fragments,
+        // which stay one-per-line under clipping).
+        style.lineBreakMode = .byClipping
         return style
+    }
+
+    /// Mark the newline that immediately FOLLOWS a code line's `lineRange` with the
+    /// `.mvCodeBlock` attribute (and the code paragraph style, so the empty line
+    /// keeps the card's left inset). `enumerateSubstrings(.byLines)` excludes line
+    /// terminators, so consecutive code lines would otherwise leave the joining `\n`
+    /// unmarked — and a 0-length empty line would leave a gap in the `.mvCodeBlock`
+    /// character run, splitting the card. Marking the terminator keeps the run
+    /// contiguous from the open fence through the close fence.
+    private static func markCodeBlockNewline(after lineRange: NSRange, in nsString: NSString, textStorage: NSTextStorage) {
+        let newlineIndex = lineRange.location + lineRange.length
+        guard newlineIndex < nsString.length else { return }
+        let c = nsString.character(at: newlineIndex)
+        guard c == 0x0A || c == 0x0D else { return }
+        textStorage.addAttributes([
+            .mvCodeBlock: true,
+            .paragraphStyle: codeParagraphStyle(role: .body)
+        ], range: NSRange(location: newlineIndex, length: 1))
     }
 
     /// Attributes for a code line. `mvCodeBlock` marks the run so
