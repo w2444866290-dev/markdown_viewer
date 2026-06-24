@@ -48,11 +48,12 @@ struct EditorView: NSViewRepresentable {
             object: sv.contentView
         )
 
-        // Track mouse for link hover preview
+        // Track mouse for link hover preview + code copy button
+        let tracker = MouseTracker(coordinator: context.coordinator)
         sv.addTrackingArea(NSTrackingArea(
             rect: sv.bounds,
             options: [.activeInKeyWindow, .mouseMoved, .inVisibleRect],
-            owner: context.coordinator,
+            owner: tracker,
             userInfo: nil
         ))
 
@@ -96,6 +97,7 @@ struct EditorView: NSViewRepresentable {
 
         init(_ p: EditorView) {
             parent = p
+            super.init()
             // Wire find/replace callbacks to this coordinator.
             p.findState?.onSearch = { [weak self] q in self?.performFind(query: q, caseSensitive: p.findState?.caseSensitive ?? false, wholeWord: p.findState?.wholeWord ?? false, useRegex: p.findState?.useRegex ?? false) }
             p.findState?.onNavigate = { [weak self] d in self?.navigateFind(d) }
@@ -131,16 +133,11 @@ struct EditorView: NSViewRepresentable {
             return max(0, min(1, sv.contentView.bounds.origin.y / maxOff))
         }
 
-        // MARK: - Mouse tracking (link hover, code copy)
+        // MARK: - Code copy button (mouse bridging)
 
-        override func mouseMoved(with event: NSEvent) {
-            guard let tv = textView, let sv = scrollView else { return }
-            let point = sv.convert(event.locationInWindow, from: nil)
-            let tvPoint = NSPoint(x: point.x, y: sv.documentVisibleRect.height - point.y + sv.contentView.bounds.origin.y)
+        func handleMouseAt(_ tvPoint: NSPoint) {
             updateCodeCopyButton(at: tvPoint)
         }
-
-        // MARK: - Code copy button
 
         private var codeCopyButton: NSButton?
         private var copyButtonBodyRange: NSRange?
@@ -209,10 +206,8 @@ struct EditorView: NSViewRepresentable {
             findIndex = 0
 
             guard !query.isEmpty else {
-                Task { @MainActor in
-                    parent.findState?.isError = false
-                    parent.findState?.matchCount = 0
-                }
+                parent.findState?.isError = false
+                parent.findState?.matchCount = 0
                 return
             }
 
@@ -225,10 +220,8 @@ struct EditorView: NSViewRepresentable {
             if !caseSensitive { opts.insert(.caseInsensitive) }
 
             guard let regex = try? NSRegularExpression(pattern: pattern, options: opts) else {
-                Task { @MainActor in
-                    parent.findState?.isError = true
-                    parent.findState?.matchCount = 0
-                }
+                parent.findState?.isError = true
+                parent.findState?.matchCount = 0
                 return
             }
 
@@ -236,12 +229,9 @@ struct EditorView: NSViewRepresentable {
             let full = NSRange(location: 0, length: (text as NSString).length)
             findMatches = regex.matches(in: text, range: full).filter { $0.range.length > 0 }
             findIndex = 0
-            let count = findMatches.count
-            Task { @MainActor in
-                parent.findState?.isError = false
-                parent.findState?.matchCount = count
-                parent.findState?.currentIndex = 0
-            }
+            parent.findState?.isError = false
+            parent.findState?.matchCount = findMatches.count
+            parent.findState?.currentIndex = 0
             applyFindHighlights()
             scrollToCurrentMatch()
         }
@@ -249,7 +239,7 @@ struct EditorView: NSViewRepresentable {
         func navigateFind(_ delta: Int) {
             guard !findMatches.isEmpty else { return }
             findIndex = (findIndex + delta + findMatches.count) % findMatches.count
-            Task { @MainActor in parent.findState?.currentIndex = findIndex }
+            parent.findState?.currentIndex = findIndex
             applyFindHighlights()
             scrollToCurrentMatch()
         }
@@ -277,10 +267,8 @@ struct EditorView: NSViewRepresentable {
             }
             tv.didChangeText()
             if let s = tv.textStorage { LiveMarkdownStyler.apply(to: s) }
-            Task { @MainActor in
-                parent.findState?.matchCount = 0
-                parent.findState?.currentIndex = 0
-            }
+            parent.findState?.matchCount = 0
+            parent.findState?.currentIndex = 0
             findMatches = []
         }
 
@@ -375,4 +363,23 @@ final class PaperTextView: NSTextView {
         textContainerInset = NSSize(width: max(70, (w - pw) / 2), height: 44)
     }
     override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); layout() }
+}
+
+/// Thin NSResponder that forwards mouseMoved to the coordinator for
+/// code-copy-button hover detection.
+private final class MouseTracker: NSView {
+    weak var coordinator: EditorView.Coordinator?
+    convenience init(coordinator: EditorView.Coordinator) {
+        self.init(frame: .zero)
+        self.coordinator = coordinator
+    }
+    override func mouseMoved(with event: NSEvent) {
+        guard let c = coordinator,
+              let tv = c.textView,
+              let sv = c.scrollView else { return }
+        let point = sv.convert(event.locationInWindow, from: nil)
+        let tvPoint = NSPoint(x: point.x, y: sv.documentVisibleRect.height - point.y + sv.contentView.bounds.origin.y)
+        // Access private method via a bridging helper
+        c.handleMouseAt(tvPoint)
+    }
 }

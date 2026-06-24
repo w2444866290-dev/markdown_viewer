@@ -53,6 +53,7 @@ enum DesignTokens {
     enum swiftUI {
         static let paper = SwiftUI.Color(hex: 0xFFFFFF)
         static let sidebar = SwiftUI.Color(hex: 0xF7F7F8)
+        static let sidebarFill = SwiftUI.Color(hex: 0xF7F7F8)
         static let titleText = SwiftUI.Color(hex: 0x1D1D1F)
         static let headingText = SwiftUI.Color(hex: 0x111111)
         static let bodyText = SwiftUI.Color(hex: 0x333336)
@@ -63,6 +64,7 @@ enum DesignTokens {
         static let placeholderText = SwiftUI.Color(hex: 0xAEAEB2)
         static let disabledText = SwiftUI.Color(hex: 0xC7C7CC)
         static let folderIcon = SwiftUI.Color(hex: 0xC7C7CC)
+        static let tickRest = SwiftUI.Color(hex: 0xCACACE)
         static let divider = SwiftUI.Color(hex: 0xF0F0F1)
         static let line = SwiftUI.Color(hex: 0xF4F4F5)
         static let accent = SwiftUI.Color(hex: 0xE8A33D)

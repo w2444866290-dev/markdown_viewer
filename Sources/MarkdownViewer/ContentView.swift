@@ -21,19 +21,16 @@ struct ContentView: View {
                     if docManager.activeTab != nil {
                         ZStack(alignment: .trailing) {
                             EditorView(
-                                text: $docManager.editorText,
+                                text: docManager.textBinding,
                                 fontIndex: $docManager.fontIndex,
                                 scrollProgress: $scrollProgress,
                                 findState: findState
                             )
-                            .onChange(of: scrollProgress) { _ in
-                                // Recompute active outline heading on scroll
-                            }
 
                             OutlineRailView(
-                                headings: [], // populated via coordinator
+                                headings: [],
                                 activeIndex: activeOutlineIndex,
-                                onJump: { /* jump */ }
+                                onJump: { _ in }
                             )
                         }
                     } else {
@@ -75,13 +72,16 @@ struct ContentView: View {
     }
 
     private var statusBar: some View {
-        HStack {
-            Text("\(docManager.editorText.count) 字")
+        HStack(spacing: 12) {
+            Text("\(docManager.currentText.count) 字")
                 .font(.system(size: 11.5, design: .monospaced))
                 .foregroundColor(DesignTokens.swiftUI.statusText)
             Text("\(Int(scrollProgress * 100))%")
                 .font(.system(size: 11.5, design: .monospaced))
                 .foregroundColor(DesignTokens.swiftUI.statusText)
+            if docManager.isDirty {
+                Circle().fill(DesignTokens.swiftUI.accent).frame(width: 6, height: 6)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 14)

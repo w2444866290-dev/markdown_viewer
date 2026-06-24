@@ -2,6 +2,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Central state for the Markdown Viewer app.
+/// The active document's text is the single source of truth — stored
+/// in tabs[i].text.  A convenience Binding<String> is provided for
+/// SwiftUI views to read/write through.
 @MainActor
 final class DocumentManager: ObservableObject {
     // MARK: - Sidebar
@@ -11,7 +14,7 @@ final class DocumentManager: ObservableObject {
     @Published var directoryURL: URL?
     @Published var fileTree: [FileNode] = []
 
-    // MARK: - Tabs
+    // MARK: - Tabs (single source of truth)
     @Published var tabs: [DocumentTab] = []
     @Published var activeTabID: UUID?
     @Published var lastClosedTab: DocumentTab?
@@ -24,13 +27,18 @@ final class DocumentManager: ObservableObject {
     @Published var toastMessage: String = ""
     @Published var showToast: Bool = false
 
-    // MARK: - Editor (shared across tabs)
-    @Published var editorText: String = ""
-    @Published var isDirty: Bool = false
+    /// Set by App to let the command palette toggle findState.
+    var findStateToggle: (() -> Void)?
+
+    // MARK: - Derived
 
     var activeTab: DocumentTab? {
         tabs.first { $0.id == activeTabID }
     }
+
+    /// Non-optional convenience
+    var currentText: String { activeTab?.text ?? "" }
+    var isDirty: Bool { activeTab?.isDirty ?? false }
 
     var visibleFiles: [FileNode] {
         guard !sideFilter.isEmpty else { return fileTree }
@@ -38,26 +46,37 @@ final class DocumentManager: ObservableObject {
         return fileTree.filter { $0.name.lowercased().contains(q) && !$0.isDirectory }
     }
 
+    // MARK: - Binding for EditorView (single source of truth)
+
+    var textBinding: Binding<String> {
+        Binding<String>(
+            get: { [weak self] in self?.activeTab?.text ?? "" },
+            set: { [weak self] newValue in
+                guard let self, let id = self.activeTabID,
+                      let idx = self.tabs.firstIndex(where: { $0.id == id }) else { return }
+                self.objectWillChange.send()
+                self.tabs[idx].text = newValue
+                self.tabs[idx].isDirty = true
+            }
+        )
+    }
+
     // MARK: - Actions
+
     func openTab(for url: URL, text: String) {
         if let existing = tabs.first(where: { $0.url?.path == url.path }) {
             activeTabID = existing.id
-            editorText = text
             return
         }
         let tab = DocumentTab(url: url, name: url.lastPathComponent, text: text, isDirty: false)
         tabs.append(tab)
         activeTabID = tab.id
-        editorText = text
-        isDirty = false
     }
 
     func newDocument() {
-        let tab = DocumentTab(url: nil, name: "未命名.md", text: "# 未命名\n\n", isDirty: true)
+        let tab = DocumentTab(url: nil, name: "未命名.md", text: "# 未命名\n\n", isDirty: false)
         tabs.append(tab)
         activeTabID = tab.id
-        editorText = tab.text
-        isDirty = true
     }
 
     func closeTab(_ tab: DocumentTab) {
@@ -65,8 +84,6 @@ final class DocumentManager: ObservableObject {
         tabs.removeAll { $0.id == tab.id }
         if activeTabID == tab.id {
             activeTabID = tabs.last?.id
-            editorText = tabs.last?.text ?? ""
-            isDirty = tabs.last?.isDirty ?? false
         }
     }
 
@@ -75,18 +92,64 @@ final class DocumentManager: ObservableObject {
         lastClosedTab = nil
         tabs.append(tab)
         activeTabID = tab.id
-        editorText = tab.text
-        isDirty = tab.isDirty
+    }
+
+    // MARK: - File I/O
+
+    func saveCurrent() {
+        guard let tab = activeTab else { return }
+        if let url = tab.url {
+            try? tab.text.write(to: url, atomically: true, encoding: .utf8)
+            if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
+                tabs[idx].isDirty = false
+            }
+        } else {
+            saveAsCurrent()
+        }
+    }
+
+    func saveAsCurrent() {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [UTType.plainText, UTType(filenameExtension: "md")!]
+        savePanel.nameFieldStringValue = activeTab?.name ?? "未命名.md"
+        guard savePanel.runModal() == .OK, let url = savePanel.url else { return }
+        if let idx = tabs.firstIndex(where: { $0.id == activeTabID }) {
+            try? tabs[idx].text.write(to: url, atomically: true, encoding: .utf8)
+            tabs[idx].url = url
+            tabs[idx].name = url.lastPathComponent
+            tabs[idx].isDirty = false
+        }
+    }
+
+    func openFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType.plainText, UTType(filenameExtension: "md")!]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        openTab(for: url, text: text)
+    }
+
+    func openDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        loadDirectory(url)
     }
 
     func loadDirectory(_ url: URL) {
         directoryURL = url
         fileTree = buildFileTree(at: url)
         if let first = firstTextFile(in: fileTree), tabs.isEmpty {
-            if let text = try? String(contentsOf: first, encoding: .utf8) {
+            if let text = try? String(contentsOf: url, encoding: .utf8) {
                 openTab(for: first, text: text)
             }
         }
+    }
+
+    func openFileNode(_ node: FileNode) {
+        guard !node.isDirectory, let text = try? String(contentsOf: node.url, encoding: .utf8) else { return }
+        openTab(for: node.url, text: text)
     }
 
     private func buildFileTree(at url: URL) -> [FileNode] {
@@ -116,6 +179,12 @@ final class DocumentManager: ObservableObject {
         let ext = url.pathExtension.lowercased()
         return ["md", "markdown", "mdown", "mkd", "txt", "text", "yaml", "yml", "json", "toml", "swift", "sh", "py", "js", "ts", "html", "css", "xml", "rb", "go", "rs", "java", "kt"].contains(ext)
     }
+
+    // MARK: - Vim-like navigation
+
+    struct VimNavState { var mode: VimMode = .normal }
+    enum VimMode { case normal, insert }
+    @Published var vim = VimNavState()
 }
 
 // MARK: - Models
@@ -124,7 +193,7 @@ struct FileNode: Identifiable {
     let id = UUID()
     let url: URL
     let name: String
-    let isDirectory: Bool
+    var isDirectory: Bool
     var children: [FileNode] = []
 }
 
@@ -134,5 +203,4 @@ struct DocumentTab: Identifiable {
     var name: String
     var text: String
     var isDirty: Bool
-    var scrollOffset: CGFloat = 0
 }

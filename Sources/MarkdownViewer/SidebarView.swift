@@ -2,90 +2,115 @@ import SwiftUI
 
 struct SidebarView: View {
     @EnvironmentObject var docManager: DocumentManager
-    @State private var hoveredItem: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer().frame(height: 44)
-
-            TextField("筛选文档", text: $docManager.sideFilter)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12.5))
-                .padding(.horizontal, 10)
-                .frame(height: 28)
-                .background(DesignTokens.swiftUI.fieldFill)
-                .cornerRadius(6)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
-
+        VStack(alignment: .leading, spacing: 0) {
+            SidebarHeader()
+            SidebarFilter()
             ScrollView {
-                LazyVStack(spacing: 1) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(docManager.fileTree) { node in
-                        SidebarRow(node: node, level: 0)
+                        SidebarNodeView(node: node, depth: 0)
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.vertical, 12)
             }
-
-            HStack(spacing: 7) {
-                Text("⌘K")
-                    .font(.system(size: 10.5, design: .monospaced))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(DesignTokens.swiftUI.hover)
-                    .cornerRadius(6)
-                Text("全部命令")
-                    .font(.system(size: 11.5))
-                Spacer()
-            }
-            .foregroundColor(Color(hex: 0x9A9A9E))
-            .padding(.horizontal, 16)
-            .frame(height: 38)
-            .contentShape(Rectangle())
-            .onTapGesture { docManager.paletteOpen = true }
         }
-        .frame(minWidth: 176, maxWidth: 440)
-        .background(DesignTokens.swiftUI.sidebar)
+        .background(DesignTokens.swiftUI.sidebarFill)
     }
 }
 
-struct SidebarRow: View {
-    let node: FileNode
-    let level: Int
+private struct SidebarHeader: View {
+    @EnvironmentObject var docManager: DocumentManager
 
     var body: some View {
-        Button(action: {
-            if !node.isDirectory {
-                let url = node.url
-                if let text = try? String(contentsOf: url, encoding: .utf8) {
-                    // TODO: wire up docManager.openTab
-                }
+        HStack(spacing: 4) {
+            Button(action: { docManager.sidebarOpen.toggle() }) {
+                CIcon { CustomIcons.sidebarToggle }
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
             }
-        }) {
-            HStack(spacing: 7) {
-                if node.isDirectory {
-                    Image(nsImage: CustomIcons.sidebarFolder(size: NSSize(width: 13, height: 11)))
-                } else {
-                    Image(nsImage: CustomIcons.docFile(size: NSSize(width: 10, height: 12)))
-                }
-                Text(node.name)
-                    .font(.system(size: 13))
-                    .foregroundColor(DesignTokens.swiftUI.fileRowText)
-                    .lineLimit(1)
-                Spacer()
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 28)
-            .padding(.leading, CGFloat(level * 16))
-            .background(Color.clear)
-            .cornerRadius(6)
-        }
-        .buttonStyle(.plain)
+            .buttonStyle(.plain)
+            .help("切换侧栏")
 
-        if !node.children.isEmpty {
-            ForEach(node.children) { child in
-                SidebarRow(node: child, level: level + 1)
+            Spacer()
+
+            Text(docManager.directoryURL?.lastPathComponent ?? "文件")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(DesignTokens.swiftUI.secondaryText)
+                .lineLimit(1)
+
+            Spacer()
+
+            Button(action: { docManager.openDirectory() }) {
+                CIcon { CustomIcons.openFolder }
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("打开文件夹")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+}
+
+private struct SidebarFilter: View {
+    @EnvironmentObject var docManager: DocumentManager
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundColor(DesignTokens.swiftUI.placeholderText)
+            TextField("筛选…", text: $docManager.sideFilter)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 26)
+        .background(DesignTokens.swiftUI.tickRest)
+        .cornerRadius(4)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 4)
+    }
+}
+
+private struct SidebarNodeView: View {
+    let node: FileNode
+    let depth: Int
+    @EnvironmentObject var docManager: DocumentManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: {
+                if !node.isDirectory { docManager.openFileNode(node) }
+            }) {
+                HStack(spacing: 5) {
+                    if node.isDirectory {
+                        CIcon { CustomIcons.sidebarFolder(size: NSSize(width: 16, height: 16)) }
+                            .frame(width: 16, height: 16)
+                    } else {
+                        CIcon { CustomIcons.docFile(size: NSSize(width: 16, height: 16)) }
+                            .frame(width: 16, height: 16)
+                    }
+                    Text(node.name)
+                        .font(.system(size: 12.5))
+                        .foregroundColor(DesignTokens.swiftUI.secondaryText)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .padding(.leading, CGFloat(10 + depth * 14))
+                .padding(.trailing, 10)
+                .frame(height: 26)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if node.isDirectory {
+                ForEach(node.children) { child in
+                    SidebarNodeView(node: child, depth: depth + 1)
+                }
             }
         }
     }

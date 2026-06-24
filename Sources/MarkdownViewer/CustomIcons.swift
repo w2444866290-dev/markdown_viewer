@@ -1,4 +1,12 @@
 import AppKit
+import SwiftUI
+
+/// SwiftUI wrapper: Image(nsImage: cachedIcon)
+struct CIcon: View {
+    let image: NSImage
+    init(_ builder: () -> NSImage) { self.image = builder() }
+    var body: some View { Image(nsImage: image).resizable() }
+}
 
 enum CustomIcons {
     // MARK: - Chrome button template icons (black drawings, isTemplate = true)

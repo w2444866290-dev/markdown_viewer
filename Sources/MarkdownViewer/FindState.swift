@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Shared state for the find/replace panel, bridging between
 /// SwiftUI FindBarView and the AppKit NSTextView in EditorView.
-@MainActor
+/// All access is main-thread (SwiftUI views + AppKit delegate callbacks).
 final class FindState: ObservableObject {
     @Published var isOpen = false
     @Published var query = ""
@@ -18,7 +18,7 @@ final class FindState: ObservableObject {
 
     /// Called by EditorView.Coordinator to perform the actual search.
     var onSearch: ((String) -> Void)?
-    var onNavigate: ((Int) -> Void)?  // +1 or -1
+    var onNavigate: ((Int) -> Void)?
     var onReplaceCurrent: (() -> Void)?
     var onReplaceAll: (() -> Void)?
 

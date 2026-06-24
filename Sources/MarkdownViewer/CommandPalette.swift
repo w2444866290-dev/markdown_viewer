@@ -46,11 +46,8 @@ struct CommandPaletteView: View {
                                 sectionHeader("文档")
                                 ForEach(filteredDocs) { doc in
                                     paletteRow(doc.name, subtitle: nil, action: {
-                                        let url = doc.url
-                                        if let text = try? String(contentsOf: url, encoding: .utf8) {
-                                            docManager.openTab(for: url, text: text)
-                                            docManager.paletteOpen = false
-                                        }
+                                        docManager.openFileNode(doc)
+                                        docManager.paletteOpen = false
                                     })
                                 }
                             }
@@ -58,7 +55,7 @@ struct CommandPaletteView: View {
                                 sectionHeader(filteredDocs.isEmpty ? "命令" : "命令", topPadding: true)
                                 ForEach(filteredCommands, id: \.0) { cmd in
                                     paletteRow(cmd.0, subtitle: cmd.1, action: {
-                                        docManager.paletteOpen = false
+                                        execute(cmd.0)
                                     })
                                 }
                             }
@@ -78,6 +75,21 @@ struct CommandPaletteView: View {
             }
         }
         .background(.ultraThinMaterial)
+    }
+
+    private func execute(_ name: String) {
+        docManager.paletteOpen = false
+        switch name {
+        case "新建文档":     docManager.newDocument()
+        case "保存":         docManager.saveCurrent()
+        case "查找 / 替换":   docManager.findStateToggle?()
+        case "打开…":        docManager.openFile()
+        case "放大字号":     docManager.fontIndex = min(2, docManager.fontIndex + 1)
+        case "缩小字号":     docManager.fontIndex = max(0, docManager.fontIndex - 1)
+        case "重置字号":     docManager.fontIndex = 1
+        case "显示 / 隐藏侧栏": docManager.sidebarOpen.toggle()
+        default: break
+        }
     }
 
     private func sectionHeader(_ title: String, topPadding: Bool = false) -> some View {

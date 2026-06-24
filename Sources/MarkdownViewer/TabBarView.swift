@@ -6,77 +6,75 @@ struct TabBarView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: { docManager.sidebarOpen.toggle() }) {
-                Image(nsImage: CustomIcons.sidebarToggle)
-            }
-            .buttonStyle(.borderless)
-            .frame(width: 26, height: 26)
-            .foregroundColor(DesignTokens.swiftUI.placeholderText)
-
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
+                HStack(spacing: 0) {
                     ForEach(docManager.tabs) { tab in
                         TabPill(tab: tab)
                     }
-                    Button(action: { docManager.newDocument() }) {
-                        Text("＋")
-                            .font(.system(size: 16))
-                    }
-                    .buttonStyle(.borderless)
-                    .frame(width: 26, height: 26)
-                    .foregroundColor(DesignTokens.swiftUI.placeholderText)
                 }
+                .padding(.horizontal, 8)
+                .padding(.trailing, 28)
             }
+            .frame(height: 44)
 
             Spacer()
 
-            Button(action: { findState.toggleOpen() }) {
-                Image(nsImage: CustomIcons.find)
-            }
-            .buttonStyle(.borderless)
-            .frame(width: 28, height: 26)
-            .foregroundColor(DesignTokens.swiftUI.placeholderText)
+            HStack(spacing: 8) {
+                Button(action: { docManager.openFile() }) {
+                    CIcon { CustomIcons.openFolder }
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("打开文件")
 
-            Button(action: { /* open file */ }) {
-                Image(nsImage: CustomIcons.openFolder)
+                Button(action: { findState.toggleOpen() }) {
+                    CIcon { CustomIcons.find }
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("查找 / 替换")
             }
-            .buttonStyle(.borderless)
-            .frame(width: 28, height: 26)
-            .foregroundColor(DesignTokens.swiftUI.placeholderText)
+            .padding(.trailing, 16)
         }
-        .padding(.horizontal, 12)
-        .frame(height: DesignTokens.tabBarHeight)
-        .background(DesignTokens.swiftUI.paper)
     }
 }
 
-struct TabPill: View {
+private struct TabPill: View {
     @EnvironmentObject var docManager: DocumentManager
     let tab: DocumentTab
-    @State private var hovering = false
-
-    var isActive: Bool { docManager.activeTabID == tab.id }
 
     var body: some View {
         Button(action: { docManager.activeTabID = tab.id }) {
             HStack(spacing: 6) {
+                Text(tab.isDirty ? "● " : "")
+                    .foregroundColor(DesignTokens.swiftUI.accent)
+                    .font(.system(size: 10))
                 Text(tab.name)
-                    .font(.system(size: 12.5, weight: isActive ? .semibold : .regular))
-                    .foregroundColor(isActive ? DesignTokens.swiftUI.titleText : DesignTokens.swiftUI.tertiaryText)
-                    .lineLimit(1)
-                if tab.isDirty, !hovering {
-                    Circle()
-                        .fill(DesignTokens.swiftUI.accent)
-                        .frame(width: 7, height: 7)
-                }
+                    .font(.system(size: 11.5))
+                    .fontWeight(tab.id == docManager.activeTabID ? .semibold : .regular)
+                    .foregroundColor(tab.id == docManager.activeTabID
+                        ? DesignTokens.swiftUI.titleText
+                        : DesignTokens.swiftUI.tertiaryText)
             }
-            .padding(.leading, 12)
-            .padding(.trailing, 7)
+            .padding(.horizontal, 10)
             .frame(height: 28)
-            .background(isActive ? DesignTokens.swiftUI.selected : (hovering ? DesignTokens.swiftUI.hover : .clear))
-            .cornerRadius(6)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(tab.id == docManager.activeTabID
+                        ? Color.black.opacity(0.06)
+                        : .clear)
+            )
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("关闭") { docManager.closeTab(tab) }
+            Button("关闭其他") {
+                for t in docManager.tabs where t.id != tab.id {
+                    docManager.closeTab(t)
+                }
+            }
+        }
     }
 }

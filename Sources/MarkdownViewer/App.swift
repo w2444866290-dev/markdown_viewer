@@ -9,6 +9,7 @@ struct MarkdownViewerApp: App {
         WindowGroup {
             ContentView(findState: findState)
                 .environmentObject(docManager)
+                .onAppear { docManager.findStateToggle = { findState.toggleOpen() } }
                 .frame(minWidth: 860, minHeight: 560)
                 .background(DesignTokens.swiftUI.paper)
         }
@@ -21,8 +22,16 @@ struct MarkdownViewerApp: App {
                     .keyboardShortcut("n")
             }
             CommandGroup(replacing: .saveItem) {
-                Button("保存") { /* save */ }
+                Button("保存") { docManager.saveCurrent() }
                     .keyboardShortcut("s")
+                Button("另存为…") { docManager.saveAsCurrent() }
+                    .keyboardShortcut("s", modifiers: [.shift, .command])
+            }
+            CommandGroup(after: .newItem) {
+                Button("打开…") { docManager.openFile() }
+                    .keyboardShortcut("o")
+                Button("打开文件夹…") { docManager.openDirectory() }
+                    .keyboardShortcut("o", modifiers: [.shift, .command])
             }
             CommandMenu("查找") {
                 Button("查找 / 替换") { findState.toggleOpen() }
