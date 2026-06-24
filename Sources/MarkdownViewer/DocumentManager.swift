@@ -21,7 +21,6 @@ final class DocumentManager: ObservableObject {
 
     // MARK: - Overlays
     @Published var paletteOpen: Bool = false
-    @Published var findOpen: Bool = false
     @Published var toastMessage: String = ""
     @Published var showToast: Bool = false
 

@@ -3,10 +3,11 @@ import SwiftUI
 @main
 struct MarkdownViewerApp: App {
     @StateObject private var docManager = DocumentManager()
+    @StateObject private var findState = FindState()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(findState: findState)
                 .environmentObject(docManager)
                 .frame(minWidth: 860, minHeight: 560)
                 .background(DesignTokens.swiftUI.paper)
@@ -24,7 +25,7 @@ struct MarkdownViewerApp: App {
                     .keyboardShortcut("s")
             }
             CommandMenu("查找") {
-                Button("查找 / 替换") { docManager.findOpen.toggle() }
+                Button("查找 / 替换") { findState.toggleOpen() }
                     .keyboardShortcut("f")
             }
             CommandMenu("查看") {

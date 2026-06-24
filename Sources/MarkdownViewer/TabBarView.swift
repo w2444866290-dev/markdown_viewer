@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TabBarView: View {
     @EnvironmentObject var docManager: DocumentManager
+    @ObservedObject var findState: FindState
 
     var body: some View {
         HStack(spacing: 0) {
@@ -29,7 +30,7 @@ struct TabBarView: View {
 
             Spacer()
 
-            Button(action: { docManager.findOpen.toggle() }) {
+            Button(action: { findState.toggleOpen() }) {
                 Image(nsImage: CustomIcons.find)
             }
             .buttonStyle(.borderless)

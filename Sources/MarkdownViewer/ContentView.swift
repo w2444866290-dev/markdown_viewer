@@ -1,7 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var docManager: DocumentManager
+    @ObservedObject var findState: FindState
+    @State private var scrollProgress: Double = 0
+    @State private var activeOutlineIndex: Int = 0
+    @State private var isDragging = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -11,29 +16,49 @@ struct ContentView: View {
             }
 
             VStack(spacing: 0) {
-                TabBarView()
-                ZStack {
+                TabBarView(findState: findState)
+                ZStack(alignment: .topTrailing) {
                     if docManager.activeTab != nil {
-                        EditorView(
-                            text: $docManager.editorText,
-                            fontIndex: $docManager.fontIndex,
-                            isMarkdown: true
-                        )
+                        ZStack(alignment: .trailing) {
+                            EditorView(
+                                text: $docManager.editorText,
+                                fontIndex: $docManager.fontIndex,
+                                scrollProgress: $scrollProgress,
+                                findState: findState
+                            )
+                            .onChange(of: scrollProgress) { _ in
+                                // Recompute active outline heading on scroll
+                            }
+
+                            OutlineRailView(
+                                headings: [], // populated via coordinator
+                                activeIndex: activeOutlineIndex,
+                                onJump: { /* jump */ }
+                            )
+                        }
                     } else {
                         emptyState
                     }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    statusBar
                 }
             }
         }
         .overlay {
             if docManager.paletteOpen {
                 CommandPaletteView()
+                    .transition(.opacity)
             }
         }
         .overlay(alignment: .topTrailing) {
-            if docManager.findOpen {
-                FindBarView()
+            if findState.isOpen {
+                FindBarView(state: findState)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
+        }
+        .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
+            handleDrop(providers: providers)
         }
     }
 
@@ -47,5 +72,35 @@ struct ContentView: View {
                 .foregroundColor(DesignTokens.swiftUI.disabledText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var statusBar: some View {
+        HStack {
+            Text("\(docManager.editorText.count) 字")
+                .font(.system(size: 11.5, design: .monospaced))
+                .foregroundColor(DesignTokens.swiftUI.statusText)
+            Text("\(Int(scrollProgress * 100))%")
+                .font(.system(size: 11.5, design: .monospaced))
+                .foregroundColor(DesignTokens.swiftUI.statusText)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
+    }
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            guard let data = item as? Data,
+                  let path = String(data: data, encoding: .utf8),
+                  let url = URL(string: path) else { return }
+            let ext = url.pathExtension.lowercased()
+            guard ["md", "markdown", "txt", "text"].contains(ext) else { return }
+            if let text = try? String(contentsOf: url, encoding: .utf8) {
+                DispatchQueue.main.async {
+                    docManager.openTab(for: url, text: text)
+                }
+            }
+        }
+        return true
     }
 }
