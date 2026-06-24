@@ -9,25 +9,29 @@ struct OutlineRailView: View {
     @State private var hoveredIndex: Int?
 
     var body: some View {
-        if headings.isEmpty { AnyView(EmptyView()) } else {
-            AnyView(
-                HStack(spacing: 0) {
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        ForEach(headings) { h in
-                            outlineRow(h)
-                        }
-                    }
-                    .padding(.trailing, 18)
-                    .padding(.vertical, 30)
+        if headings.isEmpty {
+            EmptyView()
+        } else {
+            outlineContent
+        }
+    }
+
+    private var outlineContent: some View {
+        HStack(spacing: 0) {
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                ForEach(headings) { h in
+                    outlineRow(h)
                 }
-                .frame(width: hovered ? 250 : 84)
-                .contentShape(Rectangle())
-                .onHover { h in
-                    withAnimation(.easeOut(duration: 0.2)) { hovered = h }
-                    if !h { hoveredIndex = nil }
-                }
-            )
+            }
+            .padding(.trailing, 18)
+            .padding(.vertical, 30)
+        }
+        .frame(width: hovered ? 250 : 84)
+        .contentShape(Rectangle())
+        .onHover { h in
+            withAnimation(.easeOut(duration: 0.2)) { hovered = h }
+            if !h { hoveredIndex = nil }
         }
     }
 

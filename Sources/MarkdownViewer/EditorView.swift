@@ -97,6 +97,8 @@ struct EditorView: NSViewRepresentable {
         let outlineController = OutlineController()
         let codeOverlay = CodeOverlayController()
 
+        private var debounceWork: DispatchWorkItem?
+
         init(_ p: EditorView) {
             parent = p
             super.init()
@@ -147,11 +149,19 @@ struct EditorView: NSViewRepresentable {
         func textDidChange(_ n: Notification) {
             guard let tv = textView, let s = tv.textStorage else { return }
             let current = tv.string
+            // Writeback is immediate; heavy work (outline, progress) is debounced.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.parent.text = current
-                self.parent.scrollProgress = self.computeProgress()
-                self.outlineController.rebuild()
+
+                self.debounceWork?.cancel()
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.parent.scrollProgress = self.computeProgress()
+                    self.outlineController.rebuild()
+                }
+                self.debounceWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
             }
             LiveMarkdownStyler.apply(to: s)
         }
