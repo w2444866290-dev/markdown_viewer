@@ -7,6 +7,7 @@ enum DesignTokens {
     static let appBackground = NSColor(hex: 0xF2F2F4)
     static let codeBackground = NSColor(hex: 0xFAFAFA)
     static let titleText = NSColor(hex: 0x1D1D1F)
+    static let headingText = NSColor(hex: 0x111111)   // mockup headings color:#111 (L285/287)
     static let bodyText = NSColor(hex: 0x333336)
     static let secondaryText = NSColor(hex: 0x6E6E73)
     static let tertiaryText = NSColor(hex: 0x86868B)
@@ -109,12 +110,12 @@ final class CardLayoutManager: NSLayoutManager {
     private let cardFill = DesignTokens.codeBackground            // #FAFAFA
     private let cardBorder = NSColor.black.withAlphaComponent(0.045) // box-shadow 0 0 0 1px rgba(0,0,0,0.04)
     private let cardRadius: CGFloat = 6
-    private let cardPadX: CGFloat = 14   // pre padding-left/right ~16; text already has 8 headIndent
+    private let cardPadX: CGFloat = 16   // mockup `pre` padding-left/right 16 (L299)
     private let cardPadTop: CGFloat = 12
     private let cardPadBottom: CGFloat = 12
     private let pillFill = DesignTokens.divider                   // #F0F0F1
     private let pillRadius: CGFloat = 4
-    private let pillPadX: CGFloat = 4
+    private let pillPadX: CGFloat = 6   // mockup inline code padding 2px 6px (L286)
     private let headerRule = NSColor(hex: 0xECECEE)
     private let bodyRule = DesignTokens.line                      // #F4F4F5
     private let hrRule = DesignTokens.divider                     // #F0F0F1
@@ -310,6 +311,9 @@ final class PaperTextView: NSTextView {
         let paperWidth = min(DesignTokens.paperWidth, max(240, availableWidth - 140))
         textContainer?.widthTracksTextView = false
         textContainer?.containerSize = NSSize(width: paperWidth, height: CGFloat.greatestFiniteMagnitude)
+        // Zero the default 5pt line-fragment padding so text/cards/rules span the
+        // full measure and stay centered in the paper column.
+        textContainer?.lineFragmentPadding = 0
         textContainerInset = NSSize(width: max(70, (availableWidth - paperWidth) / 2), height: 44)
     }
 }
@@ -433,6 +437,11 @@ class HoverButton: NSButton {
     override func mouseEntered(with event: NSEvent) { inside = true; refresh() }
     override func mouseExited(with event: NSEvent) { inside = false; refresh() }
     override func layout() { super.layout(); refresh() }
+
+    /// Re-apply the rest/hover background and tint after a caller mutates the
+    /// `restBackground`/`hoverBackground`/tint properties, so the change shows
+    /// immediately without waiting for the next layout pass or mouse event.
+    func refreshHoverState() { refresh() }
 }
 
 /// Small "复制" affordance that floats at the TOP-RIGHT of a fenced code block
@@ -644,9 +653,10 @@ final class SidebarCell: NSTableCellView {
             textField?.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         } else {
             // Selected file row: title color + semibold (mockup active state);
-            // otherwise the rest file-row color, going semibold only when dirty.
+            // otherwise the rest file-row color. Mockup (L1135) bolds ONLY the
+            // active/selected row — dirty rows stay regular weight.
             textField?.textColor = isSelected ? DesignTokens.titleText : DesignTokens.fileRowText
-            let bold = isSelected || isDirty
+            let bold = isSelected
             textField?.font = NSFont.systemFont(ofSize: 13, weight: bold ? .semibold : .regular)
         }
     }
@@ -1529,7 +1539,7 @@ final class TabItemView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = 6   // 终稿 L102: tab pill radius 6
         translatesAutoresizingMaskIntoConstraints = false
 
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -1578,7 +1588,7 @@ final class TabItemView: NSView {
         addSubview(confirmLabel)
 
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 32),
+            heightAnchor.constraint(equalToConstant: 28),   // 终稿 L102: tab pill height 28
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
 
@@ -2195,14 +2205,17 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         // buildCommandPaletteView).
         let blur = NSVisualEffectView()
         blur.blendingMode = .withinWindow
-        blur.material = .underWindowBackground
+        // `.underWindowBackground` is a `.behindWindow` material and renders almost
+        // nothing with `.withinWindow`; `.popover` is a real light within-window
+        // frost, giving the design's `backdrop-filter: blur(6px)`.
+        blur.material = .popover
         blur.state = .active
         blur.translatesAutoresizingMaskIntoConstraints = false
         backdrop.addSubview(blur)
 
         let dim = NSView()
         dim.wantsLayer = true
-        dim.layer?.backgroundColor = NSColor(hex: 0xF8F8FA, alpha: 0.4).cgColor
+        dim.layer?.backgroundColor = NSColor(hex: 0xF8F8FA, alpha: 0.6).cgColor
         dim.translatesAutoresizingMaskIntoConstraints = false
         backdrop.addSubview(dim)
 
@@ -3136,10 +3149,10 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let show = DispatchWorkItem { [weak self] in self?.showRailCoachPill() }
         railCoachWork.append(show)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: show)
-        // Auto-dismiss after a few seconds.
+        // Auto-dismiss after a few seconds (mockup hides at 7200ms).
         let hide = DispatchWorkItem { [weak self] in self?.dismissRailCoach() }
         railCoachWork.append(hide)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0, execute: hide)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7.2, execute: hide)
     }
 
     /// Dark light-blur pill anchored to the right edge, vertically centered, with
@@ -4297,6 +4310,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         editorTextView.autoresizingMask = [.width]
         editorTextView.textContainer?.widthTracksTextView = false
         editorTextView.textContainer?.containerSize = NSSize(width: DesignTokens.paperWidth, height: CGFloat.greatestFiniteMagnitude)
+        // Zero the default 5pt line-fragment padding so text/cards/rules span the
+        // full 540 measure (not 530) and stay centered in the 540 container.
+        editorTextView.textContainer?.lineFragmentPadding = 0
         editorTextView.linkTextAttributes = [
             .foregroundColor: DesignTokens.link,
             .underlineStyle: NSUnderlineStyle.single.rawValue
@@ -6736,6 +6752,10 @@ enum LiveMarkdownStyler {
     // Inline `code` runs are 13px (mockup); the fenced code BLOCK stays 12.5.
     private static let inlineCodeFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     private static let boldCodeFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .semibold)
+    // Mockup table header `th` (L317): 11px semibold sans, #86868b, letter-spacing 0.4.
+    private static let tableHeaderFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    // Mockup table body `td` (L323): 13.5px (table font-size, L314), body sans.
+    private static let tableBodyFont = NSFont.systemFont(ofSize: 13.5)
     private static let markerColor = DesignTokens.placeholderText
     private static let mutedColor = DesignTokens.secondaryText
     private static let codeBackground = DesignTokens.codeBackground
@@ -6849,6 +6869,60 @@ enum LiveMarkdownStyler {
         baseAttributes()
     }
 
+    /// Classification of a non-blank source line into a rendered block, with the
+    /// margin-top / margin-bottom it contributes to the vertical rhythm. Mirrors
+    /// the mockup's per-block CSS margins (Markdown Viewer.dc.html): paragraphs
+    /// and "container" blocks (list/code/blockquote/table/hr) carry only a 22px
+    /// bottom margin; headings carry a larger TOP margin (H1 56, H2/H3 40) plus a
+    /// bottom margin (H1 24, H2/H3 16). The blank line between two blocks then
+    /// carries `max(prev.bottom, next.top)` — true CSS margin-collapse — so the
+    /// gaps stay tight and even instead of double-counting.
+    private enum BlockKind {
+        case heading1, heading23, headingOther
+        case paragraph, list, blockquote, code, table, hr
+
+        var marginTop: CGFloat {
+            switch self {
+            case .heading1: return 56
+            case .heading23, .headingOther: return 40
+            default: return 0
+            }
+        }
+        var marginBottom: CGFloat {
+            switch self {
+            case .heading1: return 24
+            case .heading23, .headingOther: return 16
+            default: return 22
+            }
+        }
+    }
+
+    /// Classify the non-blank line at `index` (assumed at top level, i.e. not
+    /// inside a fenced code block — blanks only occur outside fences, so the next
+    /// non-blank line after a blank run is always classifiable in isolation).
+    private static func classifyBlock(lines: [(text: String, range: NSRange)], index: Int, nsString: NSString) -> BlockKind {
+        let line = lines[index].text
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("```") { return .code }
+        if trimmed == "---" || trimmed == "***" || trimmed == "___" { return .hr }
+        if let heading = firstMatch(headingRegex, in: nsString, exactly: lines[index].range) {
+            switch heading.range(at: 1).length {
+            case 1: return .heading1
+            case 2, 3: return .heading23
+            default: return .headingOther
+            }
+        }
+        if trimmed.hasPrefix(">") { return .blockquote }
+        if index + 1 < lines.count,
+           looksLikeTableLine(line),
+           isTableSeparatorLine(lines[index + 1].text) {
+            return .table
+        }
+        if firstMatch(taskRegex, in: nsString, exactly: lines[index].range) != nil { return .list }
+        if firstMatch(listRegex, in: nsString, exactly: lines[index].range) != nil { return .list }
+        return .paragraph
+    }
+
     private static func applyLineStyles(to textStorage: NSTextStorage) {
         let nsString = textStorage.string as NSString
         let fullRange = NSRange(location: 0, length: nsString.length)
@@ -6859,6 +6933,9 @@ enum LiveMarkdownStyler {
         // consecutive blanks in a run collapse instead of each rendering at full
         // body line-height (the "too much vertical spacing" bug).
         var prevWasBlank = false
+        // The kind of the most recent non-blank block, so a blank can size its gap
+        // as max(prevBlock.marginBottom, nextBlock.marginTop) — CSS margin-collapse.
+        var prevBlock: BlockKind? = nil
 
         while index < lines.count {
             let current = lines[index]
@@ -6867,13 +6944,28 @@ enum LiveMarkdownStyler {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             // Blank line (empty or whitespace-only) outside a fenced code block:
-            // collapse to a small fixed gap. First blank in a run ≈ 8px, each
-            // subsequent blank in the same run ≈ 2px. Inside a code block, blanks
-            // fall through to the code-line styling below.
+            // the blank CARRIES the inter-block gap (block margins are zeroed, so
+            // there is no double-counting). Only the FIRST blank in a run carries
+            // the gap; subsequent blanks collapse to ~1px. The gap is the collapsed
+            // margin between the preceding block and the next non-blank block.
             if trimmed.isEmpty && !insideCodeBlock {
                 if substringRange.length > 0 {
                     let blankStyle = NSMutableParagraphStyle()
-                    let h: CGFloat = prevWasBlank ? 2 : 8
+                    var h: CGFloat = 1
+                    if !prevWasBlank {
+                        // Look ahead past consecutive blanks to the next block.
+                        var j = index + 1
+                        while j < lines.count,
+                              lines[j].text.trimmingCharacters(in: .whitespaces).isEmpty {
+                            j += 1
+                        }
+                        let nextTop: CGFloat = j < lines.count
+                            ? classifyBlock(lines: lines, index: j, nsString: nsString).marginTop
+                            : 0
+                        let prevBottom = prevBlock?.marginBottom ?? 0
+                        h = max(prevBottom, nextTop)
+                        if h <= 0 { h = 1 }
+                    }
                     blankStyle.minimumLineHeight = h
                     blankStyle.maximumLineHeight = h
                     blankStyle.lineHeightMultiple = 1
@@ -6891,6 +6983,13 @@ enum LiveMarkdownStyler {
             guard substringRange.length > 0 else {
                 index += 1
                 continue
+            }
+
+            // Remember this block's kind for the NEXT blank's gap computation. Skip
+            // lines inside a fence (code body / closing fence) so the whole code
+            // block keeps the `.code` kind set by its opening fence.
+            if !insideCodeBlock {
+                prevBlock = classifyBlock(lines: lines, index: index, nsString: nsString)
             }
 
             if trimmed.hasPrefix("```") {
@@ -6949,6 +7048,8 @@ enum LiveMarkdownStyler {
                 let font = headingFont(level: level)
                 textStorage.addAttributes([
                     .font: font,
+                    // Headings are #111 (mockup L285/287), darker than body #333336.
+                    .foregroundColor: DesignTokens.headingText,
                     .paragraphStyle: headingParagraphStyle(level: level)
                 ], range: substringRange)
                 let textRange = heading.range(at: 2)
@@ -6970,7 +7071,8 @@ enum LiveMarkdownStyler {
                 // line enough height for a centered divider and stamp
                 // `mvHorizontalRule` so CardLayoutManager paints a visible 1px
                 // #F0F0F1 hairline across the text measure.
-                let style = paragraphStyle(spacingBefore: 8, spacingAfter: 12)
+                // Margins zeroed: the surrounding blank lines carry the 22px gaps.
+                let style = paragraphStyle()
                 style.minimumLineHeight = 14
                 style.maximumLineHeight = 14
                 textStorage.addAttributes([
@@ -6984,9 +7086,11 @@ enum LiveMarkdownStyler {
             }
 
             if trimmed.hasPrefix(">") {
-                // Mockup blockquote: color #767676, padding-left 0 (no head indent).
-                let style = paragraphStyle(spacingAfter: 9)
+                // Mockup blockquote (L310): font-size 14.5, color #767676,
+                // padding-left 0 (no head indent), line-height 1.7.
+                let style = paragraphStyle(spacingAfter: 0)
                 textStorage.addAttributes([
+                    .font: NSFont.systemFont(ofSize: 14.5),
                     .foregroundColor: NSColor(hex: 0x767676),
                     .backgroundColor: quoteBackground,
                     .paragraphStyle: style
@@ -7001,6 +7105,13 @@ enum LiveMarkdownStyler {
 
             if let task = firstMatch(taskRegex, in: nsString, exactly: substringRange) {
                 let markerRange = task.range(at: 1)
+                // Match the list indent (mockup `padding-left: 20px`, hanging indent).
+                // 6px gap only BETWEEN items; the last item drops it (blank carries 22).
+                let intraGap: CGFloat = isListItemLine(lines: lines, index: index + 1, nsString: nsString) ? 6 : 0
+                let style = paragraphStyle(spacingAfter: intraGap)
+                style.firstLineHeadIndent = 20
+                style.headIndent = 36
+                textStorage.addAttributes([.paragraphStyle: style], range: substringRange)
                 textStorage.addAttributes(markerAttributes(font: boldCodeFont), range: markerRange)
                 index += 1
                 continue
@@ -7008,8 +7119,14 @@ enum LiveMarkdownStyler {
 
             if let list = firstMatch(listRegex, in: nsString, exactly: substringRange) {
                 let markerRange = list.range(at: 1)
-                let style = paragraphStyle(spacingAfter: 6)
-                style.headIndent = 24
+                // Mockup list `padding-left: 20px` (L288): indent the whole list 20px,
+                // with a hanging indent so wrapped lines align under the item text
+                // (marker at 20, text continues ~16 further). 6px gap only BETWEEN
+                // items; the last item drops it so the blank carries the 22px gap.
+                let intraGap: CGFloat = isListItemLine(lines: lines, index: index + 1, nsString: nsString) ? 6 : 0
+                let style = paragraphStyle(spacingAfter: intraGap)
+                style.firstLineHeadIndent = 20
+                style.headIndent = 36
                 textStorage.addAttributes([.paragraphStyle: style], range: substringRange)
                 textStorage.addAttributes(markerAttributes(font: markerFont), range: markerRange)
             }
@@ -7058,8 +7175,10 @@ enum LiveMarkdownStyler {
                 }
             }
             textStorage.addAttributes([
-                .foregroundColor: DesignTokens.link,
-                .underlineStyle: NSUnderlineStyle.single.rawValue
+                // Mockup rendered link (L372): color #1d1d1f, single underline tinted #C7C7CC.
+                .foregroundColor: NSColor(hex: 0x1D1D1F),
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .underlineColor: NSColor(hex: 0xC7C7CC)
             ], range: match.range(at: 1))
             let urlRange = match.range(at: 2)
             textStorage.addAttributes([
@@ -7149,6 +7268,17 @@ enum LiveMarkdownStyler {
         return lines
     }
 
+    /// Whether the line at `index` renders as a list or task item — used so the
+    /// intra-list 6px item gap only applies BETWEEN items; the last item drops it
+    /// so the blank after the list carries the 22px list-block gap (no double count).
+    private static func isListItemLine(lines: [(text: String, range: NSRange)], index: Int, nsString: NSString) -> Bool {
+        guard index >= 0, index < lines.count else { return false }
+        let r = lines[index].range
+        guard r.length > 0 else { return false }
+        return firstMatch(taskRegex, in: nsString, exactly: r) != nil
+            || firstMatch(listRegex, in: nsString, exactly: r) != nil
+    }
+
     private static func looksLikeTableLine(_ line: String) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         return trimmed.contains("|") && (trimmed.hasPrefix("|") || trimmed.hasSuffix("|"))
@@ -7171,16 +7301,19 @@ enum LiveMarkdownStyler {
         let columnWidths: [CGFloat] = (0..<columnCount).map { columnIndex in
             parsedRows.map { parsedRow in
                 guard parsedRow.cells.indices.contains(columnIndex) else { return CGFloat(0) }
-                let font = parsedRow.row.isHeader ? boldCodeFont : bodyFont
+                let font = parsedRow.row.isHeader ? tableHeaderFont : tableBodyFont
                 return measuredWidth(parsedRow.cells[columnIndex].visibleText, font: font)
             }.max() ?? 0
         }
 
-        for parsedRow in parsedRows {
+        let lastIndex = parsedRows.count - 1
+        for (rowIndex, parsedRow) in parsedRows.enumerated() {
             if parsedRow.row.isHeader {
                 applyTableHeader(parsedRow.row.text, range: parsedRow.row.range, cells: parsedRow.cells, columnWidths: columnWidths, to: textStorage)
             } else {
-                applyTableRow(parsedRow.row.text, range: parsedRow.row.range, cells: parsedRow.cells, columnWidths: columnWidths, to: textStorage)
+                // The final body row omits its bottom hairline (mockup, L325 has no
+                // border-bottom on the last `td`s).
+                applyTableRow(parsedRow.row.text, range: parsedRow.row.range, cells: parsedRow.cells, columnWidths: columnWidths, isLastRow: rowIndex == lastIndex, to: textStorage)
             }
         }
 
@@ -7188,7 +7321,8 @@ enum LiveMarkdownStyler {
     }
 
     private static func applyTableHeader(_ line: String, range: NSRange, cells: [TableCell], columnWidths: [CGFloat], to textStorage: NSTextStorage) {
-        let style = paragraphStyle(spacingBefore: 4, spacingAfter: 0)
+        // Margins zeroed: the blank before the table carries the gap (#1 rhythm).
+        let style = paragraphStyle(spacingBefore: 0, spacingAfter: 0)
         style.headIndent = 8
         style.firstLineHeadIndent = 8
         style.lineBreakMode = .byClipping
@@ -7196,32 +7330,37 @@ enum LiveMarkdownStyler {
         // keeps the header-style assertion satisfied; `mvTableHeaderRule` makes
         // CardLayoutManager draw only the #ECECEE hairline under the header row.
         textStorage.addAttributes([
-            .font: boldCodeFont,
+            // Mockup `th` (L317): 11px semibold sans, color #86868b, letter-spacing 0.4.
+            // The 0.4 letter-spacing is applied per-cell in alignTableCells so its
+            // width can be backed out of the column math (alignment self-test).
+            .font: tableHeaderFont,
+            .foregroundColor: DesignTokens.tertiaryText,
             .backgroundColor: NSColor.clear,
             .mvTableHeaderRule: true,
             .paragraphStyle: style
         ], range: range)
-        alignTableCells(cells, columnWidths: columnWidths, rowFont: boldCodeFont, textStorage: textStorage)
+        alignTableCells(cells, columnWidths: columnWidths, rowFont: tableHeaderFont, letterSpacing: 0.4, textStorage: textStorage)
     }
 
-    private static func applyTableRow(_ line: String, range: NSRange, cells: [TableCell], columnWidths: [CGFloat], to textStorage: NSTextStorage) {
+    private static func applyTableRow(_ line: String, range: NSRange, cells: [TableCell], columnWidths: [CGFloat], isLastRow: Bool, to textStorage: NSTextStorage) {
         let style = paragraphStyle(spacingBefore: 0, spacingAfter: 0)
         style.headIndent = 8
         style.firstLineHeadIndent = 8
         style.lineBreakMode = .byClipping
         // Borderless white row; `mvTableBodyRule` draws only the #F4F4F5 hairline
         // under the row (mockup `td` border-bottom). Prose body cells render in the
-        // document body sans font, matching the final mockup's shortcuts table
-        // whose `td` prose column has no font-family override and inherits the
-        // body sans at the table's font-size (Markdown Viewer.dc.html ~line 350:
-        // `<td style="padding: 9px 0; border-bottom: 1px solid #F4F4F5;">查找 / 替换`).
-        // Monospace stays content-specific (inline code), not a table-row rule.
-        textStorage.addAttributes([
-            .font: bodyFont,
-            .mvTableBodyRule: true,
+        // document body sans font at the table's 13.5px font-size (mockup table
+        // `font-size:13.5`, L314; `td` has no font-family override, L323/350).
+        // The LAST body row omits the hairline (mockup, L325), so it is not stamped.
+        var attrs: [NSAttributedString.Key: Any] = [
+            .font: tableBodyFont,
             .paragraphStyle: style
-        ], range: range)
-        alignTableCells(cells, columnWidths: columnWidths, rowFont: bodyFont, textStorage: textStorage)
+        ]
+        if !isLastRow {
+            attrs[.mvTableBodyRule] = true
+        }
+        textStorage.addAttributes(attrs, range: range)
+        alignTableCells(cells, columnWidths: columnWidths, rowFont: tableBodyFont, textStorage: textStorage)
     }
 
     private static func applyHiddenTableSeparator(range: NSRange, to textStorage: NSTextStorage) {
@@ -7236,7 +7375,7 @@ enum LiveMarkdownStyler {
         ], range: range)
     }
 
-    private static func alignTableCells(_ cells: [TableCell], columnWidths: [CGFloat], rowFont: NSFont, textStorage: NSTextStorage) {
+    private static func alignTableCells(_ cells: [TableCell], columnWidths: [CGFloat], rowFont: NSFont, letterSpacing: CGFloat = 0, textStorage: NSTextStorage) {
         let columnGap: CGFloat = 30
 
         let full = textStorage.string as NSString
@@ -7249,12 +7388,23 @@ enum LiveMarkdownStyler {
                 // (~zero) metric — otherwise a sans body row and the monospace
                 // header would offset column 0 by their differing space widths.
                 hideCellPadding(cell.contentRange, in: full, textStorage: textStorage)
+                // Header letter-spacing (mockup `th` letter-spacing 0.4) is applied
+                // here, to the VISIBLE cell text only, so its added width is known
+                // and can be backed out of the column gap below (keeping the column
+                // start aligned with the un-kerned body cell, per the self-test).
+                if letterSpacing != 0, let visible = visibleContentRange(of: cell, in: full) {
+                    textStorage.addAttributes([.kern: letterSpacing], range: visible)
+                }
             }
 
             guard let trailingPipeRange = cell.trailingPipeRange else { continue }
             let currentWidth = measuredWidth(cell.visibleText, font: rowFont)
             let targetWidth = columnWidths.indices.contains(index) ? columnWidths[index] : currentWidth
-            let addedSpace = max(columnGap, targetWidth - currentWidth + columnGap)
+            // The letter-spacing kern adds `letterSpacing` after each visible glyph,
+            // shifting later columns right; subtract it from the gap so columns stay
+            // aligned with the body row (which carries no kern).
+            let kernWidth = letterSpacing * CGFloat(cell.visibleText.count)
+            let addedSpace = max(columnGap, targetWidth - currentWidth + columnGap) - kernWidth
             // Collapse the pipe glyph to ~zero width (size-1 font); the column gap
             // comes entirely from `.kern`, so a monospace header pipe and a sans
             // body pipe no longer drift the following columns apart.
@@ -7299,6 +7449,23 @@ enum LiveMarkdownStyler {
             textStorage.addAttributes(collapsed,
                                       range: NSRange(location: contentRange.location + contentRange.length - trailCount, length: trailCount))
         }
+    }
+
+    /// The sub-range of a cell's `contentRange` covering its trimmed visible text
+    /// (excludes the leading/trailing intra-pipe whitespace that hideCellPadding
+    /// collapses). Used to apply header letter-spacing to only the visible glyphs.
+    private static func visibleContentRange(of cell: TableCell, in full: NSString) -> NSRange? {
+        let contentRange = cell.contentRange
+        guard contentRange.length > 0 else { return nil }
+        let s = full.substring(with: contentRange) as NSString
+        var leading = 0
+        while leading < s.length, isASCIISpaceOrTab(s.character(at: leading)) { leading += 1 }
+        if leading == s.length { return nil }   // whitespace-only cell
+        var trailing = s.length - 1
+        while trailing >= 0, isASCIISpaceOrTab(s.character(at: trailing)) { trailing -= 1 }
+        let visibleLength = trailing - leading + 1
+        guard visibleLength > 0 else { return nil }
+        return NSRange(location: contentRange.location + leading, length: visibleLength)
     }
 
     private static func isASCIISpaceOrTab(_ c: unichar) -> Bool { c == 32 || c == 9 }
@@ -7394,18 +7561,15 @@ enum LiveMarkdownStyler {
 
     /// Horizontal inset (points) of the code TEXT from the card's left/right
     /// edges. Mirrors `CardLayoutManager.cardPadX` so the painted card hugs the
-    /// indented text (mockup `pre` padding ~16px, Markdown Viewer.dc.html ~298).
-    static let codeCardPadX: CGFloat = 14
-    /// Extra paragraph spacing around the block so the layout-manager card (which
-    /// extends ~12px above the first glyph and below the last) never collides with
-    /// the neighboring paragraphs.
-    private static let codeCardOuterSpacing: CGFloat = 16
-
+    /// indented text (mockup `pre` padding 16px, Markdown Viewer.dc.html ~299).
+    static let codeCardPadX: CGFloat = 16
     enum CodeLineRole { case open, body, close }
 
     private static func codeParagraphStyle(role: CodeLineRole) -> NSMutableParagraphStyle {
-        let style = paragraphStyle(spacingBefore: role == .open ? codeCardOuterSpacing : 0,
-                                   spacingAfter: role == .close ? codeCardOuterSpacing : 2)
+        // Margins zeroed: the blank lines around the fence carry the 22px outer
+        // gaps (#1 rhythm). The card's 12px top/bottom padding (drawn by
+        // CardLayoutManager) sits inside that 22px blank, leaving ~10px clearance.
+        let style = paragraphStyle()
         // Inset the code text inside the card on both sides.
         style.firstLineHeadIndent = codeCardPadX
         style.headIndent = codeCardPadX
@@ -7480,13 +7644,13 @@ enum LiveMarkdownStyler {
     }
 
     private static func headingParagraphStyle(level: Int) -> NSParagraphStyle {
-        // Tighter rhythm (mockup): H1 keeps a small lead; H2/H3 lead 40 → 18 so the
-        // gap before a heading is ~26px total, not 150-250px. After-spacing: H1 24,
-        // others 12.
-        paragraphStyle(spacingBefore: level == 1 ? 8 : 18, spacingAfter: level == 1 ? 24 : 12)
+        // Margins are zeroed: the blank line before/after a heading carries the
+        // collapsed gap (see classifyBlock / the blank-line branch). H1's larger
+        // top/bottom and H2/H3's are encoded as BlockKind margins, not here.
+        paragraphStyle()
     }
 
-    private static func paragraphStyle(spacingBefore: CGFloat = 0, spacingAfter: CGFloat = 8) -> NSMutableParagraphStyle {
+    private static func paragraphStyle(spacingBefore: CGFloat = 0, spacingAfter: CGFloat = 0) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineHeightMultiple = 1.7
         style.paragraphSpacingBefore = spacingBefore
@@ -7502,11 +7666,14 @@ final class ChipButton: HoverButton {
     var active = false { didSet { refreshChip() } }
 
     func refreshChip() {
-        // Active toggle chips use the system-blue 14% fill per the Design System
-        // rule "激活态用系统蓝 14% 底" (system-blue is a legal toggle-control color).
-        restBackground = active ? DesignTokens.systemBlue.withAlphaComponent(0.14) : .clear
-        restTint = active ? DesignTokens.systemBlue : DesignTokens.placeholderText
-        hoverTint = active ? DesignTokens.systemBlue : DesignTokens.secondaryText
+        // Active toggle chips use a NEUTRAL fill per the final mockup (L1231-1233):
+        // black 10% fill, title-color text, plus an inset 1px ring at black 6%.
+        restBackground = active ? NSColor.black.withAlphaComponent(0.10) : .clear
+        restTint = active ? DesignTokens.titleText : DesignTokens.placeholderText
+        hoverTint = active ? DesignTokens.titleText : DesignTokens.secondaryText
+        wantsLayer = true
+        layer?.borderWidth = active ? 1 : 0
+        layer?.borderColor = NSColor.black.withAlphaComponent(0.06).cgColor
         needsLayout = true
     }
 }
@@ -7663,10 +7830,10 @@ final class FindBarView: NSView, NSTextFieldDelegate {
         glassBacking.translatesAutoresizingMaskIntoConstraints = false
         addSubview(glassBacking) // inserted first → sits UNDER the content stack
 
-        // Frosted-white tint over the blur. Kept at 0.6 (not 0.97) so the
-        // within-window blur shows through as frosted glass (mockup L135).
+        // Frosted-white tint over the blur. The mockup panel (L135) is a near-solid
+        // frosted white rgba(255,255,255,0.97); a muddy grey at 0.6 read as too dark.
         glassTint.wantsLayer = true
-        glassTint.layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.6).cgColor
+        glassTint.layer?.backgroundColor = DesignTokens.paper.withAlphaComponent(0.97).cgColor
         glassTint.layer?.cornerRadius = 10
         glassTint.layer?.masksToBounds = true
         glassTint.translatesAutoresizingMaskIntoConstraints = false
@@ -7724,6 +7891,9 @@ final class FindBarView: NSView, NSTextFieldDelegate {
         nav.spacing = 2
 
         let closeButton = iconButton(HoverButton(title: "×", target: nil, action: nil), "×", width: 24, height: 24, fontSize: 14, action: #selector(closeAction))
+        // Mockup (L153): the close × darkens to titleText (#1d1d1f) on hover, not
+        // the lighter secondaryText the shared iconButton helper applies.
+        closeButton.hoverTint = DesignTokens.titleText
 
         let row1 = NSStackView(views: [chevron, findContainer, chips, separator(), nav, separator(), closeButton])
         row1.orientation = .horizontal
@@ -7803,9 +7973,12 @@ final class FindBarView: NSView, NSTextFieldDelegate {
         b.font = NSFont.systemFont(ofSize: 12)
         b.wantsLayer = true
         b.layer?.cornerRadius = 6
-        b.contentTintColor = DesignTokens.fileRowText
-        b.restTint = DesignTokens.fileRowText
-        b.hoverTint = DesignTokens.titleText
+        // Mockup (L162): replace buttons keep their text at #3a3a3c on hover —
+        // only the background changes, the text color stays put.
+        let replaceBtnText = NSColor(hex: 0x3A3A3C)
+        b.contentTintColor = replaceBtnText
+        b.restTint = replaceBtnText
+        b.hoverTint = replaceBtnText
         b.restBackground = NSColor.black.withAlphaComponent(0.05)
         b.hoverBackground = NSColor.black.withAlphaComponent(0.08)
         b.translatesAutoresizingMaskIntoConstraints = false
@@ -7831,14 +8004,26 @@ final class FindBarView: NSView, NSTextFieldDelegate {
         replaceRow.isHidden = !visible
         chevron.title = visible ? "▾" : "▸"
         chevron.contentTintColor = visible ? DesignTokens.secondaryText : DesignTokens.placeholderText
+        // Mockup (L1307): an open replace chevron carries a rest background at
+        // rgba(0,0,0,0.05) so the toggle reads as "on".
+        chevron.restBackground = visible ? DesignTokens.hover : .clear
+        chevron.refreshHoverState()
     }
 
     func setNavEnabled(_ enabled: Bool) {
-        let tint = enabled ? DesignTokens.secondaryText : DesignTokens.disabledText
+        // Mockup (L1294): disabled arrows are #D1D1D6 (not #C7C7CC).
+        let tint = enabled ? DesignTokens.secondaryText : NSColor(hex: 0xD1D1D6)
         prevButton.restTint = tint
         nextButton.restTint = tint
         prevButton.contentTintColor = tint
         nextButton.contentTintColor = tint
+        // A disabled arrow must NOT light up on hover: drop its hover background to
+        // clear, restoring the standard hover wash only when enabled.
+        let hoverBg: NSColor = enabled ? DesignTokens.hover : .clear
+        prevButton.hoverBackground = hoverBg
+        nextButton.hoverBackground = hoverBg
+        prevButton.refreshHoverState()
+        nextButton.refreshHoverState()
     }
 
     func focusFind() { window?.makeFirstResponder(findInput) }
@@ -7959,6 +8144,13 @@ private final class RailRow: NSView {
         // trailing (right) edge manually (see `applyHoverTransform`) to match the
         // mockup's `transform-origin: right center` without fighting Auto Layout.
         label.wantsLayer = true
+        // White legibility halo so labels read over body text (mockup L192:
+        // text-shadow: 0 0 8px #fff, 0 0 5px #fff, 0 0 2px #fff).
+        label.layer?.shadowColor = NSColor.white.cgColor
+        label.layer?.shadowRadius = 4
+        label.layer?.shadowOpacity = 1
+        label.layer?.shadowOffset = .zero
+        label.layer?.masksToBounds = false
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
