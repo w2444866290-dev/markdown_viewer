@@ -11,9 +11,8 @@ struct MarkdownViewerApp: App {
                 .environmentObject(docManager)
                 .onAppear { docManager.findStateToggle = { findState.toggleOpen() } }
                 .frame(minWidth: 860, minHeight: 560)
-                .background(DesignTokens.swiftUI.paper)
         }
-        .windowStyle(.titleBar)
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1180, height: 760)
         .commands {

@@ -59,6 +59,7 @@ enum DesignTokens {
 
     enum swiftUI {
         static let paper = color(0xFFFFFF)
+        static let appBackground = color(0xF2F2F4)
         static let sidebar = color(0xF7F7F8)
         static let sidebarFill = color(0xF7F7F8)
         static let titleText = color(0x1D1D1F)
