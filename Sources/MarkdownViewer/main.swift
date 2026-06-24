@@ -1084,10 +1084,9 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
             widthAnchor.constraint(equalToConstant: 460),
             searchField.topAnchor.constraint(equalTo: topAnchor),
             // Mockup L229: padding 0 18px.
-            // Mockup L229: padding 0 18px. Subtract 2pt to compensate for the
-            // default borderless NSTextFieldCell's internal drawing margin.
-            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            // Mockup L229: padding 0 18px.
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             searchField.heightAnchor.constraint(equalToConstant: 46),
 
             divider.topAnchor.constraint(equalTo: searchField.bottomAnchor),
@@ -1299,7 +1298,6 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
 /// backgroundFilters for native backdrop blur (spec: backdrop-filter blur(6px)).
 final class PaletteBackdropView: NSView {
     var onClickOutside: (() -> Void)?
-    weak var paletteView: NSView?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1315,12 +1313,9 @@ final class PaletteBackdropView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        if let palette = paletteView, palette.frame.contains(point) {
-            super.mouseDown(with: event)
-        } else {
-            onClickOutside?()
-        }
+        // The palette card is a sibling now; clicks on the backdrop area
+        // (around the card) close the palette.
+        onClickOutside?()
     }
 }
 
@@ -2174,6 +2169,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private var tabBarLeftPaddingConstraint: NSLayoutConstraint?
     private var resizeHandle: ResizeHandleView?
     private var paletteOverlay: NSView?
+    private var paletteCard: NSView?
     private var currentDirectoryURL: URL?
     private var fileTreeRoots: [FileTreeNode] = []
     private var filteredTreeRoots: [FileTreeNode] = []
@@ -2449,11 +2445,12 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         dim.translatesAutoresizingMaskIntoConstraints = false
         backdrop.addSubview(dim)
 
+        // Palette card is a SIBLING of the backdrop (not a child) so its
+        // CALayer shadow is not clipped by the backdrop's backgroundFilters.
         let paletteView = buildCommandPaletteView()
         paletteView.translatesAutoresizingMaskIntoConstraints = false
-        backdrop.paletteView = paletteView
-        backdrop.addSubview(paletteView)
         rootView.addSubview(backdrop)
+        rootView.addSubview(paletteView)
 
         NSLayoutConstraint.activate([
             backdrop.topAnchor.constraint(equalTo: rootView.topAnchor),
@@ -2464,13 +2461,16 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             dim.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
             dim.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
             dim.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
-            paletteView.centerXAnchor.constraint(equalTo: backdrop.centerXAnchor),
-            paletteView.topAnchor.constraint(equalTo: backdrop.topAnchor, constant: 96)
+            paletteView.centerXAnchor.constraint(equalTo: rootView.centerXAnchor),
+            paletteView.topAnchor.constraint(equalTo: rootView.topAnchor, constant: 96)
         ])
 
+        // Store both for cleanup.
         paletteOverlay = backdrop
+        paletteCard = paletteView
         backdrop.alphaValue = 0
-        NSAnimationContext.runAnimationGroup { $0.duration = motionDuration(0.12); backdrop.animator().alphaValue = 1 }
+        paletteView.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { $0.duration = motionDuration(0.12); backdrop.animator().alphaValue = 1; paletteView.animator().alphaValue = 1 }
         playPaletteCardIn(paletteView)
         DispatchQueue.main.async { [weak self] in paletteView.focusSearch(in: self?.window) }
     }
@@ -2785,6 +2785,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private func closeCommandPalette() {
         paletteOverlay?.removeFromSuperview()
         paletteOverlay = nil
+        paletteCard?.removeFromSuperview()
+        paletteCard = nil
         window.makeFirstResponder(editorTextView)
     }
 
@@ -6245,8 +6247,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
     /// The currently-presented command palette view, if open.
     private var currentPaletteViewForTesting: CommandPaletteView? {
-        guard let backdrop = paletteOverlay as? PaletteBackdropView else { return nil }
-        return backdrop.paletteView as? CommandPaletteView
+        paletteCard as? CommandPaletteView
     }
 
     private func validateDesignSystemLayout() -> [String] {
