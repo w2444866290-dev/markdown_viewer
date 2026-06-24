@@ -5,7 +5,7 @@ struct MarkdownViewerApp: App {
     @StateObject private var docManager = DocumentManager()
 
     var body: some Scene {
-        Window("Markdown 编辑器", id: "main") {
+        WindowGroup {
             ContentView()
                 .environmentObject(docManager)
                 .frame(minWidth: 860, minHeight: 560)
