@@ -1066,14 +1066,8 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         layer?.borderWidth = 1
         layer?.borderColor = DesignTokens.ring.cgColor
         layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOpacity = 0.22
-        layer?.shadowRadius = 30
-        layer?.shadowOffset = NSSize(width: 0, height: -24)  // 终稿 L228: 0 24px 60px
-        // Explicit shadowPath prevents compositing issues with backgroundFilters.
-        // CGPath is used instead of NSBezierPath.cgPath (macOS 14+) for 13.0 compat.
-        let shadowRect = bounds.insetBy(dx: -10, dy: -10)
-        layer?.shadowPath = CGPath(roundedRect: shadowRect, cornerWidth: 14,
-                                    cornerHeight: 14, transform: nil)
+        // Shadow is rendered by a separate shadowHost view behind this card
+        // (backgroundFilters would otherwise clip child-layer shadows).
 
         // Use InsetTextFieldCell: super handles vertical centering; we only
         // add 18px horizontal padding (mockup L229: padding 0 18px).
@@ -1332,6 +1326,7 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
 /// backgroundFilters for native backdrop blur (spec: backdrop-filter blur(6px)).
 final class PaletteBackdropView: NSView {
     var onClickOutside: (() -> Void)?
+    weak var paletteCard: NSView?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1347,9 +1342,12 @@ final class PaletteBackdropView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func mouseDown(with event: NSEvent) {
-        // The palette card is a sibling now; clicks on the backdrop area
-        // (around the card) close the palette.
-        onClickOutside?()
+        let point = convert(event.locationInWindow, from: nil)
+        if let card = paletteCard, card.frame.contains(point) {
+            super.mouseDown(with: event)
+        } else {
+            onClickOutside?()
+        }
     }
 }
 
@@ -2479,12 +2477,23 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         dim.translatesAutoresizingMaskIntoConstraints = false
         backdrop.addSubview(dim)
 
-        // Palette card is a SIBLING of the backdrop (not a child) so its
-        // CALayer shadow is not clipped by the backdrop's backgroundFilters.
+        // Shadow host behind the card so CALayer shadow renders despite
+        // the backdrop's backgroundFilters (which otherwise clip child shadows).
+        let shadowHost = NSView()
+        shadowHost.wantsLayer = true
+        shadowHost.layer?.backgroundColor = NSColor.clear.cgColor
+        shadowHost.layer?.shadowColor = NSColor.black.cgColor
+        shadowHost.layer?.shadowOpacity = 0.22
+        shadowHost.layer?.shadowRadius = 30
+        shadowHost.layer?.shadowOffset = NSSize(width: 0, height: -24)
+        shadowHost.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.addSubview(shadowHost)
+
         let paletteView = buildCommandPaletteView()
         paletteView.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.paletteCard = paletteView
+        backdrop.addSubview(paletteView)
         rootView.addSubview(backdrop)
-        rootView.addSubview(paletteView)
 
         NSLayoutConstraint.activate([
             backdrop.topAnchor.constraint(equalTo: rootView.topAnchor),
@@ -2495,11 +2504,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             dim.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
             dim.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
             dim.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
-            paletteView.centerXAnchor.constraint(equalTo: rootView.centerXAnchor),
-            paletteView.topAnchor.constraint(equalTo: rootView.topAnchor, constant: 96)
+            shadowHost.topAnchor.constraint(equalTo: backdrop.topAnchor, constant: 96),
+            shadowHost.centerXAnchor.constraint(equalTo: backdrop.centerXAnchor),
+            shadowHost.widthAnchor.constraint(equalToConstant: 460),
+            shadowHost.heightAnchor.constraint(equalToConstant: 160),
+            paletteView.topAnchor.constraint(equalTo: backdrop.topAnchor, constant: 96),
+            paletteView.centerXAnchor.constraint(equalTo: backdrop.centerXAnchor),
         ])
 
-        // Store both for cleanup.
         paletteOverlay = backdrop
         paletteCard = paletteView
         backdrop.alphaValue = 0
@@ -2817,9 +2829,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     private func closeCommandPalette() {
-        paletteOverlay?.removeFromSuperview()
+        paletteOverlay?.removeFromSuperview()  // also removes paletteCard (child)
         paletteOverlay = nil
-        paletteCard?.removeFromSuperview()
         paletteCard = nil
         window.makeFirstResponder(editorTextView)
     }
