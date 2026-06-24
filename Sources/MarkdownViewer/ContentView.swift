@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var scrollProgress: Double = 0
     @State private var activeOutlineIndex: Int = 0
     @State private var isDragging = false
+    @State private var hasInitialized = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -56,6 +57,43 @@ struct ContentView: View {
         }
         .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
             handleDrop(providers: providers)
+        }
+        .onAppear {
+            guard !hasInitialized else { return }
+            hasInitialized = true
+            if docManager.tabs.isEmpty {
+                // Open a default document so the editor is never blank.
+                let sample = """
+                # Markdown Viewer
+
+                一个为 macOS 设计的轻量 Markdown 阅读器：打开即读，不打扰。
+
+                ## 特性
+
+                - 安静侧栏与文档树，支持按名称筛选
+                - 顶部多标签页，未保存的文档以琥珀点提示
+                - 右侧悬浮目录，滚动同步高亮
+                - ⌘F 查找与替换，⌘K 命令面板
+
+                ## 快捷键
+
+                | 快捷键 | 功能 |
+                |--------|------|
+                | ⌘ N | 新建文档 |
+                | ⌘ S | 保存 |
+                | ⌘ F | 查找 / 替换 |
+                | ⌘ K | 命令面板 |
+                | ⌘ + | 放大字号 |
+                | ⌘ - | 缩小字号 |
+
+                > 设计原则：读起来像一页纸，而不是一个应用。
+                """
+                docManager.newDocument()
+                // Replace the default text with our sample
+                if let idx = docManager.tabs.firstIndex(where: { $0.id == docManager.activeTabID }) {
+                    docManager.tabs[idx].text = sample
+                }
+            }
         }
     }
 
