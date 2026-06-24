@@ -922,6 +922,23 @@ final class FlippedStackView: NSStackView {
 /// `xInset` horizontally, so a borderless palette search field gets the design's
 /// 18px left/right padding (mockup L229 `padding: 0 18px`) — the default cell
 /// draws flush-left and reframes the field editor to the bare cell bounds.
+/// Non-bezeled NSTextFieldCell that insets text drawing by exactly `xInset` pts.
+/// Does NOT call super in drawingRect/titleRect, so there is no hidden system
+/// margin stacking on top. Used by the palette search field (mockup L229:
+/// padding 0 18px) where frame-level constraints alone can't cancel the
+/// default cell's built-in ~2px margin.
+final class InsetTextFieldCell: NSTextFieldCell {
+    var xInset: CGFloat = 0
+    override func drawingRect(forBounds r: NSRect) -> NSRect { r.insetBy(dx: xInset, dy: 0) }
+    override func titleRect(forBounds r: NSRect) -> NSRect { r.insetBy(dx: xInset, dy: 0) }
+    override func edit(withFrame r: NSRect, in v: NSView, editor t: NSText, delegate d: Any?, event e: NSEvent?) {
+        super.edit(withFrame: drawingRect(forBounds: r), in: v, editor: t, delegate: d, event: e)
+    }
+    override func select(withFrame r: NSRect, in v: NSView, editor t: NSText, delegate d: Any?, start s: Int, length l: Int) {
+        super.select(withFrame: drawingRect(forBounds: r), in: v, editor: t, delegate: d, start: s, length: l)
+    }
+}
+
 /// ⌘K palette: a documents section + a commands section, arrow-navigable,
 /// matching the design's segmented command palette.
 final class CommandPaletteView: NSView, NSTextFieldDelegate {
@@ -1039,6 +1056,15 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         layer?.shadowRadius = 30
         layer?.shadowOffset = NSSize(width: 0, height: -24)  // 终稿 L228: 0 24px 60px
 
+        // Install a custom cell that gives EXACT 18px horizontal inset.
+        // Plain constraints can't account for the borderless NSTextFieldCell's
+        // built-in ~2px margin (which causes double-inset with frame-level padding).
+        let insetCell = InsetTextFieldCell(textCell: "")
+        insetCell.xInset = 18
+        insetCell.isScrollable = true
+        insetCell.wraps = false
+        insetCell.usesSingleLineMode = true
+        searchField.cell = insetCell
         searchField.placeholderString = "搜索文档或命令…"
         searchField.font = NSFont.systemFont(ofSize: 14)
         searchField.isBordered = false
@@ -1073,9 +1099,9 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: 460),
             searchField.topAnchor.constraint(equalTo: topAnchor),
-            // Mockup L229: padding 0 18px.
-            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            // InsetTextFieldCell handles the 18px padding; frame fills palette edge-to-edge.
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor),
             searchField.heightAnchor.constraint(equalToConstant: 46),
 
             divider.topAnchor.constraint(equalTo: searchField.bottomAnchor),
