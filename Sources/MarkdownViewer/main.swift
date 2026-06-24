@@ -922,17 +922,21 @@ final class FlippedStackView: NSStackView {
 /// `xInset` horizontally, so a borderless palette search field gets the design's
 /// 18px left/right padding (mockup L229 `padding: 0 18px`) — the default cell
 /// draws flush-left and reframes the field editor to the bare cell bounds.
-/// NSTextFieldCell that gives EXACT horizontal inset while preserving
-/// super's vertical centering. Unlike the previous broken version that
-/// bypassed super entirely, this one lets super compute the proper
-/// vertically-centered rect, then only adjusts the horizontal margins.
+/// NSTextFieldCell that correctly handles vertical centering for a tall
+/// single-line text field. The default cell's drawingRect does NOT center
+/// text vertically even with usesSingleLineMode — it just prevents wrapping.
+/// This subclass explicitly centers the text box in the available height.
 final class InsetTextFieldCell: NSTextFieldCell {
     var xInset: CGFloat = 0
 
     override func drawingRect(forBounds r: NSRect) -> NSRect {
-        var rect = super.drawingRect(forBounds: r)
-        rect.origin.x += xInset
-        rect.size.width -= xInset * 2
+        var rect = r.insetBy(dx: xInset, dy: 0)
+        // Measure the single-line text height and center it in the field.
+        let textH = attributedStringValue.size().height
+        if textH > 0, textH < rect.height {
+            rect.origin.y += (rect.height - textH) / 2
+            rect.size.height = textH
+        }
         return rect
     }
 
@@ -1069,6 +1073,13 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         // Shadow is rendered by a separate shadowHost view behind this card
         // (backgroundFilters would otherwise clip child-layer shadows).
 
+        // Use InsetTextFieldCell: horizontal inset + explicit vertical centering.
+        let cell = InsetTextFieldCell(textCell: "")
+        cell.xInset = 18
+        cell.isScrollable = true
+        cell.wraps = false
+        cell.usesSingleLineMode = true
+        searchField.cell = cell
         searchField.placeholderString = "搜索文档或命令…"
         searchField.font = NSFont.systemFont(ofSize: 14)
         searchField.isBordered = false
@@ -1077,9 +1088,6 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         searchField.focusRingType = .none
         searchField.textColor = DesignTokens.titleText
         searchField.delegate = self
-        searchField.cell?.isScrollable = true
-        searchField.cell?.wraps = false
-        searchField.cell?.usesSingleLineMode = true
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
         let divider = NSView()
@@ -1107,9 +1115,9 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
             widthAnchor.constraint(equalToConstant: 460),
             searchField.topAnchor.constraint(equalTo: topAnchor),
             // Mockup L229: padding 0 18px.
-            // Mockup L229: padding 0 18px.
-            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            // InsetTextFieldCell provides 18px padding; field fills palette.
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor),
             searchField.heightAnchor.constraint(equalToConstant: 46),
 
             divider.topAnchor.constraint(equalTo: searchField.bottomAnchor),
