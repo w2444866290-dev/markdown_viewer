@@ -643,7 +643,7 @@ final class RoundedField: NSView {
 
         NSLayoutConstraint.activate([
             textField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: leftInset),
-            textField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            textField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -leftInset),  // mockup padding 0 10px
             textField.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
     }
@@ -922,14 +922,6 @@ final class FlippedStackView: NSStackView {
 /// `xInset` horizontally, so a borderless palette search field gets the design's
 /// 18px left/right padding (mockup L229 `padding: 0 18px`) — the default cell
 /// draws flush-left and reframes the field editor to the bare cell bounds.
-final class PaddedTextFieldCell: NSTextFieldCell {
-    var xInset: CGFloat = 18
-    override func drawingRect(forBounds r: NSRect) -> NSRect { super.drawingRect(forBounds: r.insetBy(dx: xInset, dy: 0)) }
-    override func titleRect(forBounds r: NSRect) -> NSRect { super.titleRect(forBounds: r.insetBy(dx: xInset, dy: 0)) }
-    override func edit(withFrame r: NSRect, in v: NSView, editor t: NSText, delegate d: Any?, event e: NSEvent?) { super.edit(withFrame: r.insetBy(dx: xInset, dy: 0), in: v, editor: t, delegate: d, event: e) }
-    override func select(withFrame r: NSRect, in v: NSView, editor t: NSText, delegate d: Any?, start s: Int, length l: Int) { super.select(withFrame: r.insetBy(dx: xInset, dy: 0), in: v, editor: t, delegate: d, start: s, length: l) }
-}
-
 /// ⌘K palette: a documents section + a commands section, arrow-navigable,
 /// matching the design's segmented command palette.
 final class CommandPaletteView: NSView, NSTextFieldDelegate {
@@ -1047,13 +1039,6 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         layer?.shadowRadius = 30
         layer?.shadowOffset = NSSize(width: 0, height: -24)  // 终稿 L228: 0 24px 60px
 
-        // Swap in a padded cell so the text/field-editor get the design's 18px
-        // horizontal padding (mockup L229); the field's leading constraint is then 0.
-        let paddedCell = PaddedTextFieldCell(textCell: "")
-        paddedCell.isScrollable = true
-        paddedCell.wraps = false
-        paddedCell.usesSingleLineMode = true
-        searchField.cell = paddedCell
         searchField.placeholderString = "搜索文档或命令…"
         searchField.font = NSFont.systemFont(ofSize: 14)
         searchField.isBordered = false
@@ -1088,9 +1073,9 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: 460),
             searchField.topAnchor.constraint(equalTo: topAnchor),
-            // Leading/trailing are 0: the PaddedTextFieldCell provides the 18px inset.
-            searchField.leadingAnchor.constraint(equalTo: leadingAnchor),
-            searchField.trailingAnchor.constraint(equalTo: trailingAnchor),
+            // Mockup L229: padding 0 18px.
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             searchField.heightAnchor.constraint(equalToConstant: 46),
 
             divider.topAnchor.constraint(equalTo: searchField.bottomAnchor),
