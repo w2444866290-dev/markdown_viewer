@@ -272,22 +272,16 @@ final class PaperTextView: NSTextView {
     var onPointerMove: ((NSPoint) -> Void)?
     /// Pointer left the paper; hide the URL preview (mockup onContentLeave).
     var onPointerExit: (() -> Void)?
-    /// The paper geometry changed (layout pass or frame resize). The controller
-    /// uses this to keep per-block horizontal-scroll overlays glued to their card
-    /// rects as the column re-centers / the document height changes.
-    var onGeometryChange: (() -> Void)?
     private var hoverTrackingArea: NSTrackingArea?
 
     override func layout() {
         super.layout()
         updatePaperGeometry()
-        onGeometryChange?()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         updatePaperGeometry()
-        onGeometryChange?()
     }
 
     override func updateTrackingAreas() {
@@ -514,157 +508,6 @@ final class CodeCopyButton: NSButton {
     override func mouseEntered(with event: NSEvent) { inside = true; refresh() }
     override func mouseExited(with event: NSEvent) { inside = false; refresh() }
     override func layout() { super.layout(); refresh() }
-}
-
-/// Per-block horizontal-scroll overlay for a WIDE fenced code block (one whose
-/// natural content width exceeds the paper column). Mirrors the mockup's
-/// `<pre> overflow-x:auto` (Markdown Viewer.dc.html ~299): the card stays fixed
-/// at the column width, but the code inside scrolls sideways instead of clipping.
-///
-/// It is a real subview of `editorTextView` (the document view), positioned over
-/// the code card's on-screen rect by the controller — the SAME overlay technique
-/// as `CodeCopyButton`, generalized. Its opaque #FAFAFA fill + hairline border +
-/// rounded corners reproduce the card, so it fully covers (and replaces) the
-/// `CardLayoutManager`-painted card underneath. The `documentView` is a
-/// read-only, NON-wrapping `NSTextView`; clicking the overlay hands editing back
-/// to the underlying source range in the main text view (see the controller's
-/// editability swap).
-final class BlockScrollView: NSScrollView {
-    /// Read-only, non-wrapping code text view (own huge-width container).
-    let codeTextView: NSTextView
-    /// Small uppercase-style language label pinned top-left (does NOT scroll).
-    private let languageLabel = NSTextField(labelWithString: "")
-    /// Invoked when the user clicks anywhere on the overlay so the controller can
-    /// swap to editing the underlying source range. Carries no payload — the
-    /// controller knows which block this overlay represents via `blockKey`.
-    var onActivate: (() -> Void)?
-    /// Start char index of the fenced block this overlay represents (its identity;
-    /// ranges shift on edit, so overlays are matched/repositioned by this key).
-    var blockKey: Int = -1
-
-    private static let cardFill = DesignTokens.codeBackground            // #FAFAFA
-    private static let cardBorder = NSColor.black.withAlphaComponent(0.045)
-    static let textInsetX: CGFloat = 16   // matches card padding-left/right
-    static let textInsetY: CGFloat = 12   // matches card padding-top/bottom
-
-    init() {
-        let container = NSTextContainer(size: NSSize(width: 1_000_000, height: CGFloat.greatestFiniteMagnitude))
-        container.widthTracksTextView = false
-        container.lineFragmentPadding = 0
-        let layout = NSLayoutManager()
-        layout.addTextContainer(container)
-        let storage = NSTextStorage()
-        storage.addLayoutManager(layout)
-        codeTextView = NSTextView(frame: .zero, textContainer: container)
-
-        super.init(frame: .zero)
-
-        wantsLayer = true
-        hasHorizontalScroller = true
-        hasVerticalScroller = false
-        autohidesScrollers = true
-        scrollerStyle = .overlay
-        drawsBackground = true
-        backgroundColor = BlockScrollView.cardFill
-        borderType = .noBorder
-        layer?.cornerRadius = 6
-        layer?.masksToBounds = true
-        layer?.backgroundColor = BlockScrollView.cardFill.cgColor
-        layer?.borderColor = BlockScrollView.cardBorder.cgColor
-        layer?.borderWidth = 1
-
-        codeTextView.isEditable = false
-        codeTextView.isSelectable = true
-        codeTextView.isRichText = false
-        codeTextView.drawsBackground = true
-        codeTextView.backgroundColor = BlockScrollView.cardFill
-        codeTextView.isVerticallyResizable = true
-        codeTextView.isHorizontallyResizable = true
-        codeTextView.autoresizingMask = []
-        codeTextView.textContainerInset = NSSize(width: BlockScrollView.textInsetX, height: BlockScrollView.textInsetY)
-        codeTextView.textContainer?.widthTracksTextView = false
-        codeTextView.textContainer?.lineFragmentPadding = 0
-
-        documentView = codeTextView
-
-        languageLabel.font = NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
-        languageLabel.textColor = NSColor(hex: 0xB3B3B8)
-        languageLabel.backgroundColor = .clear
-        languageLabel.drawsBackground = false
-        languageLabel.isBordered = false
-        languageLabel.isHidden = true
-        // Small opaque chip behind the label so it stays legible if a code glyph
-        // scrolls beneath it (the card #FAFAFA backing).
-        languageLabel.wantsLayer = true
-        languageLabel.layer?.backgroundColor = BlockScrollView.cardFill.cgColor
-        languageLabel.translatesAutoresizingMaskIntoConstraints = false
-        // Float ABOVE the clip view so the scrolling code never paints over it.
-        addSubview(languageLabel, positioned: .above, relativeTo: contentView)
-        NSLayoutConstraint.activate([
-            languageLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: BlockScrollView.textInsetX),
-            languageLabel.topAnchor.constraint(equalTo: topAnchor, constant: 3)
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    /// Replace the scrollable content with the block's code body (already styled
-    /// codeFont/#444 by the main styler) and set the optional language label. The
-    /// body's paragraph style is rewritten to a LEFT-aligned, non-wrapping style so
-    /// the text lays out at its full natural width inside the huge text container.
-    func setContent(body: NSAttributedString, language: String?) {
-        let hasLanguage = (language?.isEmpty == false)
-        // Leave a taller top strip for the language label when present so the code
-        // body starts below it (mockup code-block header).
-        let topInset: CGFloat = hasLanguage ? BlockScrollView.textInsetY + 10 : BlockScrollView.textInsetY
-        codeTextView.textContainerInset = NSSize(width: BlockScrollView.textInsetX, height: topInset)
-
-        let mutable = NSMutableAttributedString(attributedString: body)
-        let full = NSRange(location: 0, length: mutable.length)
-        let style = NSMutableParagraphStyle()
-        style.lineBreakMode = .byClipping
-        style.alignment = .left
-        mutable.addAttribute(.paragraphStyle, value: style, range: full)
-        codeTextView.textStorage?.setAttributes([:], range: NSRange(location: 0, length: codeTextView.textStorage?.length ?? 0))
-        codeTextView.textStorage?.setAttributedString(mutable)
-        // Lay out so the document view sizes to the natural (non-wrapped) width.
-        if let lm = codeTextView.layoutManager, let tc = codeTextView.textContainer {
-            lm.ensureLayout(for: tc)
-            let used = lm.usedRect(for: tc)
-            let w = used.width + BlockScrollView.textInsetX * 2
-            let h = used.height + topInset + BlockScrollView.textInsetY
-            codeTextView.minSize = NSSize(width: w, height: h)
-            codeTextView.frame = NSRect(x: 0, y: 0, width: max(w, 1), height: max(h, 1))
-        }
-        if hasLanguage, let language {
-            languageLabel.stringValue = language.uppercased()
-            languageLabel.isHidden = false
-        } else {
-            languageLabel.stringValue = ""
-            languageLabel.isHidden = true
-        }
-    }
-
-    /// The natural content width (points) of the laid-out code, including the L/R
-    /// text insets. Used to confirm the block actually overflows the clip width.
-    var contentWidth: CGFloat {
-        codeTextView.frame.width
-    }
-
-    // A single click anywhere on the overlay (or its document view) returns
-    // editing to the underlying source. We intercept at hitTest so the click
-    // doesn't merely place a (read-only) selection caret in the overlay.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let hit = super.hitTest(point)
-        // Let the horizontal scroller work normally; activate for content clicks.
-        if hit is NSScroller { return hit }
-        return self
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        onActivate?()
-    }
 }
 
 /// A borderless rounded text input matching the sidebar filter / find fields
@@ -2253,20 +2096,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private var codeCopyButton: CodeCopyButton?
     private var copyButtonBodyRange: NSRange?
 
-    /// Per-block horizontal-scroll overlays for WIDE fenced code blocks (natural
-    /// content width > paper column). Keyed by the block's start char index so an
-    /// overlay stays glued to its block as ranges shift on edit. Each overlay is a
-    /// subview of `editorTextView`, positioned over the code card rect; narrow
-    /// blocks get NO overlay (they render inline, clipped at the column as before).
-    private var blockOverlays: [Int: BlockScrollView] = [:]
-    /// The start char index of the wide block whose caret is currently inside it —
-    /// that ONE block shows the editable source (no overlay) so the user can edit
-    /// the raw code; all other wide blocks keep their read-only scroll overlay.
-    private var editingOverlayKey: Int?
-    /// Guards re-entrant overlay rebuilds (rebuild → makeFirstResponder → selection
-    /// change → rebuild).
-    private var isRebuildingOverlays = false
-
     /// First-run outline-rail coach tip ("本页目录 · 悬停展开"). Shown once ever,
     /// persisted via UserDefaults `mdviewer.railCoach`; dismissed on hover or
     /// after a few seconds.
@@ -2798,23 +2627,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         updateDocumentState(status: "正在编辑")
     }
 
-    /// Caret moved: if it left the wide code block that was showing editable source
-    /// (or entered a different one), re-evaluate the overlay pool so the block the
-    /// caret just left gets its read-only scroll overlay back. Cheap no-op when no
-    /// wide blocks exist. Guarded against the rebuild's own re-entrant selection
-    /// changes (makeFirstResponder / setSelectedRange).
-    func textViewDidChangeSelection(_ notification: Notification) {
-        guard !isApplyingMarkdownStyle, !isRebuildingOverlays, currentDocumentIsMarkdown else { return }
-        guard !blockOverlays.isEmpty || editingOverlayKey != nil else { return }
-        let nsString = editorTextView.string as NSString
-        let columnWidth = (editorTextView.textContainer?.containerSize.width ?? DesignTokens.paperWidth)
-        let blocks = LiveMarkdownStyler.fencedCodeBlocks(in: nsString)
-        let newKey = wideBlockKeyContainingCaret(blocks: blocks, columnWidth: columnWidth)
-        if newKey != editingOverlayKey {
-            rebuildCodeOverlays()
-        }
-    }
-
     private func buildCommandPaletteView() -> CommandPaletteView {
         CommandPaletteView(
             documents: paletteDocuments(),
@@ -2990,7 +2802,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         updateActiveHeading()
         fadeStatusForScroll()
         repositionCodeCopyButton()
-        repositionCodeOverlays()
     }
 
     private func fadeStatusForScroll() {
@@ -3147,27 +2958,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         return rect
     }
 
-    /// The exact rect of the PAINTED code card for a block (editor view coords),
-    /// matching `CardLayoutManager.drawCodeCards`: full paper-column width, x at
-    /// the column's left edge, expanded vertically by the card's top/bottom
-    /// padding. A horizontal-scroll overlay sized to THIS rect fully covers (and
-    /// replaces) the painted card so no border peeks around it.
-    private func cardOverlayRect(for containerRange: NSRange) -> NSRect? {
-        guard let base = codeBlockRect(for: containerRange) else { return nil }
-        // Card geometry from CardLayoutManager: left edge = inset.width (the
-        // lineFragmentPadding is 0), width = column width, vertical padding 12/12.
-        let cardPadTop: CGFloat = 12
-        let cardPadBottom: CGFloat = 12
-        let inset = editorTextView.textContainerInset
-        let columnWidth = editorTextView.textContainer?.containerSize.width ?? DesignTokens.paperWidth
-        return NSRect(
-            x: inset.width,
-            y: base.minY - cardPadTop,
-            width: columnWidth,
-            height: base.height + cardPadTop + cardPadBottom
-        )
-    }
-
     /// Place the copy button at the top-right corner of the block (small inset),
     /// in the editor document view's flipped (y-down) coordinate space.
     private func positionCodeCopyButton(for containerRange: NSRange) {
@@ -3222,174 +3012,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         }
         copyButtonBodyRange = block.bodyRange
         positionCodeCopyButton(for: block.containerRange)
-    }
-
-    // MARK: - Per-block horizontal-scroll overlays (wide code blocks)
-
-    /// Rebuild the pool of horizontal-scroll overlays after a (re)style pass or a
-    /// font-size change. Scans fenced blocks; for each block whose natural content
-    /// width EXCEEDS the paper column AND which is NOT currently being edited
-    /// (caret inside), creates or reuses a `BlockScrollView` glued over the card
-    /// rect. Narrow blocks and the block under edit get no overlay. Stale overlays
-    /// (block deleted, narrowed, or now editing) are removed. Matched by start
-    /// char index so overlays survive range shifts on edit.
-    private func rebuildCodeOverlays() {
-        guard !isRebuildingOverlays else { return }
-        isRebuildingOverlays = true
-        defer { isRebuildingOverlays = false }
-
-        guard currentDocumentIsMarkdown, let storage = editorTextView.textStorage else {
-            clearAllCodeOverlays()
-            return
-        }
-        // Ensure layout is current so codeBlockRect / width measurement are valid.
-        if let lm = editorTextView.layoutManager, let tc = editorTextView.textContainer {
-            lm.ensureLayout(for: tc)
-        }
-
-        let nsString = editorTextView.string as NSString
-        let columnWidth = (editorTextView.textContainer?.containerSize.width ?? DesignTokens.paperWidth)
-        let blocks = LiveMarkdownStyler.fencedCodeBlocks(in: nsString)
-
-        // Which block (if any) currently holds the caret — that one shows source.
-        let caretKey = wideBlockKeyContainingCaret(blocks: blocks, columnWidth: columnWidth)
-        editingOverlayKey = caretKey
-
-        var liveKeys = Set<Int>()
-        for block in blocks {
-            let key = block.containerRange.location
-            // Block being edited: no overlay (editable source shows through).
-            if key == caretKey { continue }
-            guard block.bodyRange.length > 0 else { continue }
-            guard naturalContentWidth(for: block) > columnWidth + 0.5 else { continue }
-            guard let rect = cardOverlayRect(for: block.containerRange) else { continue }
-
-            liveKeys.insert(key)
-            let overlay: BlockScrollView
-            if let existing = blockOverlays[key] {
-                overlay = existing
-            } else {
-                overlay = BlockScrollView()
-                overlay.blockKey = key
-                overlay.onActivate = { [weak self] in self?.activateCodeOverlayForEditing(blockKey: key) }
-                editorTextView.addSubview(overlay)
-                blockOverlays[key] = overlay
-            }
-            let body = storage.attributedSubstring(from: block.bodyRange)
-            overlay.setContent(body: body, language: language(for: block, in: nsString))
-            overlay.frame = rect
-        }
-
-        // Drop overlays whose block vanished / narrowed / went into edit mode.
-        for (key, overlay) in blockOverlays where !liveKeys.contains(key) {
-            overlay.removeFromSuperview()
-            blockOverlays.removeValue(forKey: key)
-        }
-    }
-
-    /// Reposition every live overlay to its block's current on-screen rect (cheap;
-    /// no content rebuild). Called on scroll / resize / layout.
-    private func repositionCodeOverlays() {
-        guard !blockOverlays.isEmpty, currentDocumentIsMarkdown else { return }
-        let nsString = editorTextView.string as NSString
-        let blocks = LiveMarkdownStyler.fencedCodeBlocks(in: nsString)
-        var byKey: [Int: LiveMarkdownStyler.FencedCodeBlock] = [:]
-        for b in blocks { byKey[b.containerRange.location] = b }
-        for (key, overlay) in blockOverlays {
-            guard let block = byKey[key], let rect = cardOverlayRect(for: block.containerRange) else {
-                // Block gone — let the next rebuild remove it; hide for now.
-                overlay.isHidden = true
-                continue
-            }
-            overlay.isHidden = false
-            // Keep width/height glued to the live card rect; horizontal scroll of
-            // the inner document view is preserved across reposition.
-            overlay.frame = rect
-        }
-    }
-
-    private func clearAllCodeOverlays() {
-        for (_, overlay) in blockOverlays { overlay.removeFromSuperview() }
-        blockOverlays.removeAll()
-        editingOverlayKey = nil
-    }
-
-    /// Measure a fenced block's natural (non-wrapped) content width: the widest
-    /// body line laid out with `codeFont`, plus the L/R card padding. Uses a
-    /// throwaway measuring layout so it never disturbs the live text view.
-    private func naturalContentWidth(for block: LiveMarkdownStyler.FencedCodeBlock) -> CGFloat {
-        guard let storage = editorTextView.textStorage,
-              block.bodyRange.location >= 0,
-              block.bodyRange.location + block.bodyRange.length <= storage.length else { return 0 }
-        let body = storage.attributedSubstring(from: block.bodyRange)
-        let measuring = NSTextStorage(attributedString: body)
-        // Strip the clipping/indent paragraph style so we measure the true width.
-        let plain = NSMutableParagraphStyle()
-        plain.lineBreakMode = .byClipping
-        measuring.addAttribute(.paragraphStyle, value: plain,
-                               range: NSRange(location: 0, length: measuring.length))
-        let lm = NSLayoutManager()
-        let tc = NSTextContainer(size: NSSize(width: 1_000_000, height: CGFloat.greatestFiniteMagnitude))
-        tc.lineFragmentPadding = 0
-        tc.widthTracksTextView = false
-        lm.addTextContainer(tc)
-        measuring.addLayoutManager(lm)
-        lm.ensureLayout(for: tc)
-        let used = lm.usedRect(for: tc)
-        return used.width + BlockScrollView.textInsetX * 2
-    }
-
-    /// The language token (first info-string word) on a block's opening fence, or
-    /// nil. Recovered from the opening fence line in the source.
-    private func language(for block: LiveMarkdownStyler.FencedCodeBlock, in nsString: NSString) -> String? {
-        let openLineRange = nsString.lineRange(for: NSRange(location: block.containerRange.location, length: 0))
-        let openLine = nsString.substring(with: openLineRange)
-        let trimmed = openLine.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("```") else { return nil }
-        let info = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces)
-        let lang = info.split(whereSeparator: { $0 == " " || $0 == "\t" }).first.map(String.init)
-        return (lang?.isEmpty == false) ? lang : nil
-    }
-
-    /// The start char index of the WIDE block (one that would otherwise get an
-    /// overlay) whose container range currently contains the caret/selection, or
-    /// nil. Used so the focused block shows editable source instead of an overlay.
-    private func wideBlockKeyContainingCaret(blocks: [LiveMarkdownStyler.FencedCodeBlock], columnWidth: CGFloat) -> Int? {
-        // Only meaningful when the editor itself is first responder (caret active).
-        guard editorTextView.window?.firstResponder === editorTextView else { return nil }
-        let sel = editorTextView.selectedRange()
-        for block in blocks {
-            let r = block.containerRange
-            guard block.bodyRange.length > 0 else { continue }
-            // Caret inside the block's container range (inclusive of the end edge).
-            if sel.location >= r.location && sel.location <= r.location + r.length {
-                if naturalContentWidth(for: block) > columnWidth + 0.5 {
-                    return r.location
-                }
-            }
-        }
-        return nil
-    }
-
-    /// User clicked a read-only scroll overlay: hand editing back to the source.
-    /// Hide that overlay, focus the main editor, and place the caret at the start
-    /// of the block's body so the raw code becomes editable. A rebuild on the
-    /// resulting selection change keeps every OTHER wide block overlaid.
-    private func activateCodeOverlayForEditing(blockKey: Int) {
-        let nsString = editorTextView.string as NSString
-        let blocks = LiveMarkdownStyler.fencedCodeBlocks(in: nsString)
-        guard let block = blocks.first(where: { $0.containerRange.location == blockKey }) else { return }
-        // Remove this block's overlay immediately so the source shows through.
-        if let overlay = blockOverlays.removeValue(forKey: blockKey) {
-            overlay.removeFromSuperview()
-        }
-        editingOverlayKey = blockKey
-        editorTextView.window?.makeFirstResponder(editorTextView)
-        let caret = min(block.bodyRange.location, nsString.length)
-        editorTextView.setSelectedRange(NSRange(location: caret, length: 0))
-        editorTextView.scrollRangeToVisible(NSRange(location: caret, length: 0))
-        // Re-evaluate the rest of the pool (this block now editable, others stay).
-        rebuildCodeOverlays()
     }
 
     /// Copy the targeted block's BODY (between the fences, excluding the fence
@@ -4395,9 +4017,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             self?.setHoverUrl(nil)
             self?.hideCodeCopyButton()
         }
-        editorTextView.onGeometryChange = { [weak self] in
-            self?.repositionCodeOverlays()
-        }
 
         installCodeCopyButton()
         installContentOverlays(in: container)
@@ -5289,8 +4908,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         // Re-style/relayout (font change, edit, tab switch) may move or remove the
         // targeted code block; keep the copy button glued to it (or hide it).
         repositionCodeCopyButton()
-        // Re-evaluate which wide code blocks need a horizontal-scroll overlay.
-        rebuildCodeOverlays()
     }
 
     private func applyLiveMarkdownStyling() {
@@ -5419,13 +5036,9 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         // against the mockup (ui/Markdown Viewer.dc.html DOCS['SKILL.md']).
         // Case E: a fenced code block with an empty line in the middle — asserts the
         // card stays a single continuous run (no grid-line split at the blank).
-        // Case F: a WIDE fenced code block (lines far exceeding the paper column)
-        // must produce a horizontal-scroll overlay whose inner documentView width
-        // exceeds its clip width (i.e. it actually scrolls sideways).
-        let caseCount = cases.count + 3
+        let caseCount = cases.count + 2
         failures.append(contentsOf: renderDesignVerificationCase(index: cases.count, outputDirectory: outputDirectory))
         failures.append(contentsOf: renderCodeCardContiguityCase(index: cases.count + 1, outputDirectory: outputDirectory))
-        failures.append(contentsOf: renderWideCodeOverlayCase(index: cases.count + 2, outputDirectory: outputDirectory))
 
         if failures.isEmpty {
             print("[MarkdownViewer][self-test] PASS cases=\(caseCount) root=\(rootView.bounds) sidebar=\(sidebarView.frame) editor=\(editorScrollView.frame) liveStyling=ok")
@@ -6935,66 +6548,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     private func first(of needle: String, in nsString: NSString) -> NSRange? {
         let r = nsString.range(of: needle)
         return r.location == NSNotFound ? nil : r
-    }
-
-    /// Self-test: a fenced code block far wider than the paper column must yield a
-    /// horizontal-scroll overlay whose inner documentView is wider than its clip
-    /// (so it scrolls sideways), while a NARROW block in the same doc gets none.
-    private func renderWideCodeOverlayCase(index: Int, outputDirectory: URL) -> [String] {
-        var failures: [String] = []
-        let prefix = "[case \(index + 1) cycle-f]"
-
-        let wideLine = "let xs = " + (1...40).map { "value_\($0)" }.joined(separator: " + ")
-        let markdown = """
-        # Wide code overflow
-
-        ```swift
-        \(wideLine)
-        \(wideLine)
-        ```
-
-        ```text
-        short
-        ```
-        """
-
-        currentFileURL = nil
-        currentDocumentIsMarkdown = true
-        editorTextView.string = markdown
-        lastSavedText = editorTextView.string
-        // Move the caret off any code block so neither block is in edit mode.
-        editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
-        applyLiveMarkdownStyling()
-        rebuildCodeOverlays()
-        updateDocumentState(status: "Live Markdown 自测 代码横向滚动")
-        rootView.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        logLayout("self-test-cycle-f")
-        writeSnapshot(named: "snapshot-cycle-f.png", outputDirectory: outputDirectory)
-
-        let stats = codeOverlayStatsForTesting()
-        if stats.count != 1 {
-            failures.append("\(prefix) expected exactly 1 wide-code overlay (narrow block excluded), got \(stats.count)")
-            return failures
-        }
-        guard let only = stats.first else {
-            failures.append("\(prefix) no overlay created for the wide block")
-            return failures
-        }
-        // The whole point: the inner documentView must be wider than its clip so it
-        // scrolls horizontally (matching <pre> overflow-x:auto).
-        if !(only.contentWidth > only.clipWidth + 0.5) {
-            failures.append("\(prefix) overlay is not horizontally scrollable: contentWidth=\(only.contentWidth) clipWidth=\(only.clipWidth)")
-        }
-        return failures
-    }
-
-    /// Test accessor: (clipWidth, documentView contentWidth) for each live wide
-    /// code overlay. `contentWidth > clipWidth` proves horizontal scrollability.
-    func codeOverlayStatsForTesting() -> [(clipWidth: CGFloat, contentWidth: CGFloat)] {
-        blockOverlays.values.map { overlay in
-            (clipWidth: overlay.contentView.bounds.width, contentWidth: overlay.contentWidth)
-        }
     }
 
     private func validateSelfTestCase(_ testCase: MarkdownSelfTestCase, index: Int) -> [String] {
