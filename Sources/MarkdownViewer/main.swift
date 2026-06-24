@@ -1039,6 +1039,11 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         layer?.shadowRadius = 30
         layer?.shadowOffset = NSSize(width: 0, height: -24)  // 终稿 L228: 0 24px 60px
 
+        // Configure the default cell for single-line, scrollable, vertically
+        // centered text (46pt field / 14pt font).
+        searchField.cell?.isScrollable = true
+        searchField.cell?.wraps = false
+        searchField.cell?.usesSingleLineMode = true
         searchField.placeholderString = "搜索文档或命令…"
         searchField.font = NSFont.systemFont(ofSize: 14)
         searchField.isBordered = false
