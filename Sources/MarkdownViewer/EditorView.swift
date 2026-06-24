@@ -6,7 +6,7 @@ struct EditorView: NSViewRepresentable {
     @Binding var fontIndex: Int
     var isMarkdown: Bool = true
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let sv = NSScrollView()
@@ -22,9 +22,9 @@ struct EditorView: NSViewRepresentable {
         tv.importsGraphics = false
         tv.allowsUndo = true
         tv.font = NSFont.systemFont(ofSize: DesignTokens.bodyFontSizes[fontIndex])
-        tv.textColor = NSColor(calibratedRed: 0.2, green: 0.2, blue: 0.212, alpha: 1)
-        tv.backgroundColor = .white
-        tv.insertionPointColor = NSColor(calibratedRed: 0.114, green: 0.114, blue: 0.122, alpha: 1)
+        tv.textColor = DesignTokens.bodyText
+        tv.backgroundColor = DesignTokens.paper
+        tv.insertionPointColor = DesignTokens.titleText
         tv.isVerticallyResizable = true
         tv.isHorizontallyResizable = false
         tv.autoresizingMask = [.width]
@@ -44,8 +44,20 @@ struct EditorView: NSViewRepresentable {
     func updateNSView(_ sv: NSScrollView, context: Context) {
         guard let tv = context.coordinator.textView else { return }
         let size = DesignTokens.bodyFontSizes[fontIndex]
-        tv.font = NSFont.systemFont(ofSize: size)
+        let newFont = NSFont.systemFont(ofSize: size)
         LiveMarkdownStyler.bodyPointSize = size
+
+        // Font changed: re-apply styling even if text hasn't changed, so
+        // heading/code sizes scale immediately.
+        let fontChanged = tv.font != newFont
+        if fontChanged {
+            tv.font = newFont
+            if let s = tv.textStorage, isMarkdown { LiveMarkdownStyler.apply(to: s) }
+        }
+
+        // Text changed from model side (e.g. tab switch): push to editor.
+        // Guard prevents overwriting live edits — after textDidChange writes
+        // back, tv.string == text so this branch becomes a no-op.
         if tv.string != text {
             tv.string = text
             if let s = tv.textStorage, isMarkdown { LiveMarkdownStyler.apply(to: s) }
@@ -53,9 +65,21 @@ struct EditorView: NSViewRepresentable {
     }
 
     class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: EditorView
         weak var textView: PaperTextView?
+
+        init(_ p: EditorView) { parent = p }
+
         func textDidChange(_ n: Notification) {
-            if let tv = textView, let s = tv.textStorage { LiveMarkdownStyler.apply(to: s) }
+            guard let tv = textView, let s = tv.textStorage else { return }
+            // Write live edits back to the SwiftUI model so saves/tab switches
+            // see the current text. Dispatch async to avoid modifying @Binding
+            // during the current view update cycle.
+            let current = tv.string
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.text = current
+            }
+            LiveMarkdownStyler.apply(to: s)
         }
     }
 }
