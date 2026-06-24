@@ -1298,64 +1298,24 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
 }
 
 /// Dimmed backdrop behind the ⌘K palette; clicking outside the palette dismisses it.
-/// Full-window backdrop for the ⌘K palette. Uses a manually-captured blurred
-/// snapshot of the window content for reliable frosted-glass (spec:
-/// backdrop-filter blur(6px) + rgba(248,248,250,0.6)).
+/// Full-window frosted-glass backdrop for the ⌘K palette. Uses CALayer
+/// backgroundFilters for native backdrop blur (spec: backdrop-filter blur(6px)).
 final class PaletteBackdropView: NSView {
     var onClickOutside: (() -> Void)?
     weak var paletteView: NSView?
-    private var blurredSnapshot: NSImageView?
 
-    /// Capture the window content behind this view, blur it, and display as
-    /// the frosted-glass background. Call once after layout settles.
-    func refreshBlur(from root: NSView) {
-        // Capture the root view at its current state.
-        guard let bitmap = root.bitmapImageRepForCachingDisplay(in: root.bounds) else { return }
-        root.cacheDisplay(in: root.bounds, to: bitmap)
-        guard let raw = bitmap.cgImage else { return }
-
-        let size = root.bounds.size
-        // Scale down to 25% for performance, then blur (radius scale-adjusted).
-        let scale: CGFloat = 0.25
-        let smallW = Int(size.width * scale)
-        let smallH = Int(size.height * scale)
-        guard let ctx = CGContext(data: nil, width: smallW, height: smallH,
-                                   bitsPerComponent: 8, bytesPerRow: smallW * 4,
-                                   space: CGColorSpaceCreateDeviceRGB(),
-                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return }
-        ctx.draw(raw, in: CGRect(x: 0, y: 0, width: smallW, height: smallH))
-        guard let small = ctx.makeImage() else { return }
-
-        // Gaussian blur radius 6 * scale (spec: backdrop-filter blur(6px)).
-        // Clamp to extent to avoid dark edge artifacts from the blur kernel.
-        let ci = CIImage(cgImage: small).clampedToExtent()
-        let filter = CIFilter(name: "CIGaussianBlur", parameters: [
-            kCIInputImageKey: ci,
-            kCIInputRadiusKey: 6.0 * scale
-        ])!
-        guard let output = filter.outputImage else { return }
-        let ciCtx = CIContext(options: nil)
-        guard let blurredCG = ciCtx.createCGImage(output, from: output.extent) else { return }
-
-        let blurred = NSImage(cgImage: blurredCG, size: size)
-
-        if let existing = blurredSnapshot {
-            existing.image = blurred
-        } else {
-            let iv = NSImageView(image: blurred)
-            iv.translatesAutoresizingMaskIntoConstraints = false
-            iv.imageScaling = .scaleAxesIndependently
-            // Place behind the tint overlay (dim), which was added first.
-            addSubview(iv, positioned: .below, relativeTo: subviews.first)
-            NSLayoutConstraint.activate([
-                iv.topAnchor.constraint(equalTo: topAnchor),
-                iv.leadingAnchor.constraint(equalTo: leadingAnchor),
-                iv.trailingAnchor.constraint(equalTo: trailingAnchor),
-                iv.bottomAnchor.constraint(equalTo: bottomAnchor)
-            ])
-            blurredSnapshot = iv
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        // Native backdrop blur via CALayer.backgroundFilters (AppKit equivalent
+        // of CSS backdrop-filter: blur(6px)).
+        if let blur = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputRadiusKey: 6.0]) {
+            layer?.backgroundFilters = [blur]
         }
     }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
@@ -2880,8 +2840,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         if paletteOverlay != nil { closeCommandPalette(); return }
 
         let backdrop = PaletteBackdropView()
-        backdrop.wantsLayer = true
-        backdrop.isHidden = true  // hidden during snapshot capture
         backdrop.translatesAutoresizingMaskIntoConstraints = false
         backdrop.onClickOutside = { [weak self] in self?.closeCommandPalette() }
 
@@ -2912,14 +2870,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         ])
 
         paletteOverlay = backdrop
-        // Capture clean window content while backdrop is still hidden.
-        rootView.layoutSubtreeIfNeeded()
-        rootView.displayIfNeeded()
-        backdrop.refreshBlur(from: rootView)
-
-        // Reveal with fade-in animation.
         backdrop.alphaValue = 0
-        backdrop.isHidden = false
         NSAnimationContext.runAnimationGroup { $0.duration = motionDuration(0.12); backdrop.animator().alphaValue = 1 }
         playPaletteCardIn(paletteView)
         DispatchQueue.main.async { [weak self] in paletteView.focusSearch(in: self?.window) }
