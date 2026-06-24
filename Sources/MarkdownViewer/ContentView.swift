@@ -156,21 +156,18 @@ private struct UnifiedHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Sidebar toggle (left of traffic lights)
-            HStack(spacing: 8) {
-                Spacer().frame(width: 62) // leave room for traffic lights
+            // Sidebar toggle — spec: always visible, clears traffic lights (~62px left)
+            Spacer().frame(width: docManager.sidebarOpen ? 0 : 62)
 
-                Button(action: { docManager.sidebarOpen.toggle() }) {
-                    CIcon { CustomIcons.sidebarToggle }
-                        .frame(width: 16, height: 13)
-                        .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                        .padding(6)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .background(Color.black.opacity(0.05))
-                .cornerRadius(6)
+            Button(action: { docManager.sidebarOpen.toggle() }) {
+                CIcon { CustomIcons.sidebarToggle }
+                    .frame(width: 16, height: 13)
+                    .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .cornerRadius(6)
 
             // Tabs
             ScrollView(.horizontal, showsIndicators: false) {
