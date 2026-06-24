@@ -1038,6 +1038,11 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         layer?.shadowOpacity = 0.22
         layer?.shadowRadius = 30
         layer?.shadowOffset = NSSize(width: 0, height: -24)  // 终稿 L228: 0 24px 60px
+        // Explicit shadowPath prevents compositing issues with backgroundFilters.
+        // CGPath is used instead of NSBezierPath.cgPath (macOS 14+) for 13.0 compat.
+        let shadowRect = bounds.insetBy(dx: -10, dy: -10)
+        layer?.shadowPath = CGPath(roundedRect: shadowRect, cornerWidth: 14,
+                                    cornerHeight: 14, transform: nil)
 
         // Configure the default cell for single-line, scrollable, vertically
         // centered text (46pt field / 14pt font).
@@ -1079,8 +1084,10 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
             widthAnchor.constraint(equalToConstant: 460),
             searchField.topAnchor.constraint(equalTo: topAnchor),
             // Mockup L229: padding 0 18px.
-            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            // Mockup L229: padding 0 18px. Subtract 2pt to compensate for the
+            // default borderless NSTextFieldCell's internal drawing margin.
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             searchField.heightAnchor.constraint(equalToConstant: 46),
 
             divider.topAnchor.constraint(equalTo: searchField.bottomAnchor),
@@ -4029,7 +4036,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             outlineScrollView.topAnchor.constraint(equalTo: filterField.bottomAnchor, constant: 12),
             outlineScrollView.leadingAnchor.constraint(equalTo: sidebarView.leadingAnchor, constant: 10),
             outlineScrollView.trailingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -10),
-            outlineScrollView.bottomAnchor.constraint(equalTo: commandButton.topAnchor, constant: -4),
+            // Spec: tree padding-bottom 12px, no extra gap to command button.
+            outlineScrollView.bottomAnchor.constraint(equalTo: commandButton.topAnchor, constant: -12),
 
             // Spec: padding 0 16px on both sides (L87).
             commandButton.leadingAnchor.constraint(equalTo: sidebarView.leadingAnchor, constant: 16),
