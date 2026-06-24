@@ -1069,14 +1069,6 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         // Shadow is rendered by a separate shadowHost view behind this card
         // (backgroundFilters would otherwise clip child-layer shadows).
 
-        // Use InsetTextFieldCell: super handles vertical centering; we only
-        // add 18px horizontal padding (mockup L229: padding 0 18px).
-        let insetCell = InsetTextFieldCell(textCell: "")
-        insetCell.xInset = 18
-        insetCell.isScrollable = true
-        insetCell.wraps = false
-        insetCell.usesSingleLineMode = true
-        searchField.cell = insetCell
         searchField.placeholderString = "搜索文档或命令…"
         searchField.font = NSFont.systemFont(ofSize: 14)
         searchField.isBordered = false
@@ -1085,6 +1077,9 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         searchField.focusRingType = .none
         searchField.textColor = DesignTokens.titleText
         searchField.delegate = self
+        searchField.cell?.isScrollable = true
+        searchField.cell?.wraps = false
+        searchField.cell?.usesSingleLineMode = true
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
         let divider = NSView()
@@ -1112,9 +1107,9 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
             widthAnchor.constraint(equalToConstant: 460),
             searchField.topAnchor.constraint(equalTo: topAnchor),
             // Mockup L229: padding 0 18px.
-            // InsetTextFieldCell provides the 18px padding; field fills palette.
-            searchField.leadingAnchor.constraint(equalTo: leadingAnchor),
-            searchField.trailingAnchor.constraint(equalTo: trailingAnchor),
+            // Mockup L229: padding 0 18px.
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             searchField.heightAnchor.constraint(equalToConstant: 46),
 
             divider.topAnchor.constraint(equalTo: searchField.bottomAnchor),
