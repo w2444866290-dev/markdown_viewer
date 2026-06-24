@@ -69,6 +69,7 @@ struct ContentView: View {
                 docManager.newDocument(text: sampleText)
             }
         }
+        .background(WindowConfigurator().frame(width: 0, height: 0))
     }
 
     private var emptyState: some View {
@@ -208,12 +209,14 @@ private struct EditorHeader: View {
 private struct EditorTabPill: View {
     @EnvironmentObject var docManager: DocumentManager
     let tab: DocumentTab
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: { docManager.activeTabID = tab.id }) {
-            HStack(spacing: 6) {
-                if tab.isDirty {
+            HStack(spacing: 0) {
+                if tab.isDirty && !isHovered {
                     Circle().fill(DesignTokens.swiftUI.accent).frame(width: 7, height: 7)
+                        .padding(.trailing, 6)
                 }
                 Text(tab.name)
                     .font(.system(size: 12.5))
@@ -221,6 +224,18 @@ private struct EditorTabPill: View {
                     .foregroundColor(tab.id == docManager.activeTabID
                         ? DesignTokens.swiftUI.titleText
                         : DesignTokens.swiftUI.tertiaryText)
+
+                if isHovered {
+                    Button(action: { docManager.closeTab(tab) }) {
+                        Text("×")
+                            .font(.system(size: 13))
+                            .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                            .frame(width: 16, height: 16)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 4)
+                }
             }
             .padding(.horizontal, 10)
             .frame(height: 28)
@@ -228,9 +243,10 @@ private struct EditorTabPill: View {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(tab.id == docManager.activeTabID
                         ? Color.black.opacity(0.06)
-                        : .clear)
+                        : (isHovered ? Color.black.opacity(0.04) : .clear))
             )
         }
         .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }

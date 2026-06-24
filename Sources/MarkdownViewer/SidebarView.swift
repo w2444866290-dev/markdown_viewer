@@ -76,13 +76,27 @@ private struct SidebarNodeRow: View {
     let depth: Int
     @EnvironmentObject var docManager: DocumentManager
 
+    private var isExpanded: Bool { docManager.expandedFolders.contains(node.id) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: {
-                if !node.isDirectory { docManager.openFileNode(node) }
+                if node.isDirectory {
+                    if isExpanded {
+                        docManager.expandedFolders.remove(node.id)
+                    } else {
+                        docManager.expandedFolders.insert(node.id)
+                    }
+                } else {
+                    docManager.openFileNode(node)
+                }
             }) {
                 HStack(spacing: 7) {
                     if node.isDirectory {
+                        Text(isExpanded ? "▾" : "▸")
+                            .font(.system(size: 9))
+                            .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                            .frame(width: 9)
                         CIcon { CustomIcons.sidebarFolder(size: NSSize(width: 13, height: 11)) }
                             .frame(width: 13, height: 11)
                     } else {
@@ -102,7 +116,7 @@ private struct SidebarNodeRow: View {
             }
             .buttonStyle(.plain)
 
-            if node.isDirectory {
+            if node.isDirectory && isExpanded {
                 ForEach(node.children) { child in
                     SidebarNodeRow(node: child, depth: depth + 1)
                 }

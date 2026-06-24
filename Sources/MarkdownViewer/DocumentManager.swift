@@ -13,6 +13,7 @@ final class DocumentManager: ObservableObject {
     @Published var sideFilter: String = ""
     @Published var directoryURL: URL?
     @Published var fileTree: [FileNode] = []
+    @Published var expandedFolders: Set<UUID> = []
 
     // MARK: - Tabs (single source of truth)
     @Published var tabs: [DocumentTab] = []
