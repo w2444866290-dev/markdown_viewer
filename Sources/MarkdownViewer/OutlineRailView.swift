@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct OutlineRailView: View {
-    let headings: [EditorView.Coordinator.OutlineHeading]
+    let headings: [OutlineController.Heading]
     let activeIndex: Int
     let onJump: (Int) -> Void
 
@@ -31,7 +31,7 @@ struct OutlineRailView: View {
         }
     }
 
-    private func outlineRow(_ h: EditorView.Coordinator.OutlineHeading) -> some View {
+    private func outlineRow(_ h: OutlineController.Heading) -> some View {
         let isActive = h.id == activeIndex
         let isHovered = hoveredIndex == h.id
 
