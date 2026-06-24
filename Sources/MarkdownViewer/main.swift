@@ -1921,52 +1921,95 @@ enum GoldenTest {
         case differ(count: Int, diff: NSBitmapImageRep?)
     }
 
+    /// Raw, canonical RGBA8 pixels of a bitmap. We deliberately do NOT use
+    /// `colorAt:`/`setColor:` — those round-trip colors through a calibrated color
+    /// space that, for PNG-loaded reps, can silently read/write zeroed channels on
+    /// macOS (verified during development). Instead we redraw each rep into a fresh,
+    /// premultiplied deviceRGB RGBA8 bitmap and compare its raw `bitmapData` bytes —
+    /// deterministic and independent of the source rep's stored format.
+    private struct Canonical {
+        let width: Int
+        let height: Int
+        let bytes: [UInt8] // width*height*4, RGBA, row-major
+    }
+
+    private static func canonicalize(_ src: NSBitmapImageRep) -> Canonical? {
+        let w = src.pixelsWide
+        let h = src.pixelsHigh
+        guard w > 0, h > 0,
+              let dst = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: w,
+                pixelsHigh: h,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: w * 4,
+                bitsPerPixel: 32
+              ) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: dst)
+        src.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let ptr = dst.bitmapData else { return nil }
+        return Canonical(width: w, height: h, bytes: Array(UnsafeBufferPointer(start: ptr, count: w * h * 4)))
+    }
+
     private static func compare(candidate: NSBitmapImageRep, baseline: NSBitmapImageRep) -> CompareResult {
-        let w = candidate.pixelsWide
-        let h = candidate.pixelsHigh
         // Dimension mismatch is an unconditional failure (layout/size regression).
-        if w != baseline.pixelsWide || h != baseline.pixelsHigh {
-            return .differ(count: w * h, diff: nil)
+        let cw = candidate.pixelsWide, ch = candidate.pixelsHigh
+        if cw != baseline.pixelsWide || ch != baseline.pixelsHigh {
+            return .differ(count: cw * ch, diff: nil)
         }
-        guard w > 0, h > 0 else { return .pass }
+        guard cw > 0, ch > 0,
+              let cand = canonicalize(candidate),
+              let base = canonicalize(baseline),
+              cand.bytes.count == base.bytes.count else {
+            return .differ(count: cw * ch, diff: nil)
+        }
 
-        // Build a diff bitmap lazily only if we find a difference.
-        var diff: NSBitmapImageRep?
+        let tol = UInt8(channelTolerance)
+        let pixelCount = cand.width * cand.height
+        let budget = max(8, Int(Double(pixelCount) * pixelBudgetFraction))
+
+        // Diff buffer: dimmed baseline as backdrop, magenta marks changed pixels.
+        var diffBytes = [UInt8](repeating: 0, count: cand.bytes.count)
         var differing = 0
-        let budget = max(8, Int(Double(w * h) * pixelBudgetFraction))
 
-        for y in 0..<h {
-            for x in 0..<w {
-                guard let c = candidate.colorAt(x: x, y: y),
-                      let b = baseline.colorAt(x: x, y: y) else { continue }
-                if channelExceeds(c, b) {
-                    differing += 1
-                    if diff == nil { diff = makeDiffBitmap(width: w, height: h, base: baseline) }
-                    diff?.setColor(.magenta, atX: x, y: y)
-                }
+        for p in 0..<pixelCount {
+            let i = p * 4
+            let dr = absDiff(cand.bytes[i], base.bytes[i])
+            let dg = absDiff(cand.bytes[i + 1], base.bytes[i + 1])
+            let db = absDiff(cand.bytes[i + 2], base.bytes[i + 2])
+            let da = absDiff(cand.bytes[i + 3], base.bytes[i + 3])
+            if dr > tol || dg > tol || db > tol || da > tol {
+                differing += 1
+                diffBytes[i] = 255; diffBytes[i + 1] = 0; diffBytes[i + 2] = 255; diffBytes[i + 3] = 255
+            } else {
+                // Dim the baseline toward white so magenta diff pixels stand out.
+                diffBytes[i] = 128 &+ (base.bytes[i] >> 1)
+                diffBytes[i + 1] = 128 &+ (base.bytes[i + 1] >> 1)
+                diffBytes[i + 2] = 128 &+ (base.bytes[i + 2] >> 1)
+                diffBytes[i + 3] = 255
             }
         }
 
         if differing <= budget {
             return .pass
         }
+        let diff = bitmap(fromRGBA: diffBytes, width: cand.width, height: cand.height)
         return .differ(count: differing, diff: diff)
     }
 
-    /// True if any R/G/B/A channel of the two colors differs by more than the
-    /// per-pixel AA tolerance.
-    private static func channelExceeds(_ a: NSColor, _ b: NSColor) -> Bool {
-        let tol = CGFloat(channelTolerance) / 255.0
-        return abs(a.redComponent - b.redComponent) > tol
-            || abs(a.greenComponent - b.greenComponent) > tol
-            || abs(a.blueComponent - b.blueComponent) > tol
-            || abs(a.alphaComponent - b.alphaComponent) > tol
+    private static func absDiff(_ a: UInt8, _ b: UInt8) -> UInt8 {
+        a > b ? a - b : b - a
     }
 
-    /// A fresh RGBA bitmap seeded from the baseline (dimmed) so the magenta diff
-    /// pixels stand out against the original layout.
-    private static func makeDiffBitmap(width: Int, height: Int, base: NSBitmapImageRep) -> NSBitmapImageRep? {
-        guard let diff = NSBitmapImageRep(
+    /// Build an NSBitmapImageRep from a raw premultiplied RGBA8 byte buffer.
+    private static func bitmap(fromRGBA bytes: [UInt8], width: Int, height: Int) -> NSBitmapImageRep? {
+        guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: width,
             pixelsHigh: height,
@@ -1975,24 +2018,13 @@ enum GoldenTest {
             hasAlpha: true,
             isPlanar: false,
             colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        ) else { return nil }
-        for y in 0..<height {
-            for x in 0..<width {
-                if let c = base.colorAt(x: x, y: y) {
-                    // Dim the baseline so magenta diff pixels pop.
-                    let dimmed = NSColor(
-                        red: 0.5 + c.redComponent * 0.5,
-                        green: 0.5 + c.greenComponent * 0.5,
-                        blue: 0.5 + c.blueComponent * 0.5,
-                        alpha: 1
-                    )
-                    diff.setColor(dimmed, atX: x, y: y)
-                }
-            }
+            bytesPerRow: width * 4,
+            bitsPerPixel: 32
+        ), let ptr = rep.bitmapData else { return nil }
+        bytes.withUnsafeBufferPointer { buf in
+            if let base = buf.baseAddress { ptr.update(from: base, count: bytes.count) }
         }
-        return diff
+        return rep
     }
 
     // MARK: io
@@ -2849,6 +2881,7 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
 
         let backdrop = PaletteBackdropView()
         backdrop.wantsLayer = true
+        backdrop.isHidden = true  // hidden during snapshot capture
         backdrop.translatesAutoresizingMaskIntoConstraints = false
         backdrop.onClickOutside = { [weak self] in self?.closeCommandPalette() }
 
@@ -2879,11 +2912,14 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         ])
 
         paletteOverlay = backdrop
-        // Capture + blur the window content now that layout has settled.
+        // Capture clean window content while backdrop is still hidden.
         rootView.layoutSubtreeIfNeeded()
+        rootView.displayIfNeeded()
         backdrop.refreshBlur(from: rootView)
 
+        // Reveal with fade-in animation.
         backdrop.alphaValue = 0
+        backdrop.isHidden = false
         NSAnimationContext.runAnimationGroup { $0.duration = motionDuration(0.12); backdrop.animator().alphaValue = 1 }
         playPaletteCardIn(paletteView)
         DispatchQueue.main.async { [weak self] in paletteView.focusSearch(in: self?.window) }
@@ -6495,6 +6531,112 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             return f
         }
 
+        // STEP 19 (SCROLL-WHEEL REGRESSION GUARD) — the bug that just shipped: a
+        // subview/overlay (the code-copy button, hover layers, the outline rail, …)
+        // could sit over the content area and SWALLOW vertical scroll-wheel events
+        // so the document can no longer be scrolled with the wheel while the pointer
+        // is over a code block. This step loads a document with a TALL code block,
+        // delivers a real vertical scroll-wheel event to the content area with the
+        // pointer over the code block, and asserts the clip view actually moved.
+        //
+        // Mechanism: we synthesize a downward scroll via CGEvent (a true scroll
+        // NSEvent the public NSEvent factory cannot build) and post it to the window;
+        // if the synthetic-event path does not move the clip (headless windows do not
+        // always route posted scroll events through hit-testing), we fall back — as
+        // the prompt allows — to driving `scrollWheel(with:)` on the deepest view
+        // under the pointer (the text view), the SAME entry point a real wheel event
+        // reaches after hit-testing. Either way the assertion is the same: the
+        // document's scroll offset must change. A swallowing overlay fails this.
+        step("scroll-wheel-scrolls-document") {
+            var f: [String] = []
+
+            // A document with a tall fenced code block (40 lines) so the content
+            // overflows the viewport and there is real room to scroll down.
+            let codeLines = (1...40).map { "line \($0): print(\"scroll past this tall code card\")" }.joined(separator: "\n")
+            let tallDoc = """
+            # Scroll wheel guard
+
+            A paragraph above the code block.
+
+            ```swift
+            \(codeLines)
+            ```
+
+            A paragraph below the code block so the document is comfortably taller
+            than the viewport and the wheel has somewhere to scroll.
+            """
+            currentFileURL = nil
+            currentDocumentIsMarkdown = true
+            editorTextView.string = tallDoc
+            lastSavedText = editorTextView.string
+            applyLiveMarkdownStyling()
+            settleLayout()
+
+            // Start at the very top.
+            let clip = editorScrollView.contentView
+            clip.scroll(to: NSPoint(x: 0, y: 0))
+            editorScrollView.reflectScrolledClipView(clip)
+            settleLayout()
+
+            // The document must actually overflow, or there is nothing to scroll and
+            // the test would falsely pass.
+            let docHeight = editorTextView.frame.height
+            let viewportHeight = clip.bounds.height
+            if docHeight <= viewportHeight + 1 {
+                f.append("tall-code-block document did not overflow the viewport (doc=\(docHeight) viewport=\(viewportHeight)); cannot exercise wheel scroll")
+                return f
+            }
+
+            // Find the code block's center IN WINDOW coordinates so the synthetic
+            // wheel lands over the code card (the regressing region).
+            let nsString = editorTextView.string as NSString
+            var pointerInWindow = NSPoint(x: window.frame.width / 2, y: window.frame.height / 2)
+            if let r = first(of: "line 20:", in: nsString),
+               let lm = editorTextView.layoutManager, let tc = editorTextView.textContainer {
+                let g = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+                var rect = lm.boundingRect(forGlyphRange: g, in: tc)
+                rect.origin.x += editorTextView.textContainerInset.width
+                rect.origin.y += editorTextView.textContainerInset.height
+                let inText = NSPoint(x: rect.midX, y: rect.midY)
+                let inWindow = editorTextView.convert(inText, to: nil)
+                if window.contentView?.bounds.contains(window.contentView?.convert(inWindow, from: nil) ?? .zero) == true {
+                    pointerInWindow = inWindow
+                }
+            }
+
+            let yBefore = clip.bounds.origin.y
+
+            // (1) Try a true synthetic scroll NSEvent via CGEvent.
+            var moved = deliverSyntheticScroll(downBy: 8, atWindowPoint: pointerInWindow)
+            settleLayout()
+            var yAfter = clip.bounds.origin.y
+
+            // (2) Fallback (prompt-sanctioned): drive scrollWheel(with:) on the view
+            // under the pointer — the exact method a real wheel event invokes after
+            // hit-testing. If an overlay is on top, hitTest returns IT, and routing
+            // the wheel there reproduces the swallow bug.
+            if abs(yAfter - yBefore) <= 1 {
+                let pointInContent = editorScrollView.contentView.convert(pointerInWindow, from: nil)
+                let hitView = editorScrollView.contentView.hitTest(pointInContent) ?? editorTextView
+                if let wheel = syntheticScrollWheelEvent(atWindowPoint: pointerInWindow) {
+                    hitView.scrollWheel(with: wheel)
+                    moved = true
+                }
+                settleLayout()
+                yAfter = clip.bounds.origin.y
+            }
+
+            if !moved {
+                f.append("could not synthesize any scroll-wheel event to deliver to the content area")
+            }
+            if abs(yAfter - yBefore) <= 1 {
+                f.append("vertical scroll wheel over the code block did not move the document (before=\(yBefore) after=\(yAfter)) — an overlay/subview is swallowing the wheel")
+            } else if yAfter <= yBefore {
+                f.append("downward scroll wheel should INCREASE the scroll offset, before=\(yBefore) after=\(yAfter)")
+            }
+            return f
+        }
+
         if failures.isEmpty {
             print("[MarkdownViewer][ui-test] PASS steps=\(stepCount)")
             return true
@@ -6582,6 +6724,42 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             clickCount: 0,
             pressure: 0
         )
+    }
+
+    /// Build a true scroll-wheel NSEvent via CGEvent (the public NSEvent factory has
+    /// no `.scrollWheel` constructor). `downBy` lines scroll the document DOWN. The
+    /// event carries a negative wheel1 delta (AppKit's convention: negative = content
+    /// moves up / user scrolls down). Returns nil if CoreGraphics refuses to build it.
+    private func syntheticScrollWheelEvent(atWindowPoint windowPoint: NSPoint, downBy lines: Int32 = 8) -> NSEvent? {
+        guard let cg = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: .line,
+            wheelCount: 1,
+            wheel1: -lines, // negative → scroll content downward (user pushes down)
+            wheel2: 0,
+            wheel3: 0
+        ) else { return nil }
+        // Place the event over the content so hit-testing routes it correctly.
+        if let screen = window.convertPoint(toScreen: windowPoint) as NSPoint? {
+            // CGEvent uses top-left origin screen coords; flip from AppKit bottom-left.
+            let height = NSScreen.screens.first?.frame.height ?? screen.y
+            cg.location = CGPoint(x: screen.x, y: height - screen.y)
+        }
+        return NSEvent(cgEvent: cg)
+    }
+
+    /// Deliver a synthetic vertical scroll to the content area at `windowPoint`. We
+    /// post the CGEvent-derived NSEvent through the window's event handling so it
+    /// goes through the real hit-test + responder routing. Returns whether an event
+    /// was actually built and dispatched (NOT whether the clip moved — the caller
+    /// asserts the offset delta).
+    @discardableResult
+    private func deliverSyntheticScroll(downBy lines: Int32, atWindowPoint windowPoint: NSPoint) -> Bool {
+        guard let event = syntheticScrollWheelEvent(atWindowPoint: windowPoint, downBy: lines) else {
+            return false
+        }
+        window.sendEvent(event)
+        return true
     }
 
     /// Select a sidebar outline row for `url` and route through the SAME handler a
