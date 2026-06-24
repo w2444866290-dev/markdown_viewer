@@ -108,11 +108,11 @@ extension NSAttributedString.Key {
 final class CardLayoutManager: NSLayoutManager {
     // Mockup tokens (Markdown Viewer.dc.html ~294-327).
     private let cardFill = DesignTokens.codeBackground            // #FAFAFA
-    private let cardBorder = NSColor.black.withAlphaComponent(0.045) // box-shadow 0 0 0 1px rgba(0,0,0,0.04)
+    private let cardBorder = NSColor.black.withAlphaComponent(0.04) // box-shadow 0 0 0 1px rgba(0,0,0,0.04)
     private let cardRadius: CGFloat = 6
     private let cardPadX: CGFloat = 16   // mockup `pre` padding-left/right 16 (L299)
-    private let cardPadTop: CGFloat = 12
-    private let cardPadBottom: CGFloat = 12
+    private let cardPadTop: CGFloat = 9    // mockup pre padding-top (header 9px, L308)
+    private let cardPadBottom: CGFloat = 16  // mockup pre padding-bottom 16px (L299)
     private let pillFill = DesignTokens.divider                   // #F0F0F1
     private let pillRadius: CGFloat = 4
     private let pillPadX: CGFloat = 6   // mockup inline code padding 2px 6px (L286)
@@ -461,10 +461,10 @@ final class CodeCopyButton: NSButton {
         bezelStyle = .inline
         title = "复制"
         font = NSFont.systemFont(ofSize: 11)
-        contentTintColor = DesignTokens.statusText
+        contentTintColor = DesignTokens.placeholderText
         layer?.cornerRadius = 5
         layer?.backgroundColor = NSColor.clear.cgColor
-        attributedTitle = styledTitle(color: DesignTokens.statusText)
+        attributedTitle = styledTitle(color: DesignTokens.placeholderText)
         // Quiet by default: hidden until the pointer enters a code block.
         isHidden = true
         alphaValue = 0
@@ -481,18 +481,10 @@ final class CodeCopyButton: NSButton {
     }
 
     private func refresh() {
-        let tint = inside ? DesignTokens.titleText : DesignTokens.statusText
+        // Mockup [data-copy]:hover only changes color to #1d1d1f, no background.
+        let tint = inside ? DesignTokens.titleText : DesignTokens.placeholderText
         contentTintColor = tint
         attributedTitle = styledTitle(color: tint)
-        let bg = inside ? DesignTokens.hover : NSColor.clear
-        if prefersReducedMotion {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            layer?.backgroundColor = bg.cgColor
-            CATransaction.commit()
-        } else {
-            layer?.backgroundColor = bg.cgColor
-        }
     }
 
     override func updateTrackingAreas() {
@@ -603,7 +595,7 @@ final class SidebarCell: NSTableCellView {
             chevron.trailingAnchor.constraint(equalTo: icon.leadingAnchor, constant: -4),
             chevron.centerYAnchor.constraint(equalTo: centerYAnchor),
             chevron.widthAnchor.constraint(equalToConstant: 9),
-            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 13),
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),  // mockup pad = 10 + indent*16 (L1131)
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 14),
             icon.heightAnchor.constraint(equalToConstant: 14),
@@ -1017,7 +1009,9 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         renderRows()
     }
 
-    private func sectionHeader(_ title: String) -> NSView {
+    /// Mockup: 文档 section `padding: 6px 12px 4px`, 命令 section `padding: 10px 12px 4px`.
+    /// The top-padding differs; bottom-padding is identical.
+    private func sectionHeader(_ title: String, topPadding: CGFloat = 6) -> NSView {
         let label = NSTextField(labelWithString: title)
         let font = NSFont.systemFont(ofSize: 10.5)
         label.font = font
@@ -1032,8 +1026,9 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         let wrap = NSView()
         wrap.translatesAutoresizingMaskIntoConstraints = false
         wrap.addSubview(label)
+        let wrapHeight = font.pointSize + topPadding + 4
         NSLayoutConstraint.activate([
-            wrap.heightAnchor.constraint(equalToConstant: 24),
+            wrap.heightAnchor.constraint(equalToConstant: wrapHeight),
             label.leadingAnchor.constraint(equalTo: wrap.leadingAnchor, constant: 12),
             label.bottomAnchor.constraint(equalTo: wrap.bottomAnchor, constant: -4)
         ])
@@ -1060,11 +1055,11 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
             return
         }
 
-        if !filteredDocs.isEmpty { addFullWidth(sectionHeader("文档")) }
+        if !filteredDocs.isEmpty { addFullWidth(sectionHeader("文档", topPadding: 6)) }
         for (i, doc) in filteredDocs.enumerated() {
             addFullWidth(docRow(doc, rowIndex: i, isSelected: i == selectedIndex))
         }
-        if !filteredCommands.isEmpty { addFullWidth(sectionHeader("命令")) }
+        if !filteredCommands.isEmpty { addFullWidth(sectionHeader("命令", topPadding: 10)) }
         for (i, cmd) in filteredCommands.enumerated() {
             let rowIndex = filteredDocs.count + i
             addFullWidth(commandRow(cmd, rowIndex: rowIndex, isSelected: rowIndex == selectedIndex))
@@ -3280,21 +3275,17 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         let group = PassthroughView()
         group.translatesAutoresizingMaskIntoConstraints = false
 
-        // Dark toast material pill (allowed: this is the dark-toast surface).
-        let pill = NSVisualEffectView()
-        pill.material = .hudWindow
-        pill.blendingMode = .withinWindow
-        pill.state = .active
+        // Single dark pill matching the mockup (bg rgba(28,28,30,0.92), no
+        // extra blur wrapper — AppKit cannot replicate CSS backdrop-filter exactly).
+        let pill = NSView()
         pill.wantsLayer = true
+        pill.layer?.backgroundColor = NSColor(hex: 0x1C1C1E, alpha: 0.92).cgColor
         pill.layer?.cornerRadius = 8
-        pill.layer?.masksToBounds = true
+        pill.layer?.shadowColor = NSColor.black.cgColor
+        pill.layer?.shadowOpacity = 0.22
+        pill.layer?.shadowRadius = 14    // blur 28 ≈ 2 × shadowRadius
+        pill.layer?.shadowOffset = CGSize(width: 0, height: -8)
         pill.translatesAutoresizingMaskIntoConstraints = false
-
-        let bg = NSView()
-        bg.wantsLayer = true
-        bg.layer?.backgroundColor = NSColor(hex: 0x1C1C1E, alpha: 0.92).cgColor
-        bg.translatesAutoresizingMaskIntoConstraints = false
-        pill.addSubview(bg)
 
         let label = NSTextField(labelWithString: "本页目录 · 悬停展开")
         label.font = NSFont.systemFont(ofSize: 12)
@@ -3311,10 +3302,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
         host.addSubview(group)
 
         NSLayoutConstraint.activate([
-            bg.leadingAnchor.constraint(equalTo: pill.leadingAnchor),
-            bg.trailingAnchor.constraint(equalTo: pill.trailingAnchor),
-            bg.topAnchor.constraint(equalTo: pill.topAnchor),
-            bg.bottomAnchor.constraint(equalTo: pill.bottomAnchor),
             label.topAnchor.constraint(equalTo: pill.topAnchor, constant: 7),
             label.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -7),
             label.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 12),
@@ -3927,7 +3914,8 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             filterField.trailingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -12),
             filterField.heightAnchor.constraint(equalToConstant: 28),
 
-            outlineScrollView.topAnchor.constraint(equalTo: filterField.bottomAnchor, constant: 8),
+            // Spec: filter wrapper bottom-padding 8 + tree top-padding 4 = 12.
+            outlineScrollView.topAnchor.constraint(equalTo: filterField.bottomAnchor, constant: 12),
             outlineScrollView.leadingAnchor.constraint(equalTo: sidebarView.leadingAnchor, constant: 10),
             outlineScrollView.trailingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -10),
             outlineScrollView.bottomAnchor.constraint(equalTo: commandButton.topAnchor, constant: -4),
