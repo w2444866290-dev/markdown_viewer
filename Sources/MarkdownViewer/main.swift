@@ -1298,9 +1298,22 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
 }
 
 /// Dimmed backdrop behind the ⌘K palette; clicking outside the palette dismisses it.
-final class PaletteBackdropView: NSView {
+/// Full-window frosted-glass backdrop for the ⌘K palette. Subclasses
+/// NSVisualEffectView so the blur (spec: backdrop-filter blur(6px)) renders
+/// directly — no opaque wrapper that would block the effect.
+final class PaletteBackdropView: NSVisualEffectView {
     var onClickOutside: (() -> Void)?
     weak var paletteView: NSView?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        blendingMode = .withinWindow
+        material = .menu
+        state = .active
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
@@ -1408,6 +1421,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(ok ? 0 : 1)
         }
 
+        // `--golden-test [dir]`: headless golden-snapshot comparison. Renders the
+        // corpus + self-test bodies via the SAME window-free DocumentRenderer path
+        // and compares against committed baselines. No window, no run loop.
+        if isGoldenTestRequested() {
+            let ok = GoldenTest.run(outputArgument: goldenTestArgument())
+            fflush(stdout)
+            fflush(stderr)
+            exit(ok ? 0 : 1)
+        }
+
         let controller = MarkdownWindowController()
         windowController = controller
         configureMenu(target: controller)
@@ -1430,6 +1453,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
         return (arguments[index + 1], arguments[index + 2])
+    }
+
+    /// True if `--golden-test` is present on the command line.
+    private func isGoldenTestRequested() -> Bool {
+        CommandLine.arguments.contains("--golden-test")
+    }
+
+    /// The optional positional value after `--golden-test` (a tests/ dir, repo root,
+    /// or scratch output dir). nil if absent or another flag follows.
+    private func goldenTestArgument() -> String? {
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "--golden-test"),
+              arguments.indices.contains(index + 1) else {
+            return nil
+        }
+        let next = arguments[index + 1]
+        return next.hasPrefix("--") ? nil : next
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -1459,28 +1499,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func firstNonFlagArgument() -> String? {
-        var skip = 0
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        var index = 0
 
-        for argument in CommandLine.arguments.dropFirst() {
-            if skip > 0 {
-                skip -= 1
-                continue
-            }
+        while index < arguments.count {
+            let argument = arguments[index]
 
             if argument == "--self-test" || argument == "--ui-test" {
-                skip = 1
+                index += 2 // flag + its output dir
                 continue
             }
 
             if argument == "--render-doc" {
-                // Consumes two positional args (input + output).
-                skip = 2
+                index += 3 // flag + input + output
+                continue
+            }
+
+            if argument == "--golden-test" {
+                // Optional positional dir: skip it only if the next token isn't a flag.
+                if index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") {
+                    index += 2
+                } else {
+                    index += 1
+                }
                 continue
             }
 
             if !argument.hasPrefix("--") {
                 return argument
             }
+            index += 1
         }
 
         return nil
@@ -1632,6 +1680,33 @@ enum DocumentRenderer {
             return false
         }
 
+        guard let bitmap = renderMarkdownToBitmap(text) else {
+            fputs("[MarkdownViewer][render-doc] could not render \(inputPath)\n", stderr)
+            return false
+        }
+
+        guard let data = bitmap.representation(using: .png, properties: [:]) else {
+            fputs("[MarkdownViewer][render-doc] cannot encode PNG\n", stderr)
+            return false
+        }
+
+        let outputURL = URL(fileURLWithPath: outputPath)
+        do {
+            try data.write(to: outputURL)
+        } catch {
+            fputs("[MarkdownViewer][render-doc] cannot write \(outputPath): \(error.localizedDescription)\n", stderr)
+            return false
+        }
+        print("[MarkdownViewer][render-doc] wrote \(outputURL.path) (\(bitmap.pixelsWide)x\(bitmap.pixelsHigh))")
+        return true
+    }
+
+    /// Render a markdown STRING to an offscreen bitmap using the exact same paper
+    /// geometry + live styler + card-drawing layout manager the `--render-doc` path
+    /// uses. Shared by `--render-doc` and the deterministic `--golden-test` mode so
+    /// both produce identical, window-free, run-loop-free output. Returns nil only
+    /// if AppKit refuses to build the container/storage/bitmap.
+    static func renderMarkdownToBitmap(_ text: String) -> NSBitmapImageRep? {
         // Paper column is 540 centered inside the 1180 canvas, matching the editor's
         // geometry (PaperTextView.updatePaperGeometry / configureEditorTextView).
         let paperWidth = DesignTokens.paperWidth
@@ -1649,8 +1724,7 @@ enum DocumentRenderer {
 
         guard let container = textView.textContainer,
               let storage = textView.textStorage else {
-            fputs("[MarkdownViewer][render-doc] text view has no container/storage\n", stderr)
-            return false
+            return nil
         }
         // Swap in the card-drawing layout manager (same as the live editor) so code
         // cards / inline pills / table rules render.
@@ -1665,8 +1739,7 @@ enum DocumentRenderer {
 
         // Lay out the full document and measure its content height.
         guard let layoutManager = textView.layoutManager else {
-            fputs("[MarkdownViewer][render-doc] no layout manager\n", stderr)
-            return false
+            return nil
         }
         layoutManager.ensureLayout(for: container)
         let used = layoutManager.usedRect(for: container)
@@ -1680,25 +1753,342 @@ enum DocumentRenderer {
 
         let bounds = NSRect(x: 0, y: 0, width: canvasWidth, height: renderHeight)
         guard let bitmap = textView.bitmapImageRepForCachingDisplay(in: bounds) else {
-            fputs("[MarkdownViewer][render-doc] cannot create bitmap\n", stderr)
-            return false
+            return nil
         }
         textView.cacheDisplay(in: bounds, to: bitmap)
+        return bitmap
+    }
+}
 
-        guard let data = bitmap.representation(using: .png, properties: [:]) else {
-            fputs("[MarkdownViewer][render-doc] cannot encode PNG\n", stderr)
+/// Headless `--golden-test <dir>` mode: renders `tests/corpus.md` plus a couple of
+/// the self-test markdown bodies (re-using their CONTENT through the same window-free
+/// `DocumentRenderer` path) to PNGs, then pixel-compares each against a committed
+/// baseline in `tests/golden/<name>.png`.
+///
+/// Comparison: dimensions must match; then each pixel's R/G/B/A channels are compared.
+/// A channel delta within `channelTolerance` (8/255) is ignored to absorb sub-pixel
+/// anti-aliasing jitter; a pixel is "different" only if any channel exceeds that. A
+/// run PASSES if the differing-pixel count is within `pixelBudget` (a tiny fraction
+/// of the image, for AA edge wiggle); otherwise it FAILS with the differing count.
+///
+/// First run (no baseline): the rendered image is written AS the candidate baseline
+/// and reported `GOLDEN NEW <name> (review & commit)` — exit 0, so a human can review
+/// and commit the candidates. When a baseline exists and a comparison FAILS, a diff
+/// image highlighting changed pixels in magenta is written to `<dir>/diff-<name>.png`.
+enum GoldenTest {
+    /// Per-channel tolerance (0-255) absorbed as anti-aliasing noise.
+    static let channelTolerance = 8
+    /// Fraction of total pixels allowed to differ before a comparison FAILS.
+    static let pixelBudgetFraction = 0.001 // 0.1%
+
+    /// One golden image: a stable name + the markdown source rendered for it.
+    private struct Item {
+        let name: String
+        let markdown: String
+    }
+
+    static func run(outputArgument: String?) -> Bool {
+        guard let testsDir = resolveTestsDirectory(argument: outputArgument) else {
+            fputs("[MarkdownViewer][golden] cannot locate tests/ directory (pass it via --golden-test <dir>)\n", stderr)
             return false
         }
-
-        let outputURL = URL(fileURLWithPath: outputPath)
+        let outputDir = testsDir.appendingPathComponent("golden", isDirectory: true)
         do {
-            try data.write(to: outputURL)
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         } catch {
-            fputs("[MarkdownViewer][render-doc] cannot write \(outputPath): \(error.localizedDescription)\n", stderr)
+            fputs("[MarkdownViewer][golden] cannot create \(outputDir.path): \(error.localizedDescription)\n", stderr)
             return false
         }
-        print("[MarkdownViewer][render-doc] wrote \(outputURL.path) (\(Int(canvasWidth))x\(Int(renderHeight)))")
-        return true
+
+        var items: [Item] = []
+        // The comprehensive corpus is the primary golden.
+        let corpusURL = testsDir.appendingPathComponent("corpus.md")
+        if let corpus = try? String(contentsOf: corpusURL, encoding: .utf8) {
+            items.append(Item(name: "corpus", markdown: corpus))
+        } else {
+            fputs("[MarkdownViewer][golden] cannot read \(corpusURL.path)\n", stderr)
+            return false
+        }
+        // Re-use the self-test markdown CONTENT (cheap: pure data) through the same
+        // renderer so a styling regression that the self-test asserts structurally is
+        // ALSO caught visually here.
+        items.append(Item(name: "self-test-cycle-a", markdown: selfTestCycleAMarkdown))
+        items.append(Item(name: "self-test-design-verification", markdown: designVerificationMarkdown))
+
+        var pass = 0
+        var fail = 0
+        var newCount = 0
+
+        for item in items {
+            guard let bitmap = DocumentRenderer.renderMarkdownToBitmap(item.markdown) else {
+                fputs("[MarkdownViewer][golden] FAIL \(item.name) (render failed)\n", stderr)
+                fail += 1
+                continue
+            }
+            let baselineURL = outputDir.appendingPathComponent("\(item.name).png")
+
+            // No baseline yet → write the candidate and report NEW (don't fail).
+            if !FileManager.default.fileExists(atPath: baselineURL.path) {
+                if writeBitmap(bitmap, to: baselineURL) {
+                    print("GOLDEN NEW \(item.name) (review & commit)")
+                    newCount += 1
+                } else {
+                    fputs("[MarkdownViewer][golden] FAIL \(item.name) (cannot write candidate baseline)\n", stderr)
+                    fail += 1
+                }
+                continue
+            }
+
+            guard let baseline = loadBitmap(baselineURL) else {
+                fputs("GOLDEN FAIL \(item.name) (cannot read baseline)\n", stderr)
+                fail += 1
+                continue
+            }
+
+            let result = compare(candidate: bitmap, baseline: baseline)
+            switch result {
+            case .pass:
+                print("GOLDEN PASS \(item.name)")
+                pass += 1
+            case .differ(let count, let diff):
+                print("GOLDEN FAIL \(item.name) (\(count) px differ)")
+                if let diff, writeBitmap(diff, to: outputDir.appendingPathComponent("diff-\(item.name).png")) {
+                    print("[MarkdownViewer][golden] wrote diff-\(item.name).png")
+                }
+                fail += 1
+            }
+        }
+
+        // First-run NEW candidates count as a successful (exit-0) generation pass.
+        if fail == 0 {
+            if newCount > 0 && pass == 0 {
+                print("[golden] PASS n=\(newCount) (new candidates written — review & commit)")
+            } else {
+                print("[golden] PASS n=\(pass + newCount)")
+            }
+            return true
+        }
+        print("[golden] FAIL")
+        return false
+    }
+
+    // MARK: comparison
+
+    private enum CompareResult {
+        case pass
+        case differ(count: Int, diff: NSBitmapImageRep?)
+    }
+
+    private static func compare(candidate: NSBitmapImageRep, baseline: NSBitmapImageRep) -> CompareResult {
+        let w = candidate.pixelsWide
+        let h = candidate.pixelsHigh
+        // Dimension mismatch is an unconditional failure (layout/size regression).
+        if w != baseline.pixelsWide || h != baseline.pixelsHigh {
+            return .differ(count: w * h, diff: nil)
+        }
+        guard w > 0, h > 0 else { return .pass }
+
+        // Build a diff bitmap lazily only if we find a difference.
+        var diff: NSBitmapImageRep?
+        var differing = 0
+        let budget = max(8, Int(Double(w * h) * pixelBudgetFraction))
+
+        for y in 0..<h {
+            for x in 0..<w {
+                guard let c = candidate.colorAt(x: x, y: y),
+                      let b = baseline.colorAt(x: x, y: y) else { continue }
+                if channelExceeds(c, b) {
+                    differing += 1
+                    if diff == nil { diff = makeDiffBitmap(width: w, height: h, base: baseline) }
+                    diff?.setColor(.magenta, atX: x, y: y)
+                }
+            }
+        }
+
+        if differing <= budget {
+            return .pass
+        }
+        return .differ(count: differing, diff: diff)
+    }
+
+    /// True if any R/G/B/A channel of the two colors differs by more than the
+    /// per-pixel AA tolerance.
+    private static func channelExceeds(_ a: NSColor, _ b: NSColor) -> Bool {
+        let tol = CGFloat(channelTolerance) / 255.0
+        return abs(a.redComponent - b.redComponent) > tol
+            || abs(a.greenComponent - b.greenComponent) > tol
+            || abs(a.blueComponent - b.blueComponent) > tol
+            || abs(a.alphaComponent - b.alphaComponent) > tol
+    }
+
+    /// A fresh RGBA bitmap seeded from the baseline (dimmed) so the magenta diff
+    /// pixels stand out against the original layout.
+    private static func makeDiffBitmap(width: Int, height: Int, base: NSBitmapImageRep) -> NSBitmapImageRep? {
+        guard let diff = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: width,
+            pixelsHigh: height,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+        for y in 0..<height {
+            for x in 0..<width {
+                if let c = base.colorAt(x: x, y: y) {
+                    // Dim the baseline so magenta diff pixels pop.
+                    let dimmed = NSColor(
+                        red: 0.5 + c.redComponent * 0.5,
+                        green: 0.5 + c.greenComponent * 0.5,
+                        blue: 0.5 + c.blueComponent * 0.5,
+                        alpha: 1
+                    )
+                    diff.setColor(dimmed, atX: x, y: y)
+                }
+            }
+        }
+        return diff
+    }
+
+    // MARK: io
+
+    private static func writeBitmap(_ bitmap: NSBitmapImageRep, to url: URL) -> Bool {
+        guard let data = bitmap.representation(using: .png, properties: [:]) else { return false }
+        do {
+            try data.write(to: url)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func loadBitmap(_ url: URL) -> NSBitmapImageRep? {
+        guard let data = try? Data(contentsOf: url),
+              let rep = NSBitmapImageRep(data: data) else { return nil }
+        return rep
+    }
+
+    // MARK: tests/ resolution
+
+    /// Resolve the `tests/` directory. Order: (1) the `--golden-test <arg>` value if
+    /// it is or contains a `tests/`; (2) walk up from the executable for a `tests/`;
+    /// (3) walk up from the current working directory. Returns nil if none found.
+    private static func resolveTestsDirectory(argument: String?) -> URL? {
+        let fm = FileManager.default
+        func isDir(_ url: URL) -> Bool {
+            var d: ObjCBool = false
+            return fm.fileExists(atPath: url.path, isDirectory: &d) && d.boolValue
+        }
+
+        if let argument, !argument.isEmpty {
+            let argURL = URL(fileURLWithPath: argument)
+            // The arg is itself the tests dir.
+            if argURL.lastPathComponent == "tests", isDir(argURL) { return argURL }
+            // The arg is the repo root (or any dir) containing tests/.
+            let nested = argURL.appendingPathComponent("tests", isDirectory: true)
+            if isDir(nested) { return nested }
+            // The arg is a scratch output dir whose parent chain has the repo: try
+            // walking up from it too.
+            if let found = walkUpForTests(from: argURL) { return found }
+        }
+
+        let exeURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        if let found = walkUpForTests(from: exeURL.deletingLastPathComponent()) { return found }
+        if let found = walkUpForTests(from: URL(fileURLWithPath: fm.currentDirectoryPath)) { return found }
+        return nil
+    }
+
+    private static func walkUpForTests(from start: URL) -> URL? {
+        let fm = FileManager.default
+        var dir = start.standardizedFileURL
+        for _ in 0..<12 {
+            let candidate = dir.appendingPathComponent("tests", isDirectory: true)
+            var d: ObjCBool = false
+            if fm.fileExists(atPath: candidate.appendingPathComponent("corpus.md").path),
+               fm.fileExists(atPath: candidate.path, isDirectory: &d), d.boolValue {
+                return candidate
+            }
+            let parent = dir.deletingLastPathComponent()
+            if parent.path == dir.path { break }
+            dir = parent
+        }
+        return nil
+    }
+
+    // MARK: self-test content re-use
+
+    /// The cycle-a self-test case (mirrors MarkdownWindowController.selfTestCases()[0]).
+    /// Re-using its markdown gives the golden a CJK-heavy doc with every inline style,
+    /// a table, a task list and a fenced block — the same content the self-test
+    /// validates structurally, now validated visually too.
+    private static var selfTestCycleAMarkdown: String {
+        MarkdownSelfTestCase(
+            id: "cycle-a",
+            title: "知识边界检查",
+            subtitle: "资料可信度",
+            bold: "Knowledge Cutoff",
+            italic: "谨慎措辞",
+            strike: "绝对保证",
+            inlineCode: "source_id",
+            linkText: "证据链接",
+            imageAlt: "架构示意图",
+            quote: "没有来源的结论需要降级展示。",
+            unordered: "核对发布时间",
+            ordered: "记录来源",
+            taskDone: "表格渲染",
+            taskTodo: "截图复核",
+            tableHeaders: ["缺陷", "解释", "黑话名"],
+            tableRows: [
+                ["知识会过期", "模型只学到训练截止日期之前的资料", "Knowledge Cutoff"],
+                ["会一本正经地胡说", "接龙接得太顺，没资料时它会编出很真的答案", "Hallucination"],
+                ["不给来源", "它说的话你无法核实，因为它自己也不知道这句话从哪学来的", "Source Missing"]
+            ],
+            codeNeedle: "verify evidence"
+        ).markdown
+    }
+
+    /// The design's "Dependencies And Tooling" page (mirrors
+    /// MarkdownWindowController.designVerificationMarkdown) — code CARDs, inline
+    /// PILLs and a borderless TABLE, the design-system constructs.
+    private static var designVerificationMarkdown: String {
+        """
+        # Dependencies And Tooling
+
+        For internal investigations, `bytedcli` is the default dependency for reading internal platforms such as Feishu, Argos/APM, TCE, TCC, Codebase, logs and metrics.
+
+        ## Before relying on a capability
+
+        1. Confirm the CLI is available and current.
+        2. Teach one of the installation paths below.
+        3. Check auth when commands fail due to login or scope.
+        4. Verify availability with `--help` before claiming a source is unavailable.
+
+        ```bash
+        # Run latest without global install
+        npx -y @dev/cli@latest --version
+        ```
+
+        ## Installation paths
+
+        Run the latest version without a global install, or install globally if the workflow repeats daily:
+
+        ```bash
+        # Or install globally
+        npm install -g @dev/cli@latest
+        cli <command>
+        ```
+
+        ## What to capture
+
+        | 字段 | 说明 | 必填 |
+        | --- | --- | --- |
+        | alarm_id | 告警规则或事件的唯一标识 | 是 |
+        | time_range | 默认最近 1 小时，可由用户覆盖 | 否 |
+        | platform | Argos、TCE 等来源平台 | 否 |
+        """
     }
 }
 
@@ -2415,25 +2805,12 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
     @objc func showCommandPalette(_ sender: Any?) {
         if paletteOverlay != nil { closeCommandPalette(); return }
 
+        // PaletteBackdropView IS an NSVisualEffectView: blur renders directly.
         let backdrop = PaletteBackdropView()
-        backdrop.wantsLayer = true
         backdrop.translatesAutoresizingMaskIntoConstraints = false
         backdrop.onClickOutside = { [weak self] in self?.closeCommandPalette() }
 
-        // Layer order (back → front): blur → dim wash → card. The blur gives the
-        // design's `backdrop-filter: blur(6px)` over the app content; the light
-        // dim wash sits on top of the blur at rgba(248,248,250,0.4) — kept light so
-        // the blur reads as glass; the card stays a solid modal (built opaque in
-        // buildCommandPaletteView).
-        let blur = NSVisualEffectView()
-        blur.blendingMode = .withinWindow
-        // Spec: backdrop-filter blur(6px) + rgba(248,248,250,0.6). Use `.menu`
-        // for a visible light frosted-glass effect.
-        blur.material = .menu
-        blur.state = .active
-        blur.translatesAutoresizingMaskIntoConstraints = false
-        backdrop.addSubview(blur)
-
+        // Light tint over the blur: rgba(248,248,250,0.6) (spec L227).
         let dim = NSView()
         dim.wantsLayer = true
         dim.layer?.backgroundColor = NSColor(hex: 0xF8F8FA, alpha: 0.6).cgColor
@@ -2451,10 +2828,6 @@ final class MarkdownWindowController: NSObject, NSOutlineViewDataSource, NSOutli
             backdrop.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
             backdrop.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
             backdrop.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
-            blur.topAnchor.constraint(equalTo: backdrop.topAnchor),
-            blur.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
-            blur.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
-            blur.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
             dim.topAnchor.constraint(equalTo: backdrop.topAnchor),
             dim.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
             dim.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
