@@ -43,7 +43,13 @@ final class CodeOverlayController {
         let glyphRange = tv.layoutManager!.glyphRange(forCharacterRange: block.bodyRange, actualCharacterRange: nil)
         var rect = tv.layoutManager!.boundingRect(forGlyphRange: glyphRange, in: tv.textContainer!)
         rect.origin.y += tv.textContainerInset.height
-        btn.frame = NSRect(x: rect.maxX - 50, y: rect.minY + 8, width: 44, height: 20)
+        // Pin the button to the card's top-right corner. The card spans the full
+        // textContainer column width (not the longest code line), so base x on the
+        // card's right edge instead of rect.maxX (the glyph bounding box).
+        let cardLeft = tv.textContainerInset.width
+        let cardRight = cardLeft + tv.textContainer!.size.width
+        let btnWidth: CGFloat = 44
+        btn.frame = NSRect(x: cardRight - btnWidth - 14, y: rect.minY + 8, width: btnWidth, height: 20)
         btn.isHidden = false
         btn.animator().alphaValue = 1
     }
