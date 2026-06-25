@@ -4,9 +4,9 @@ import AppKit
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
     @Binding var fontIndex: Int
-    @Binding var scrollProgress: Double
     var isMarkdown: Bool = true
     var findState: FindState?
+    @ObservedObject var bridge: EditorBridge
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -48,8 +48,9 @@ struct EditorView: NSViewRepresentable {
             object: sv.contentView
         )
 
-        // Mouse tracking → code copy overlay
+        // Mouse tracker — stored on coordinator to keep alive
         let tracker = MouseTracker(coordinator: context.coordinator)
+        context.coordinator.mouseTracker = tracker
         sv.addTrackingArea(NSTrackingArea(
             rect: sv.bounds,
             options: [.activeInKeyWindow, .mouseMoved, .inVisibleRect],
@@ -91,8 +92,8 @@ struct EditorView: NSViewRepresentable {
         var parent: EditorView
         weak var textView: PaperTextView?
         weak var scrollView: NSScrollView?
+        var mouseTracker: MouseTracker?  // kept alive for NSTrackingArea
 
-        // Sub-controllers (each is independently testable)
         let findController = FindController()
         let outlineController = OutlineController()
         let codeOverlay = CodeOverlayController()
@@ -102,6 +103,9 @@ struct EditorView: NSViewRepresentable {
         init(_ p: EditorView) {
             parent = p
             super.init()
+            p.bridge.onJumpToHeading = { [weak self] idx in
+                self?.outlineController.jumpTo(idx)
+            }
             wireFindState()
         }
 
@@ -126,7 +130,7 @@ struct EditorView: NSViewRepresentable {
                 self?.findController.replaceCurrent(
                     with: fs.replaceText,
                     restyle: { if let s = self?.textView?.textStorage { LiveMarkdownStyler.apply(to: s) } },
-                    redo: { // re-search
+                    redo: {
                         self?.findController.search(FindController.Options(
                             query: fs.query, caseSensitive: fs.caseSensitive,
                             wholeWord: fs.wholeWord, useRegex: fs.useRegex
@@ -149,16 +153,20 @@ struct EditorView: NSViewRepresentable {
         func textDidChange(_ n: Notification) {
             guard let tv = textView, let s = tv.textStorage else { return }
             let current = tv.string
-            // Writeback is immediate; heavy work (outline, progress) is debounced.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.parent.text = current
 
+                // Debounced heavy work → write to bridge
                 self.debounceWork?.cancel()
                 let work = DispatchWorkItem { [weak self] in
                     guard let self else { return }
-                    self.parent.scrollProgress = self.computeProgress()
+                    let progress = self.computeProgress()
+                    let scrollY = self.scrollView?.contentView.bounds.origin.y ?? 0
                     self.outlineController.rebuild()
+                    self.parent.bridge.scrollProgress = progress
+                    self.parent.bridge.headings = self.outlineController.headings
+                    self.parent.bridge.activeHeadingIndex = self.outlineController.activeIndex(for: scrollY)
                 }
                 self.debounceWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
@@ -167,16 +175,14 @@ struct EditorView: NSViewRepresentable {
         }
 
         @objc func scrollDidChange() {
-            parent.scrollProgress = computeProgress()
+            parent.bridge.scrollProgress = computeProgress()
         }
 
-        // MARK: - Mouse bridging (for MouseTracker)
+        // MARK: - Mouse bridging
 
         func handleMouseAt(_ tvPoint: NSPoint) {
             codeOverlay.handleMouse(at: tvPoint)
         }
-
-        // MARK: - Helpers
 
         func computeProgress() -> Double {
             guard let sv = scrollView, let tv = textView else { return 0 }
@@ -187,6 +193,8 @@ struct EditorView: NSViewRepresentable {
         }
     }
 }
+
+// MARK: - PaperTextView
 
 final class PaperTextView: NSTextView {
     override func layout() {
@@ -201,9 +209,9 @@ final class PaperTextView: NSTextView {
     override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); layout() }
 }
 
-/// Thin NSResponder that forwards mouseMoved to the coordinator for
-/// code-copy-button hover detection.
-private final class MouseTracker: NSView {
+// MARK: - Mouse tracker
+
+final class MouseTracker: NSView {
     weak var coordinator: EditorView.Coordinator?
     convenience init(coordinator: EditorView.Coordinator) {
         self.init(frame: .zero)

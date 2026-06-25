@@ -4,8 +4,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var docManager: DocumentManager
     @ObservedObject var findState: FindState
-    @State private var scrollProgress: Double = 0
-    @State private var activeOutlineIndex: Int = 0
+    @StateObject private var bridge = EditorBridge()
     @State private var isDragging = false
     @State private var hasInitialized = false
 
@@ -26,15 +25,15 @@ struct ContentView: View {
                             EditorView(
                                 text: docManager.textBinding,
                                 fontIndex: $docManager.fontIndex,
-                                scrollProgress: $scrollProgress,
-                                findState: findState
+                                findState: findState,
+                                bridge: bridge
                             )
                             .id(docManager.activeTabID)
 
                             OutlineRailView(
-                                headings: [],
-                                activeIndex: activeOutlineIndex,
-                                onJump: { _ in }
+                                headings: bridge.headings,
+                                activeIndex: bridge.activeHeadingIndex,
+                                onJump: { bridge.onJumpToHeading?($0) }
                             )
                         }
                     } else {
@@ -90,7 +89,7 @@ struct ContentView: View {
             Text("\(docManager.currentText.count) 字")
                 .font(.system(size: 11.5, design: .monospaced))
                 .foregroundColor(DesignTokens.swiftUI.statusText)
-            Text("\(Int(scrollProgress * 100))%")
+            Text("\(Int(bridge.scrollProgress * 100))%")
                 .font(.system(size: 11.5, design: .monospaced))
                 .foregroundColor(DesignTokens.swiftUI.statusText)
             if docManager.isDirty {

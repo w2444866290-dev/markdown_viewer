@@ -1,37 +1,64 @@
 import SwiftUI
 import AppKit
 
-/// Shared design tokens. A single hex source defines each color; both
-/// NSColor and SwiftUI.Color are derived from it — no manual duplication.
+/// Single hex palette — all colors defined once, both NSColor
+/// and SwiftUI.Color derived from the same source.
+private enum Palette {
+    static let paper          = 0xFFFFFF
+    static let sidebar        = 0xF7F7F8
+    static let appBackground  = 0xF2F2F4
+    static let codeBackground = 0xFAFAFA
+
+    static let titleText      = 0x1D1D1F
+    static let headingText    = 0x111111
+    static let bodyText       = 0x333336
+    static let secondaryText  = 0x6E6E73
+    static let tertiaryText   = 0x86868B
+    static let fileRowText    = 0x3F3F46
+    static let statusText     = 0x767676
+    static let placeholderText = 0xAEAEB2
+    static let disabledText   = 0xC7C7CC
+    static let folderIcon     = 0xC7C7CC
+    static let tickRest       = 0xCACACE
+    static let divider        = 0xF0F0F1
+    static let line           = 0xF4F4F5
+
+    static let accent         = 0xE8A33D
+    static let danger         = 0xC7482E
+    static let link           = 0x2A6FDB
+    static let systemBlue     = 0x007AFF
+}
+
+/// Shared design tokens.
 enum DesignTokens {
     // MARK: - Surfaces
-    static let paper = color(0xFFFFFF)
-    static let sidebar = color(0xF7F7F8)
-    static let appBackground = color(0xF2F2F4)
-    static let codeBackground = color(0xFAFAFA)
+    static let paper = color(Palette.paper)
+    static let sidebar = color(Palette.sidebar)
+    static let appBackground = color(Palette.appBackground)
+    static let codeBackground = color(Palette.codeBackground)
 
     // MARK: - Text
-    static let titleText = color(0x1D1D1F)
-    static let headingText = color(0x111111)
-    static let bodyText = color(0x333336)
-    static let secondaryText = color(0x6E6E73)
-    static let tertiaryText = color(0x86868B)
-    static let fileRowText = color(0x3F3F46)
-    static let statusText = color(0x767676)
-    static let placeholderText = color(0xAEAEB2)
-    static let disabledText = color(0xC7C7CC)
-    static let folderIcon = color(0xC7C7CC)
-    static let tickRest = color(0xCACACE)
-    static let divider = color(0xF0F0F1)
-    static let line = color(0xF4F4F5)
+    static let titleText = color(Palette.titleText)
+    static let headingText = color(Palette.headingText)
+    static let bodyText = color(Palette.bodyText)
+    static let secondaryText = color(Palette.secondaryText)
+    static let tertiaryText = color(Palette.tertiaryText)
+    static let fileRowText = color(Palette.fileRowText)
+    static let statusText = color(Palette.statusText)
+    static let placeholderText = color(Palette.placeholderText)
+    static let disabledText = color(Palette.disabledText)
+    static let folderIcon = color(Palette.folderIcon)
+    static let tickRest = color(Palette.tickRest)
+    static let divider = color(Palette.divider)
+    static let line = color(Palette.line)
 
     // MARK: - Accent
-    static let accent = color(0xE8A33D)
-    static let accentStrong = color(0xE8A33D, alpha: 0.55)
-    static let accentSoft = color(0xE8A33D, alpha: 0.22)
-    static let danger = color(0xC7482E)
-    static let link = color(0x2A6FDB)
-    static let systemBlue = color(0x007AFF)
+    static let accent = color(Palette.accent)
+    static let accentStrong = color(Palette.accent, alpha: 0.55)
+    static let accentSoft = color(Palette.accent, alpha: 0.22)
+    static let danger = color(Palette.danger)
+    static let link = color(Palette.link)
+    static let systemBlue = color(Palette.systemBlue)
 
     // MARK: - Interaction (alpha-only over black)
     static let hover = NSColor.black.withAlphaComponent(0.05)
@@ -49,35 +76,35 @@ enum DesignTokens {
     static let tabBarHeight: CGFloat = 44
     static let bodyFontSizes: [CGFloat] = [14, 15.5, 17]
 
-    // MARK: - Color factory (single hex source)
+    // MARK: - Color factory
 
     private static func color(_ hex: Int, alpha: CGFloat = 1) -> NSColor {
         NSColor(hex: hex, alpha: alpha)
     }
 
-    // MARK: - SwiftUI Color accessor (derived, not duplicated)
+    // MARK: - SwiftUI Color (derived from same Palette)
 
     enum swiftUI {
-        static let paper = color(0xFFFFFF)
-        static let appBackground = color(0xF2F2F4)
-        static let sidebar = color(0xF7F7F8)
-        static let sidebarFill = color(0xF7F7F8)
-        static let titleText = color(0x1D1D1F)
-        static let headingText = color(0x111111)
-        static let bodyText = color(0x333336)
-        static let secondaryText = color(0x6E6E73)
-        static let tertiaryText = color(0x86868B)
-        static let fileRowText = color(0x3F3F46)
-        static let statusText = color(0x767676)
-        static let placeholderText = color(0xAEAEB2)
-        static let disabledText = color(0xC7C7CC)
-        static let folderIcon = color(0xC7C7CC)
-        static let tickRest = color(0xCACACE)
-        static let divider = color(0xF0F0F1)
-        static let line = color(0xF4F4F5)
-        static let accent = color(0xE8A33D)
-        static let danger = color(0xC7482E)
-        static let link = color(0x2A6FDB)
+        static let paper = color(Palette.paper)
+        static let sidebar = color(Palette.sidebar)
+        static let sidebarFill = color(Palette.sidebar)
+        static let appBackground = color(Palette.appBackground)
+        static let titleText = color(Palette.titleText)
+        static let headingText = color(Palette.headingText)
+        static let bodyText = color(Palette.bodyText)
+        static let secondaryText = color(Palette.secondaryText)
+        static let tertiaryText = color(Palette.tertiaryText)
+        static let fileRowText = color(Palette.fileRowText)
+        static let statusText = color(Palette.statusText)
+        static let placeholderText = color(Palette.placeholderText)
+        static let disabledText = color(Palette.disabledText)
+        static let folderIcon = color(Palette.folderIcon)
+        static let tickRest = color(Palette.tickRest)
+        static let divider = color(Palette.divider)
+        static let line = color(Palette.line)
+        static let accent = color(Palette.accent)
+        static let danger = color(Palette.danger)
+        static let link = color(Palette.link)
         static let hover = color(blackAlpha: 0.05)
         static let sidebarHover = color(blackAlpha: 0.045)
         static let pressed = color(blackAlpha: 0.08)

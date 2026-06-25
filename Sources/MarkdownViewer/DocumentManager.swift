@@ -142,7 +142,7 @@ final class DocumentManager: ObservableObject {
         directoryURL = url
         fileTree = buildFileTree(at: url)
         if let first = firstTextFile(in: fileTree), tabs.isEmpty {
-            if let text = try? String(contentsOf: url, encoding: .utf8) {
+            if let text = try? String(contentsOf: first, encoding: .utf8) {
                 openTab(for: first, text: text)
             }
         }
