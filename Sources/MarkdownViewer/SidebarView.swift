@@ -10,26 +10,6 @@ struct SidebarView: View {
             // 44px spacer for traffic lights
             Color.clear.frame(height: 44)
 
-            // Header row: folder name + open folder button
-            HStack(spacing: 4) {
-                Text(docManager.directoryURL?.lastPathComponent ?? "文件")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(DesignTokens.swiftUI.secondaryText)
-                    .lineLimit(1)
-                Spacer()
-                Button(action: { docManager.openDirectory() }) {
-                    CIcon { CustomIcons.openFolder }
-                        .frame(width: 15, height: 14)
-                        .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                        .padding(6)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("打开文件夹")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-
             // Filter — spec: padding 2px 12px 8px
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")

@@ -188,7 +188,7 @@ private struct EditorHeader: View {
                 }
                 .buttonStyle(.plain)
 
-                Button(action: { docManager.openFile() }) {
+                Button(action: { docManager.openDocument() }) {
                     CIcon { CustomIcons.openFolder }
                         .frame(width: 15, height: 14)
                         .foregroundColor(DesignTokens.swiftUI.placeholderText)
@@ -196,6 +196,7 @@ private struct EditorHeader: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help("打开文件或文件夹")
             }
             .padding(.trailing, 12)
         }

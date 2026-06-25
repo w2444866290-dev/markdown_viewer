@@ -28,10 +28,8 @@ struct MarkdownViewerApp: App {
                     .keyboardShortcut("s", modifiers: [.shift, .command])
             }
             CommandGroup(after: .newItem) {
-                Button("打开…") { docManager.openFile() }
+                Button("打开…") { docManager.openDocument() }
                     .keyboardShortcut("o")
-                Button("打开文件夹…") { docManager.openDirectory() }
-                    .keyboardShortcut("o", modifiers: [.shift, .command])
             }
             CommandMenu("查找") {
                 Button("查找 / 替换") { findState.toggleOpen() }

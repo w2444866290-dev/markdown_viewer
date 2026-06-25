@@ -97,6 +97,20 @@ final class DocumentManager: ObservableObject {
 
     // MARK: - File I/O
 
+    func openDocument() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if url.hasDirectoryPath {
+            loadDirectory(url)
+        } else {
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+            openTab(for: url, text: text)
+        }
+    }
+
     func saveCurrent() {
         guard let tab = activeTab else { return }
         if let url = tab.url {
