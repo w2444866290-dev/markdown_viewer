@@ -206,42 +206,45 @@ private struct EditorTabPill: View {
     let tab: DocumentTab
     @State private var isHovered = false
 
-    var body: some View {
-        Button(action: { docManager.activeTabID = tab.id }) {
-            HStack(spacing: 0) {
-                if tab.isDirty && !isHovered {
-                    Circle().fill(DesignTokens.swiftUI.accent).frame(width: 7, height: 7)
-                        .padding(.trailing, 6)
-                }
-                Text(tab.name)
-                    .font(.system(size: 12.5))
-                    .fontWeight(tab.id == docManager.activeTabID ? .semibold : .regular)
-                    .foregroundColor(tab.id == docManager.activeTabID
-                        ? DesignTokens.swiftUI.titleText
-                        : DesignTokens.swiftUI.tertiaryText)
+    var isActive: Bool { tab.id == docManager.activeTabID }
 
-                if isHovered {
-                    Button(action: { docManager.closeTab(tab) }) {
-                        Text("×")
-                            .font(.system(size: 13))
-                            .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                            .frame(width: 16, height: 16)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 4)
-                }
+    var body: some View {
+        HStack(spacing: 0) {
+            // Dirty dot (hidden when hovering, shows × instead)
+            if tab.isDirty && !isHovered {
+                Circle().fill(DesignTokens.swiftUI.accent)
+                    .frame(width: 7, height: 7)
+                    .padding(.trailing, 6)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(tab.id == docManager.activeTabID
-                        ? Color.black.opacity(0.06)
-                        : (isHovered ? Color.black.opacity(0.04) : .clear))
-            )
+
+            Text(tab.name)
+                .font(.system(size: 12.5))
+                .fontWeight(isActive ? .semibold : .regular)
+                .foregroundColor(isActive
+                    ? DesignTokens.swiftUI.titleText
+                    : DesignTokens.swiftUI.tertiaryText)
+
+            // Close button on hover
+            if isHovered {
+                Text("×")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+                    .onTapGesture { docManager.closeTab(tab) }
+                    .padding(.leading, 4)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .frame(height: 28)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isActive
+                    ? Color.black.opacity(0.06)
+                    : (isHovered ? Color.black.opacity(0.04) : .clear))
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { docManager.activeTabID = tab.id }
         .onHover { isHovered = $0 }
     }
 }
