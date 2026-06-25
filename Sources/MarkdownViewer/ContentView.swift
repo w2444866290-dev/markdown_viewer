@@ -7,17 +7,24 @@ struct ContentView: View {
     @StateObject private var bridge = EditorBridge()
     @State private var isDragging = false
     @State private var hasInitialized = false
+    @State private var statusFaded = false
+
+    private var tabPadLeft: CGFloat {
+        docManager.sidebarOpen ? 12 : 84
+    }
 
     var body: some View {
         HStack(spacing: 0) {
             if docManager.sidebarOpen {
                 SidebarView()
                     .frame(width: docManager.sidebarWidth)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
             }
 
             VStack(spacing: 0) {
-                EditorHeader(findState: findState)
+                EditorHeader(findState: findState, tabPadLeft: tabPadLeft)
                     .frame(height: 44)
+                    .padding(.leading, tabPadLeft)
 
                 ZStack(alignment: .topTrailing) {
                     if docManager.activeTab != nil {
@@ -60,9 +67,15 @@ struct ContentView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .overlay {
+            if isDragging {
+                dragOverlay
+            }
+        }
         .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
             handleDrop(providers: providers)
         }
+        .animation(.easeInOut(duration: 0.18), value: docManager.sidebarOpen)
         .onAppear {
             guard !hasInitialized else { return }
             hasInitialized = true
@@ -71,6 +84,28 @@ struct ContentView: View {
             }
         }
     }
+
+    // MARK: - Drag overlay
+
+    private var dragOverlay: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(DesignTokens.swiftUI.accent, lineWidth: 2)
+                .background(DesignTokens.swiftUI.accent.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            Text("松开以打开 Markdown 文件")
+                .font(.system(size: 13))
+                .foregroundColor(DesignTokens.swiftUI.titleText)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(DesignTokens.swiftUI.paper)
+                .cornerRadius(10)
+                .shadow(color: .black.opacity(0.14), radius: 14, y: 8)
+        }
+        .padding(10)
+    }
+
+    // MARK: - Empty state
 
     private var emptyState: some View {
         VStack(spacing: 10) {
@@ -84,21 +119,27 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Status bar — spec: bottom 14px, right 20px, fade on scroll
+
     private var statusBar: some View {
-        HStack(spacing: 12) {
-            Text("\(docManager.currentText.count) 字")
-                .font(.system(size: 11.5, design: .monospaced))
-                .foregroundColor(DesignTokens.swiftUI.statusText)
-            Text("\(Int(bridge.scrollProgress * 100))%")
-                .font(.system(size: 11.5, design: .monospaced))
-                .foregroundColor(DesignTokens.swiftUI.statusText)
-            if docManager.isDirty {
-                Circle().fill(DesignTokens.swiftUI.accent).frame(width: 6, height: 6)
+        Text("\(docManager.currentText.count) 字 · \(Int(bridge.scrollProgress * 100))%")
+            .font(.system(size: 11.5, design: .monospaced))
+            .foregroundColor(DesignTokens.swiftUI.statusText)
+            .opacity(statusFaded ? 0 : 1)
+            .animation(.easeInOut(duration: 0.3), value: statusFaded)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 14)
+            .onReceive(
+                bridge.$scrollProgress.debounce(for: .seconds(0.8), scheduler: DispatchQueue.main)
+            ) { _ in
+                statusFaded = false
             }
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 14)
+            .onReceive(bridge.$scrollProgress) { _ in
+                statusFaded = true
+            }
     }
+
+    // MARK: - Drop handling
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }
@@ -149,23 +190,32 @@ struct ContentView: View {
 private struct EditorHeader: View {
     @EnvironmentObject var docManager: DocumentManager
     @ObservedObject var findState: FindState
+    let tabPadLeft: CGFloat
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
+            // Sidebar toggle — spec: 26×26, radius 6, color #aeaeb2, hover bg rgba(0,0,0,0.05)
             Button(action: { docManager.sidebarOpen.toggle() }) {
                 CIcon { CustomIcons.sidebarToggle }
                     .frame(width: 16, height: 13)
                     .foregroundColor(DesignTokens.swiftUI.placeholderText)
                     .frame(width: 26, height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.black.opacity(0.05))
+                            .opacity(0)
+                    )
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(HeaderButtonStyle())
 
+            // Tabs area
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
                     ForEach(docManager.tabs) { tab in
                         EditorTabPill(tab: tab)
                     }
+                    // + button — spec: 26×26, radius 6, font-size 16, hover bg rgba(0,0,0,0.05)
                     Button(action: { docManager.newDocument() }) {
                         Text("＋")
                             .font(.system(size: 16))
@@ -173,11 +223,12 @@ private struct EditorHeader: View {
                             .frame(width: 26, height: 26)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(HeaderButtonStyle())
                 }
                 .padding(.horizontal, 8)
             }
 
+            // Find + Open buttons — spec: gap 2px
             HStack(spacing: 2) {
                 Button(action: { findState.toggleOpen() }) {
                     CIcon { CustomIcons.find }
@@ -186,7 +237,7 @@ private struct EditorHeader: View {
                         .frame(width: 28, height: 26)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HeaderButtonStyle())
 
                 Button(action: { docManager.openDocument() }) {
                     CIcon { CustomIcons.openFolder }
@@ -195,18 +246,35 @@ private struct EditorHeader: View {
                         .frame(width: 28, height: 26)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HeaderButtonStyle())
                 .help("打开文件或文件夹")
             }
-            .padding(.trailing, 12)
         }
+        .padding(.trailing, 12)
     }
 }
+
+// MARK: - Header button style (hover: bg rgba(0,0,0,0.05), color #6e6e73)
+
+private struct HeaderButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(configuration.isPressed
+                        ? Color.black.opacity(0.08)
+                        : Color.clear)
+            )
+    }
+}
+
+// MARK: - Tab pill
 
 private struct EditorTabPill: View {
     @EnvironmentObject var docManager: DocumentManager
     let tab: DocumentTab
     @State private var isHovered = false
+    @State private var closeHovered = false
 
     var isActive: Bool { tab.id == docManager.activeTabID }
 
@@ -226,14 +294,19 @@ private struct EditorTabPill: View {
                     ? DesignTokens.swiftUI.titleText
                     : DesignTokens.swiftUI.tertiaryText)
 
-            // Close button on hover
+            // Close button on hover — spec: 16×16, radius 6, color #aeaeb2, hover bg rgba(0,0,0,0.08) + color #1d1d1f
             if isHovered {
                 Text("×")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                    .foregroundColor(closeHovered ? DesignTokens.swiftUI.titleText : DesignTokens.swiftUI.placeholderText)
                     .frame(width: 16, height: 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(closeHovered ? Color.black.opacity(0.08) : Color.clear)
+                    )
                     .contentShape(Rectangle())
                     .onTapGesture { docManager.closeTab(tab) }
+                    .onHover { closeHovered = $0 }
                     .padding(.leading, 4)
             }
         }
@@ -244,7 +317,7 @@ private struct EditorTabPill: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(isActive
                     ? Color.black.opacity(0.06)
-                    : (isHovered ? Color.black.opacity(0.04) : .clear))
+                    : (isHovered ? Color.black.opacity(0.05) : .clear))
         )
         .contentShape(Rectangle())
         .onTapGesture { docManager.activeTabID = tab.id }

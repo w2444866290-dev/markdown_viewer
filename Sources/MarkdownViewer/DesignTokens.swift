@@ -22,6 +22,7 @@ private enum Palette {
     static let tickRest       = 0xCACACE
     static let divider        = 0xF0F0F1
     static let line           = 0xF4F4F5
+    static let paletteKbd     = 0x9A9A9E
 
     static let accent         = 0xE8A33D
     static let danger         = 0xC7482E
@@ -76,7 +77,9 @@ enum DesignTokens {
     static let tabBarHeight: CGFloat = 44
     static let bodyFontSizes: [CGFloat] = [14, 15.5, 17]
     static let editorTopInset: CGFloat = 44
-    static let editorBottomPadding: CGFloat = 200  // ~33vh on 760px window
+    static let editorBottomPadding: CGFloat = 220  // ~33vh on 760px window
+    static let bodyLineHeight: CGFloat = 1.7
+    static let paletteKbdColor = 0x9A9A9E
 
     // MARK: - Color factory
 
@@ -113,6 +116,7 @@ enum DesignTokens {
         static let selected = color(blackAlpha: 0.06)
         static let ring = color(blackAlpha: 0.05)
         static let fieldFill = color(blackAlpha: 0.04)
+        static let paletteKbd = color(Palette.paletteKbd)
 
         private static func color(_ hex: Int, opacity: Double = 1) -> SwiftUI.Color {
             SwiftUI.Color(hex: hex, opacity: opacity)

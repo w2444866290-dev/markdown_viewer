@@ -17,6 +17,8 @@ struct EditorView: NSViewRepresentable {
         sv.scrollerStyle = .overlay
         sv.drawsBackground = true
         sv.backgroundColor = DesignTokens.paper
+        // Bottom padding — spec: 33vh ≈ 220pt
+        sv.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: DesignTokens.editorBottomPadding, right: 0)
 
         let tv = PaperTextView(frame: .zero)
         tv.delegate = context.coordinator
