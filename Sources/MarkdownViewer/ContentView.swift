@@ -208,6 +208,7 @@ private struct EditorHeader: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(HeaderButtonStyle())
+            .mvTip("显示 / 隐藏侧栏")
 
             // Tabs area
             ScrollView(.horizontal, showsIndicators: false) {
@@ -224,6 +225,7 @@ private struct EditorHeader: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(HeaderButtonStyle())
+                    .mvTip("新建文档 · ⌘N")
                 }
                 .padding(.horizontal, 8)
             }
@@ -238,6 +240,7 @@ private struct EditorHeader: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(HeaderButtonStyle())
+                .mvTip("查找 / 替换 · ⌘F")
 
                 Button(action: { docManager.openDocument() }) {
                     CIcon { CustomIcons.openFolder }
@@ -247,7 +250,7 @@ private struct EditorHeader: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(HeaderButtonStyle())
-                .help("打开文件或文件夹")
+                .mvTip("打开 · ⌘O")
             }
         }
         .padding(.trailing, 12)
