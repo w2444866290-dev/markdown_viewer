@@ -235,6 +235,26 @@ enum LiveMarkdownStyler {
         return nil
     }
 
+    /// All `[label](url)` link spans in `nsString` paired with their destination,
+    /// computed with the SAME `linkRegex` + image-skip logic as `linkDestination`.
+    /// Built once per text version so the hover path can do a cheap range lookup
+    /// instead of re-scanning the whole document on every mouse move. `range` is
+    /// the full match span (`[label](url)`), matching `linkDestination`'s hit test.
+    static func linkRanges(in nsString: NSString) -> [(range: NSRange, url: String)] {
+        let fullRange = NSRange(location: 0, length: nsString.length)
+        var result: [(range: NSRange, url: String)] = []
+        for match in linkRegex.matches(in: nsString as String, range: fullRange) {
+            if match.range.location > 0,
+               nsString.character(at: match.range.location - 1) == 33 { // '!' → image
+                continue
+            }
+            let urlRange = match.range(at: 2)
+            guard urlRange.location != NSNotFound else { continue }
+            result.append((range: match.range, url: nsString.substring(with: urlRange)))
+        }
+        return result
+    }
+
     /// One fenced code block recovered from the source. `containerRange` spans the
     /// opening fence line through the closing fence line (used to compute the
     /// block's on-screen rect for the top-right copy button). `bodyRange` covers

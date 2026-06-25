@@ -6,11 +6,14 @@ final class CodeOverlayController {
     weak var textView: NSTextView?
     private var button: NSButton?
     private var bodyRange: NSRange?
+    /// Fenced code blocks for the current text version, supplied by the
+    /// coordinator on each text change. Used instead of re-parsing the whole
+    /// document on every mouseMoved (the hot path here is hover hit-testing).
+    var blocks: [LiveMarkdownStyler.FencedCodeBlock] = []
 
     func handleMouse(at tvPoint: NSPoint) {
-        guard let tv = textView, let storage = tv.textStorage else { return }
-        let ns = storage.string as NSString
-        for block in LiveMarkdownStyler.fencedCodeBlocks(in: ns) {
+        guard let tv = textView else { return }
+        for block in blocks {
             let glyphRange = tv.layoutManager!.glyphRange(forCharacterRange: block.bodyRange, actualCharacterRange: nil)
             var rect = tv.layoutManager!.boundingRect(forGlyphRange: glyphRange, in: tv.textContainer!)
             rect.origin.y += tv.textContainerInset.height
