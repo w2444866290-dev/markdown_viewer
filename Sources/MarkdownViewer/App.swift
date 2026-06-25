@@ -41,11 +41,11 @@ struct MarkdownViewerApp: App {
                 Button("显示 / 隐藏侧栏") { docManager.sidebarOpen.toggle() }
                     .keyboardShortcut("\\")
                 Divider()
-                Button("放大字号") { docManager.fontIndex = min(2, docManager.fontIndex + 1) }
+                Button("放大字号") { docManager.applyFont(docManager.fontIndex + 1) }
                     .keyboardShortcut("=")
-                Button("缩小字号") { docManager.fontIndex = max(0, docManager.fontIndex - 1) }
+                Button("缩小字号") { docManager.applyFont(docManager.fontIndex - 1) }
                     .keyboardShortcut("-")
-                Button("重置字号") { docManager.fontIndex = 1 }
+                Button("重置字号") { docManager.applyFont(1) }
                     .keyboardShortcut("0")
             }
         }

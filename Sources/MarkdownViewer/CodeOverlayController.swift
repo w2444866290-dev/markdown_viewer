@@ -58,5 +58,6 @@ final class CodeOverlayController {
         if body.hasSuffix("\n") { body.removeLast() }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(body, forType: .string)
+        Task { @MainActor in Toaster.shared.flash("已复制代码") }
     }
 }

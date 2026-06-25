@@ -114,9 +114,9 @@ struct CommandPaletteView: View {
         case "保存":         docManager.saveCurrent()
         case "查找 / 替换":   docManager.findStateToggle?()
         case "打开…":        docManager.openDocument()
-        case "放大字号":     docManager.fontIndex = min(2, docManager.fontIndex + 1)
-        case "缩小字号":     docManager.fontIndex = max(0, docManager.fontIndex - 1)
-        case "重置字号":     docManager.fontIndex = 1
+        case "放大字号":     docManager.applyFont(docManager.fontIndex + 1)
+        case "缩小字号":     docManager.applyFont(docManager.fontIndex - 1)
+        case "重置字号":     docManager.applyFont(1)
         case "显示 / 隐藏侧栏": docManager.sidebarOpen.toggle()
         default: break
         }

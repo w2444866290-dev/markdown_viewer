@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var docManager: DocumentManager
     @ObservedObject var findState: FindState
+    @ObservedObject private var toaster = Toaster.shared
     @StateObject private var bridge = EditorBridge()
     @State private var isDragging = false
     @State private var hasInitialized = false
@@ -70,6 +71,13 @@ struct ContentView: View {
         .overlay {
             if isDragging {
                 dragOverlay
+            }
+        }
+        .overlay(alignment: .top) {
+            if toaster.visible {
+                ToastView(message: toaster.message)
+                    .padding(.top, 56)
+                    .transition(.opacity)
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in

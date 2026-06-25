@@ -25,8 +25,6 @@ final class DocumentManager: ObservableObject {
 
     // MARK: - Overlays
     @Published var paletteOpen: Bool = false
-    @Published var toastMessage: String = ""
-    @Published var showToast: Bool = false
 
     /// Set by App to let the command palette toggle findState.
     var findStateToggle: (() -> Void)?
@@ -72,6 +70,7 @@ final class DocumentManager: ObservableObject {
         let tab = DocumentTab(url: url, name: url.lastPathComponent, text: text, isDirty: false)
         tabs.append(tab)
         activeTabID = tab.id
+        Toaster.shared.flash("已打开 " + tab.name)
     }
 
     func newDocument(text: String = "# 未命名\n\n") {
@@ -95,6 +94,21 @@ final class DocumentManager: ObservableObject {
         activeTabID = tab.id
     }
 
+    // MARK: - Font
+
+    /// Single entry point for body-font changes. Clamps to a valid index,
+    /// updates `fontIndex`, and flashes the size (e.g. "正文字号 15.5px").
+    func applyFont(_ idx: Int) {
+        let clamped = max(0, min(DesignTokens.bodyFontSizes.count - 1, idx))
+        fontIndex = clamped
+        let size = DesignTokens.bodyFontSizes[clamped]
+        // Show "14" for integers and "15.5" for fractions (no trailing ".0").
+        let label = size == size.rounded()
+            ? String(Int(size))
+            : String(Double(size))
+        Toaster.shared.flash("正文字号 " + label + "px")
+    }
+
     // MARK: - File I/O
 
     func openDocument() {
@@ -114,9 +128,14 @@ final class DocumentManager: ObservableObject {
     func saveCurrent() {
         guard let tab = activeTab else { return }
         if let url = tab.url {
-            try? tab.text.write(to: url, atomically: true, encoding: .utf8)
-            if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
-                tabs[idx].isDirty = false
+            do {
+                try tab.text.write(to: url, atomically: true, encoding: .utf8)
+                if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
+                    tabs[idx].isDirty = false
+                }
+                Toaster.shared.flash("已保存 " + tab.name)
+            } catch {
+                return
             }
         } else {
             saveAsCurrent()
@@ -129,10 +148,15 @@ final class DocumentManager: ObservableObject {
         savePanel.nameFieldStringValue = activeTab?.name ?? "未命名.md"
         guard savePanel.runModal() == .OK, let url = savePanel.url else { return }
         if let idx = tabs.firstIndex(where: { $0.id == activeTabID }) {
-            try? tabs[idx].text.write(to: url, atomically: true, encoding: .utf8)
-            tabs[idx].url = url
-            tabs[idx].name = url.lastPathComponent
-            tabs[idx].isDirty = false
+            do {
+                try tabs[idx].text.write(to: url, atomically: true, encoding: .utf8)
+                tabs[idx].url = url
+                tabs[idx].name = url.lastPathComponent
+                tabs[idx].isDirty = false
+                Toaster.shared.flash("已保存 " + tabs[idx].name)
+            } catch {
+                return
+            }
         }
     }
 
