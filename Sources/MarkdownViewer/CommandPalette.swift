@@ -18,11 +18,22 @@ struct CommandPaletteView: View {
         return commands.filter { $0.0.localizedCaseInsensitiveContains(query) }
     }
 
-    var filteredDocs: [FileNode] {
-        guard !query.isEmpty else { return [] }
-        return docManager.fileTree.filter {
-            !$0.isDirectory && $0.name.localizedCaseInsensitiveContains(query)
+    private func flattenedFiles(_ nodes: [FileNode]) -> [FileNode] {
+        var result: [FileNode] = []
+        for node in nodes {
+            if node.isDirectory {
+                result.append(contentsOf: flattenedFiles(node.children))
+            } else {
+                result.append(node)
+            }
         }
+        return result
+    }
+
+    var filteredDocs: [FileNode] {
+        let all = flattenedFiles(docManager.fileTree)
+        guard !query.isEmpty else { return all }
+        return all.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
     var totalItems: Int { filteredDocs.count + filteredCommands.count }
