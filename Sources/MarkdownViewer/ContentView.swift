@@ -29,6 +29,7 @@ struct ContentView: View {
                                 scrollProgress: $scrollProgress,
                                 findState: findState
                             )
+                            .id(docManager.activeTabID)
 
                             OutlineRailView(
                                 headings: [],
