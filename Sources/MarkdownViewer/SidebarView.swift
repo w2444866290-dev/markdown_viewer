@@ -14,23 +14,18 @@ struct SidebarView: View {
                 // 44px spacer for traffic lights
                 Color.clear.frame(height: 44)
 
-                // Filter — spec: padding 2px 12px 8px
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11))
-                        .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                    TextField("筛选文档", text: $docManager.sideFilter)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12.5))
-                        .foregroundColor(DesignTokens.swiftUI.titleText)
-                }
-                .padding(.horizontal, 10)
-                .frame(height: 28)
-                .background(Color.black.opacity(0.04))
-                .cornerRadius(6)
-                .padding(.top, 2)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
+                // Filter — spec: plain input, no icon, padding 0 10px
+                TextField("筛选文档", text: $docManager.sideFilter)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12.5))
+                    .foregroundColor(DesignTokens.swiftUI.titleText)
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(Color.black.opacity(0.04))
+                    .cornerRadius(6)
+                    .padding(.top, 2)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
 
                 // File tree — spec: padding 4px 10px 12px, gap 1px
                 ScrollView {
@@ -161,7 +156,7 @@ private struct SidebarNodeRow: View {
                             .frame(width: 7, height: 7)
                     }
                 }
-                .padding(.leading, CGFloat(depth * 14 + 2))
+                .padding(.leading, CGFloat(10 + depth * 16))
                 .padding(.trailing, 8)
                 .frame(height: 28)
                 .background(
