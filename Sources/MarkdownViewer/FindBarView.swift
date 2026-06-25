@@ -3,9 +3,17 @@ import SwiftUI
 /// Find/replace bar — spec: position absolute top 10px right 18px, blur backdrop.
 struct FindBarView: View {
     @ObservedObject var state: FindState
-    @State private var hoveredBtn: String?
+    @State private var hoverChevron = false
+    @State private var hoverPrev = false
+    @State private var hoverNext = false
+    @State private var hoverClose = false
+    @State private var hoverReplace = false
+    @State private var hoverReplaceAll = false
 
     private var canNav: Bool { !state.isError && state.matchCount > 0 }
+
+    /// Spec: style-hover="background: rgba(0,0,0,0.05)" on panel buttons.
+    private static let hoverFill = Color.black.opacity(0.05)
 
     var body: some View {
         VStack(spacing: 6) {
@@ -14,17 +22,18 @@ struct FindBarView: View {
                 Button(action: { state.showReplace.toggle() }) {
                     Text(state.showReplace ? "▾" : "▸")
                         .font(.system(size: 9))
-                        .foregroundColor(state.showReplace
+                        .foregroundColor(state.showReplace || hoverChevron
                             ? DesignTokens.swiftUI.secondaryText
                             : DesignTokens.swiftUI.placeholderText)
                         .frame(width: 20, height: 28)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(state.showReplace ? Color.black.opacity(0.05) : .clear)
+                                .fill(state.showReplace || hoverChevron ? Self.hoverFill : .clear)
                         )
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .onHover { hoverChevron = $0 }
 
                 // Search field — spec: 240×28, bg rgba(0,0,0,0.045), radius 6
                 HStack(spacing: 8) {
@@ -80,7 +89,12 @@ struct FindBarView: View {
                             ? DesignTokens.swiftUI.secondaryText
                             : Color(red: 209/255, green: 209/255, blue: 214/255))
                         .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(canNav && hoverPrev ? Self.hoverFill : .clear)
+                        )
                         .allowsHitTesting(canNav)
+                        .onHover { hoverPrev = $0 }
                     Button("↓") { state.onNavigate?(1) }
                         .buttonStyle(.plain)
                         .font(.system(size: 12))
@@ -88,7 +102,12 @@ struct FindBarView: View {
                             ? DesignTokens.swiftUI.secondaryText
                             : Color(red: 209/255, green: 209/255, blue: 214/255))
                         .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(canNav && hoverNext ? Self.hoverFill : .clear)
+                        )
                         .allowsHitTesting(canNav)
+                        .onHover { hoverNext = $0 }
                 }
 
                 // Separator
@@ -100,11 +119,18 @@ struct FindBarView: View {
                 Button(action: { state.isOpen = false }) {
                     Text("×")
                         .font(.system(size: 14))
+                        .foregroundColor(hoverClose
+                            ? DesignTokens.swiftUI.titleText
+                            : DesignTokens.swiftUI.placeholderText)
                         .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(hoverClose ? Self.hoverFill : .clear)
+                        )
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                .onHover { hoverClose = $0 }
             }
 
             // Replace row
@@ -128,16 +154,18 @@ struct FindBarView: View {
                             .foregroundColor(Color(red: 58/255, green: 58/255, blue: 60/255))
                             .padding(.horizontal, 12)
                             .frame(height: 28)
-                            .background(Color.black.opacity(0.05))
+                            .background(Color.black.opacity(hoverReplace ? 0.08 : 0.05))
                             .cornerRadius(6)
+                            .onHover { hoverReplace = $0 }
                         Button("全部替换") { state.onReplaceAll?() }
                             .buttonStyle(.plain)
                             .font(.system(size: 12))
                             .foregroundColor(Color(red: 58/255, green: 58/255, blue: 60/255))
                             .padding(.horizontal, 12)
                             .frame(height: 28)
-                            .background(Color.black.opacity(0.05))
+                            .background(Color.black.opacity(hoverReplaceAll ? 0.08 : 0.05))
                             .cornerRadius(6)
+                            .onHover { hoverReplaceAll = $0 }
                     }
                 }
             }
@@ -151,7 +179,7 @@ struct FindBarView: View {
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(Color.black.opacity(0.05), lineWidth: 1)
                 )
-                .shadow(color: .black.opacity(0.14), radius: 14, x: 0, y: 4)
+                .shadow(color: .black.opacity(0.14), radius: 14, x: 0, y: 8)
         )
         .padding(.top, 10)
         .padding(.trailing, 18)

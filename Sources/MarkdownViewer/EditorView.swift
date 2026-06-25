@@ -160,7 +160,7 @@ struct EditorView: NSViewRepresentable {
                     wholeWord: fs.wholeWord,
                     useRegex: fs.useRegex
                 ))
-                fs.isError = false
+                fs.isError = self?.findController.lastPatternInvalid ?? false
                 fs.matchCount = self?.findController.matches.count ?? 0
                 fs.currentIndex = 0
             }

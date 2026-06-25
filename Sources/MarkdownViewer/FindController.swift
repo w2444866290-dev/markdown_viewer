@@ -7,6 +7,9 @@ final class FindController {
     var matches: [NSTextCheckingResult] = []
     var currentIndex = 0
 
+    /// True when the last search used regex mode and the pattern failed to compile.
+    private(set) var lastPatternInvalid = false
+
     struct Options {
         var query = ""
         var caseSensitive = false
@@ -20,6 +23,7 @@ final class FindController {
         clearHighlights()
         matches = []
         currentIndex = 0
+        lastPatternInvalid = false
 
         guard !opts.query.isEmpty, let tv = textView else { return }
 
@@ -30,7 +34,11 @@ final class FindController {
         }
         var regOpts: NSRegularExpression.Options = []
         if !opts.caseSensitive { regOpts.insert(.caseInsensitive) }
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: regOpts) else { return }
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: regOpts) else {
+            // Only an illegal user-supplied regex is reportable; escaped patterns never fail.
+            if opts.useRegex { lastPatternInvalid = true }
+            return
+        }
 
         let ns = tv.string as NSString
         let full = NSRange(location: 0, length: ns.length)
