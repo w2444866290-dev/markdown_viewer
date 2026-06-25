@@ -94,6 +94,7 @@ struct ContentView: View {
                 docManager.newDocument(text: sampleText)
             }
         }
+        .mvTooltipHost()
     }
 
     // MARK: - Drag overlay

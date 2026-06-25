@@ -8,12 +8,51 @@ import SwiftUI
 /// - Quick fly-overs do not trigger (delay task is cancelled).
 ///
 /// Bubble style (spec L266): background `rgba(28,28,30,0.92)` (#1C1C1E @ 0.92),
-/// white text, radius 6, padding `4px 9px`, font-size 11.5, line-height 1.3,
-/// single line (no wrap), shadow `0 6px 20px rgba(0,0,0,0.22)`, 0.12s fade-in.
+/// white text, radius 6, padding `4px 9px`, font-size 11.5, single line (no wrap),
+/// shadow `0 6px 20px rgba(0,0,0,0.22)`, 0.12s fade-in.
 ///
-/// Position: 8px below the target, horizontally centred. The header buttons that
-/// use this never sit near the window bottom, so we always anchor **below**
-/// (see "待确认" note in the deliverable).
+/// Rendering model — **why anchorPreference (spec L264 `position: fixed; z-index: 90`):**
+/// The bubble must paint on the *global top layer*, above everything. The content
+/// area is an `NSViewRepresentable` (NSScrollView+NSTextView). AppKit host views
+/// draw *over* SwiftUI's local `.overlay` layers, so a per-button local overlay
+/// that extends down into the body gets covered by the NSTextView. The fix mirrors
+/// how the toast works: it lives on a **root-level** `.overlay` (`.mvTooltipHost()`),
+/// which composites above the NSViewRepresentable and is never occluded.
+///
+/// So `.mvTip(_:)` no longer paints the bubble itself — when the dwell elapses it
+/// publishes `(text, Anchor<CGRect>)` up the tree via a `PreferenceKey`; the root
+/// host (`.mvTooltipHost()`) reads it and draws the single global bubble.
+///
+/// Position: 8px below the target, horizontally centred (`rect.midX, rect.maxY + 8`).
+/// The 5 targets (4 header buttons + sidebar ⌘K) never sit near the window bottom,
+/// so we always anchor **below** (see "待确认" note in the deliverable).
+
+// MARK: - Preference plumbing
+
+/// What `.mvTip(_:)` publishes when its dwell timer fires: the tooltip text and an
+/// anchor on the target element. `nil` means "no tooltip should be shown right now".
+struct MVTipPayload: Equatable {
+    let text: String
+    let anchor: Anchor<CGRect>
+
+    static func == (lhs: MVTipPayload, rhs: MVTipPayload) -> Bool {
+        // Anchor<CGRect> is not Equatable; identity of the active tip is the text.
+        lhs.text == rhs.text
+    }
+}
+
+/// Carries the currently-active tooltip (if any) from a `.mvTip` target up to the
+/// root `.mvTooltipHost()`. Last writer wins: only one target is hovered at a time.
+struct MVTipPreferenceKey: PreferenceKey {
+    static var defaultValue: MVTipPayload? = nil
+
+    static func reduce(value: inout MVTipPayload?, nextValue: () -> MVTipPayload?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
+// MARK: - Per-target modifier
+
 private struct MVTooltipModifier: ViewModifier {
     let text: String
 
@@ -22,7 +61,6 @@ private struct MVTooltipModifier: ViewModifier {
     @State private var pendingTask: DispatchWorkItem?
 
     private static let dwell: TimeInterval = 0.480
-    private static let gap: CGFloat = 8
 
     func body(content: Content) -> some View {
         content
@@ -34,44 +72,19 @@ private struct MVTooltipModifier: ViewModifier {
                 }
             }
             .onDisappear { cancelAndHide() }
-            .overlay(alignment: .bottom) {
-                if isShown {
-                    bubble
-                        // Push the bubble below the target with an 8px gap.
-                        .alignmentGuide(.bottom) { _ in 0 }
-                        .fixedSize()
-                        .offset(y: bubbleHeightHint + Self.gap)
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
-                }
+            // Report (text, anchor) only while shown; otherwise report nil so the
+            // root host clears the bubble.
+            .anchorPreference(key: MVTipPreferenceKey.self, value: .bounds) { anchor in
+                isShown ? MVTipPayload(text: text, anchor: anchor) : nil
             }
     }
-
-    private var bubble: some View {
-        Text(text)
-            .font(.system(size: 11.5))
-            .lineLimit(1)
-            .foregroundColor(.white)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(hex: 0x1C1C1E, opacity: 0.92))
-            )
-            .shadow(color: .black.opacity(0.22), radius: 10, y: 6)
-            .fixedSize()
-    }
-
-    /// Approximate bubble height so the `.offset` clears the target edge.
-    /// (font 11.5 * line-height 1.3 ≈ 15 + vertical padding 8 ≈ 23.)
-    private var bubbleHeightHint: CGFloat { 23 }
 
     private func scheduleShow() {
         isHovered = true
         pendingTask?.cancel()
         let task = DispatchWorkItem {
             guard isHovered else { return }
-            withAnimation(.easeOut(duration: 0.12)) { isShown = true }
+            isShown = true
         }
         pendingTask = task
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.dwell, execute: task)
@@ -85,10 +98,77 @@ private struct MVTooltipModifier: ViewModifier {
     }
 }
 
+// MARK: - Root host (single global bubble)
+
+private struct MVTooltipHostModifier: ViewModifier {
+    /// 8px gap below the target (spec).
+    private static let gap: CGFloat = 8
+
+    /// Measured bubble height, so `.position` (which centres a view) can be turned
+    /// into a top-edge anchor (`y = target.maxY + gap + height/2`). Measured once;
+    /// single-line 11.5pt text is a stable size.
+    @State private var bubbleHeight: CGFloat = 23
+
+    func body(content: Content) -> some View {
+        content.overlayPreferenceValue(MVTipPreferenceKey.self) { payload in
+            GeometryReader { proxy in
+                if let payload {
+                    let rect = proxy[payload.anchor]
+                    // `.position` places the bubble's CENTRE. We want its TOP edge
+                    // 8px below the target, horizontally centred on the target →
+                    // centre x = rect.midX, centre y = rect.maxY + gap + height/2.
+                    bubble(payload.text)
+                        .fixedSize()
+                        .position(
+                            x: rect.midX,
+                            y: rect.maxY + Self.gap + bubbleHeight / 2
+                        )
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            // Drive the 0.12s fade-in/out (spec) when the active tip appears or
+            // clears. Keyed on the payload so `.transition(.opacity)` animates.
+            .animation(.easeOut(duration: 0.12), value: payload)
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func bubble(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .lineLimit(1)
+            .foregroundColor(.white)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(hex: 0x1C1C1E, opacity: 0.92))
+            )
+            .shadow(color: .black.opacity(0.22), radius: 10, y: 6)
+            .fixedSize()
+            .background(
+                GeometryReader { g in
+                    Color.clear.onAppear { bubbleHeight = g.size.height }
+                }
+            )
+    }
+}
+
+// MARK: - Public API
+
 extension View {
     /// Attaches a custom dark hover tooltip that fades in after a 480ms dwell.
-    /// Spec-aligned replacement for the native `.help(_:)`.
+    /// Spec-aligned replacement for the native `.help(_:)`. Renders via the root
+    /// `.mvTooltipHost()` so the bubble paints above the NSTextView content area.
     func mvTip(_ text: String) -> some View {
         modifier(MVTooltipModifier(text: text))
+    }
+
+    /// Install **once** on the root view. Renders the single global tooltip bubble
+    /// (driven by `MVTipPreferenceKey`) above all content, including the
+    /// NSViewRepresentable editor.
+    func mvTooltipHost() -> some View {
+        modifier(MVTooltipHostModifier())
     }
 }
