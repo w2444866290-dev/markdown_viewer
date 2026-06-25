@@ -56,17 +56,20 @@ final class FindController {
         tv.didChangeText()
         restyle()
         redo()  // re-search after mutation
+        Task { @MainActor in Toaster.shared.flash("已替换 1 处") }
     }
 
     func replaceAll(with text: String, restyle: () -> Void) {
         guard !matches.isEmpty, let tv = textView, let storage = tv.textStorage else { return }
         let full = NSRange(location: 0, length: storage.length)
         guard tv.shouldChangeText(in: full, replacementString: nil) else { return }
+        let count = matches.count
         for m in matches.reversed() { storage.replaceCharacters(in: m.range, with: text) }
         tv.didChangeText()
         restyle()
         matches = []
         currentIndex = 0
+        Task { @MainActor in Toaster.shared.flash("已替换 " + String(count) + " 处") }
     }
 
     private func clearHighlights() {
