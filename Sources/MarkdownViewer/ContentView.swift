@@ -277,16 +277,11 @@ private struct EditorTabPill: View {
     @State private var closeHovered = false
 
     var isActive: Bool { tab.id == docManager.activeTabID }
+    var isConfirming: Bool { docManager.confirmingCloseTabID == tab.id }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Dirty dot (hidden when hovering, shows × instead)
-            if tab.isDirty && !isHovered {
-                Circle().fill(DesignTokens.swiftUI.accent)
-                    .frame(width: 7, height: 7)
-                    .padding(.trailing, 6)
-            }
-
+        // spec: [name][gap 6][16×16 trailing slot OR 确认关闭? capsule]
+        HStack(spacing: 6) {
             Text(tab.name)
                 .font(.system(size: 12.5))
                 .fontWeight(isActive ? .semibold : .regular)
@@ -294,24 +289,14 @@ private struct EditorTabPill: View {
                     ? DesignTokens.swiftUI.titleText
                     : DesignTokens.swiftUI.tertiaryText)
 
-            // Close button on hover — spec: 16×16, radius 6, color #aeaeb2, hover bg rgba(0,0,0,0.08) + color #1d1d1f
-            if isHovered {
-                Text("×")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(closeHovered ? DesignTokens.swiftUI.titleText : DesignTokens.swiftUI.placeholderText)
-                    .frame(width: 16, height: 16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(closeHovered ? Color.black.opacity(0.08) : Color.clear)
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture { docManager.closeTab(tab) }
-                    .onHover { closeHovered = $0 }
-                    .padding(.leading, 4)
+            if isConfirming {
+                confirmCapsule
+            } else {
+                trailingSlot
             }
         }
-        .padding(.horizontal, 7)
-        .padding(.leading, 5)  // spec: 0 7px 0 12px
+        .padding(.leading, 12)
+        .padding(.trailing, 7)  // spec: padding 0 7px 0 12px
         .frame(height: 28)
         .background(
             RoundedRectangle(cornerRadius: 6)
@@ -322,5 +307,53 @@ private struct EditorTabPill: View {
         .contentShape(Rectangle())
         .onTapGesture { docManager.activeTabID = tab.id }
         .onHover { isHovered = $0 }
+    }
+
+    // spec L105: red pill "确认关闭?" — height 18, padding 0 7px, radius 6,
+    // font 11/500, color #C7482E, bg rgba(199,72,46,0.10), line-height 1.
+    private var confirmCapsule: some View {
+        Text("确认关闭?")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundColor(DesignTokens.swiftUI.danger)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .frame(height: 18)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(DesignTokens.swiftUI.danger.opacity(0.10))
+            )
+            .contentShape(Rectangle())
+            .onTapGesture { docManager.requestClose(tab) }
+            .help("再点一次关闭，未保存的更改将丢弃")
+    }
+
+    // spec L108-114: constant 16×16 slot. Dirty (not hovering) → amber dot;
+    // hover → × with its own hover background. Slot always reserved → no jitter.
+    private var trailingSlot: some View {
+        ZStack {
+            if tab.isDirty && !isHovered {
+                // spec L110: amber dot 7×7 #E8A33D
+                Circle()
+                    .fill(DesignTokens.swiftUI.accent)
+                    .frame(width: 7, height: 7)
+            }
+            if isHovered {
+                // spec L112: × font 13 / color #aeaeb2; hover bg rgba(0,0,0,0.08) + color #1d1d1f
+                Text("×")
+                    .font(.system(size: 13))
+                    .foregroundColor(closeHovered
+                        ? DesignTokens.swiftUI.titleText
+                        : DesignTokens.swiftUI.placeholderText)
+                    .frame(width: 16, height: 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(closeHovered ? Color.black.opacity(0.08) : Color.clear)
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture { docManager.requestClose(tab) }
+                    .onHover { closeHovered = $0 }
+            }
+        }
+        .frame(width: 16, height: 16)  // always reserved → tab width never jitters
     }
 }

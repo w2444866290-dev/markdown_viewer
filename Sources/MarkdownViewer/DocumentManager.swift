@@ -19,6 +19,8 @@ final class DocumentManager: ObservableObject {
     @Published var tabs: [DocumentTab] = []
     @Published var activeTabID: UUID?
     @Published var lastClosedTab: DocumentTab?
+    /// Tab currently awaiting a confirm-close second click (dirty tabs only).
+    @Published var confirmingCloseTabID: UUID?
 
     // MARK: - Font
     @Published var fontIndex: Int = 1
@@ -80,11 +82,37 @@ final class DocumentManager: ObservableObject {
         activeTabID = tab.id
     }
 
-    func closeTab(_ tab: DocumentTab) {
+    /// Two-stage close. A dirty tab's first × shows the "确认关闭?" capsule and
+    /// arms a 2.6s reset; a second click within the window (or any click on a
+    /// clean tab) closes for real. Designed as the single close entry point so
+    /// ⌘W (future C5) can reuse it.
+    func requestClose(_ tab: DocumentTab) {
+        if tab.isDirty && confirmingCloseTabID != tab.id {
+            confirmingCloseTabID = tab.id
+            let armedID = tab.id
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
+                guard let self else { return }
+                if self.confirmingCloseTabID == armedID {
+                    self.confirmingCloseTabID = nil
+                }
+            }
+            return
+        }
+        doClose(tab)
+    }
+
+    func doClose(_ tab: DocumentTab) {
+        let idx = tabs.firstIndex(where: { $0.id == tab.id })
         lastClosedTab = tab
         tabs.removeAll { $0.id == tab.id }
+        if confirmingCloseTabID == tab.id { confirmingCloseTabID = nil }
         if activeTabID == tab.id {
-            activeTabID = tabs.last?.id
+            // Activate the tab that slid into the same slot, else the last one.
+            if let idx, !tabs.isEmpty {
+                activeTabID = tabs[min(idx, tabs.count - 1)].id
+            } else {
+                activeTabID = nil
+            }
         }
     }
 
