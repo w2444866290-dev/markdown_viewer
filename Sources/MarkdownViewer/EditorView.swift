@@ -85,6 +85,17 @@ struct EditorView: NSViewRepresentable {
         if tv.string != text {
             tv.string = text
             if let s = tv.textStorage, isMarkdown { LiveMarkdownStyler.apply(to: s) }
+            // Document opened/switched → rebuild outline + refresh cached metrics.
+            // Async to avoid mutating @Published state during a view update.
+            let newText = text
+            DispatchQueue.main.async {
+                context.coordinator.outlineController.rebuild()
+                let bridge = context.coordinator.parent.bridge
+                bridge.headings = context.coordinator.outlineController.headings
+                bridge.activeHeadingIndex = 0
+                bridge.charCount = newText.count
+                bridge.lineCount = newText.isEmpty ? 0 : newText.components(separatedBy: "\n").count
+            }
         }
     }
 
@@ -101,6 +112,9 @@ struct EditorView: NSViewRepresentable {
         let codeOverlay = CodeOverlayController()
 
         private var debounceWork: DispatchWorkItem?
+        /// Last scroll progress published to the bridge — used to throttle
+        /// per-frame publishes (only emit when the delta is perceptible).
+        private var lastPublishedProgress: Double = -1
 
         init(_ p: EditorView) {
             parent = p
@@ -165,10 +179,14 @@ struct EditorView: NSViewRepresentable {
                     guard let self else { return }
                     let progress = self.computeProgress()
                     let scrollY = self.scrollView?.contentView.bounds.origin.y ?? 0
+                    let text = self.parent.text
                     self.outlineController.rebuild()
                     self.parent.bridge.scrollProgress = progress
+                    self.lastPublishedProgress = progress
                     self.parent.bridge.headings = self.outlineController.headings
                     self.parent.bridge.activeHeadingIndex = self.outlineController.activeIndex(for: scrollY)
+                    self.parent.bridge.charCount = text.count
+                    self.parent.bridge.lineCount = text.isEmpty ? 0 : text.components(separatedBy: "\n").count
                 }
                 self.debounceWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
@@ -177,7 +195,12 @@ struct EditorView: NSViewRepresentable {
         }
 
         @objc func scrollDidChange() {
-            parent.bridge.scrollProgress = computeProgress()
+            let progress = computeProgress()
+            // Throttle: skip publishes smaller than ~0.4% to avoid per-frame
+            // ContentView re-renders on large documents.
+            guard abs(progress - lastPublishedProgress) >= 0.004 else { return }
+            lastPublishedProgress = progress
+            parent.bridge.scrollProgress = progress
         }
 
         // MARK: - Mouse bridging

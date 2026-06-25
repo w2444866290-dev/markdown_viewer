@@ -142,6 +142,7 @@ struct FindBarView: View {
                 }
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
         .padding(6)
         .background(
             RoundedRectangle(cornerRadius: 10)

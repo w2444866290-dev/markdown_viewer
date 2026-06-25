@@ -5,6 +5,10 @@ final class EditorBridge: ObservableObject {
     @Published var headings: [OutlineController.Heading] = []
     @Published var activeHeadingIndex: Int = 0
     @Published var scrollProgress: Double = 0
+    /// Cached document metrics — recomputed only on text change (not per scroll
+    /// frame) so the status bar never does O(n) work while scrolling.
+    @Published var charCount: Int = 0
+    @Published var lineCount: Int = 0
     /// URL under the mouse cursor (browser-convention bottom-left preview).
     /// Empty string = nothing hovered.
     @Published var hoveredURL: String = ""
