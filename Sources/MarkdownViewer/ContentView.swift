@@ -6,9 +6,13 @@ struct ContentView: View {
     @ObservedObject var findState: FindState
     @ObservedObject private var toaster = Toaster.shared
     @StateObject private var bridge = EditorBridge()
+    // Held via @State (NOT @StateObject/@ObservedObject) on purpose: @State keeps
+    // a stable reference WITHOUT subscribing to objectWillChange, so per-frame
+    // scroll updates to scrollModel.value never re-render ContentView. Only the
+    // isolated EditorStatusBar observes it.
+    @State private var scrollModel = ScrollProgressModel()
     @State private var isDragging = false
     @State private var hasInitialized = false
-    @State private var statusFaded = false
 
     private var tabPadLeft: CGFloat {
         docManager.sidebarOpen ? 12 : 84
@@ -34,7 +38,8 @@ struct ContentView: View {
                                 text: docManager.textBinding,
                                 fontIndex: $docManager.fontIndex,
                                 findState: findState,
-                                bridge: bridge
+                                bridge: bridge,
+                                scrollModel: scrollModel
                             )
                             .id(docManager.activeTabID)
 
@@ -50,7 +55,9 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(DesignTokens.swiftUI.paper)
-                .overlay(alignment: .bottomTrailing) { statusBar }
+                .overlay(alignment: .bottomTrailing) {
+                    EditorStatusBar(scrollModel: scrollModel, bridge: bridge)
+                }
                 .overlay(alignment: .bottomLeading) {
                     if !bridge.hoveredURL.isEmpty { hoverURLPreview }
                 }
@@ -131,26 +138,6 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Status bar — spec: bottom 14px, right 20px, fade on scroll
-
-    private var statusBar: some View {
-        Text("\(statusWordCount) 字 · \(bridge.lineCount) 行 · \(Int(bridge.scrollProgress * 100))%")
-            .font(.system(size: 11.5, design: .monospaced))
-            .foregroundColor(DesignTokens.swiftUI.statusText)
-            .opacity(statusFaded ? 0 : 1)
-            .animation(.easeInOut(duration: 0.3), value: statusFaded)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 14)
-            .onReceive(
-                bridge.$scrollProgress.debounce(for: .seconds(0.8), scheduler: DispatchQueue.main)
-            ) { _ in
-                statusFaded = false
-            }
-            .onReceive(bridge.$scrollProgress) { _ in
-                statusFaded = true
-            }
-    }
-
     // MARK: - Link URL preview — spec L213: bottom 14, left 20, 11.5px,
     // #767676, single line ellipsis, max-width 42%, no hit testing.
 
@@ -167,19 +154,6 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
         .allowsHitTesting(false)
-    }
-
-    // statusBar helper — thousands-separated char count from cached bridge.charCount.
-    // Shared formatter avoids a fresh allocation on every status-bar render.
-    private static let statusNumberFormatter: NumberFormatter = {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        return f
-    }()
-
-    private var statusWordCount: String {
-        Self.statusNumberFormatter.string(from: NSNumber(value: bridge.charCount))
-            ?? "\(bridge.charCount)"
     }
 
     // MARK: - Drop handling
@@ -226,6 +200,50 @@ struct ContentView: View {
 
     > 设计原则：读起来像一页纸，而不是一个应用。
     """
+}
+
+// MARK: - Status bar — isolated so scroll only re-renders THIS view
+//
+// spec: bottom 14px, right 20px, "{千分位字数} 字 · {行数} 行 · {pct}%",
+// font 11.5 monospaced, statusText color, fade out 0.8s after scrolling stops.
+//
+// Observes ScrollProgressModel (the per-frame scroll sink) and EditorBridge
+// (char/line counts, changed only on edit). Because ContentView holds the model
+// via @State and does NOT observe it, scrolling re-evaluates only this view.
+private struct EditorStatusBar: View {
+    @ObservedObject var scrollModel: ScrollProgressModel
+    @ObservedObject var bridge: EditorBridge
+    @State private var faded = false
+
+    // Shared formatter avoids a fresh allocation on every render.
+    private static let numberFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f
+    }()
+
+    private var wordCount: String {
+        Self.numberFormatter.string(from: NSNumber(value: bridge.charCount))
+            ?? "\(bridge.charCount)"
+    }
+
+    var body: some View {
+        Text("\(wordCount) 字 · \(bridge.lineCount) 行 · \(Int(scrollModel.value * 100))%")
+            .font(.system(size: 11.5, design: .monospaced))
+            .foregroundColor(DesignTokens.swiftUI.statusText)
+            .opacity(faded ? 0 : 1)
+            .animation(.easeInOut(duration: 0.3), value: faded)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 14)
+            .onReceive(
+                scrollModel.$value.debounce(for: .seconds(0.8), scheduler: DispatchQueue.main)
+            ) { _ in
+                faded = false
+            }
+            .onReceive(scrollModel.$value) { _ in
+                faded = true
+            }
+    }
 }
 
 // MARK: - Editor header (44px): sidebar toggle + tabs + actions

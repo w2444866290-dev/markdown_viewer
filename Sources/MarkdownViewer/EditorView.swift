@@ -7,6 +7,9 @@ struct EditorView: NSViewRepresentable {
     var isMarkdown: Bool = true
     var findState: FindState?
     @ObservedObject var bridge: EditorBridge
+    /// Isolated scroll-progress sink. NOT observed by ContentView (held there via
+    /// @State), so writing it on every scroll frame does not re-render the tree.
+    var scrollModel: ScrollProgressModel
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -85,6 +88,9 @@ struct EditorView: NSViewRepresentable {
         if tv.string != text {
             tv.string = text
             if let s = tv.textStorage, isMarkdown { LiveMarkdownStyler.apply(to: s) }
+            // Text changed → refresh the per-version mouse-hover caches so
+            // mouseMoved stays cheap (no full-document scan per move).
+            context.coordinator.refreshTextCaches()
             // Document opened/switched → rebuild outline + refresh cached metrics.
             // Async to avoid mutating @Published state during a view update.
             let newText = text
@@ -112,9 +118,29 @@ struct EditorView: NSViewRepresentable {
         let codeOverlay = CodeOverlayController()
 
         private var debounceWork: DispatchWorkItem?
-        /// Last scroll progress published to the bridge — used to throttle
+        /// Last scroll progress published to the model — used to throttle
         /// per-frame publishes (only emit when the delta is perceptible).
         private var lastPublishedProgress: Double = -1
+
+        /// Per-text-version caches for the mouse-hover hot path. Recomputed only
+        /// when the document text changes (see `refreshTextCaches`), so each
+        /// mouseMoved does a cheap lookup instead of an O(n) parse/regex scan.
+        private var cachedFencedBlocks: [LiveMarkdownStyler.FencedCodeBlock] = []
+        private var cachedLinkRanges: [(range: NSRange, url: String)] = []
+
+        /// Recompute the hover caches from the current text-view contents. Call on
+        /// any text change (debounce block + the updateNSView text branch).
+        func refreshTextCaches() {
+            guard let ns = textView?.string as NSString? else {
+                cachedFencedBlocks = []
+                cachedLinkRanges = []
+                codeOverlay.blocks = []
+                return
+            }
+            cachedFencedBlocks = LiveMarkdownStyler.fencedCodeBlocks(in: ns)
+            cachedLinkRanges = LiveMarkdownStyler.linkRanges(in: ns)
+            codeOverlay.blocks = cachedFencedBlocks
+        }
 
         init(_ p: EditorView) {
             parent = p
@@ -177,12 +203,11 @@ struct EditorView: NSViewRepresentable {
                 self.debounceWork?.cancel()
                 let work = DispatchWorkItem { [weak self] in
                     guard let self else { return }
-                    let progress = self.computeProgress()
                     let scrollY = self.scrollView?.contentView.bounds.origin.y ?? 0
                     let text = self.parent.text
                     self.outlineController.rebuild()
-                    self.parent.bridge.scrollProgress = progress
-                    self.lastPublishedProgress = progress
+                    // Text changed → refresh hover caches (cheap lookups stay valid).
+                    self.refreshTextCaches()
                     self.parent.bridge.headings = self.outlineController.headings
                     self.parent.bridge.activeHeadingIndex = self.outlineController.activeIndex(for: scrollY)
                     self.parent.bridge.charCount = text.count
@@ -196,11 +221,12 @@ struct EditorView: NSViewRepresentable {
 
         @objc func scrollDidChange() {
             let progress = computeProgress()
-            // Throttle: skip publishes smaller than ~0.4% to avoid per-frame
-            // ContentView re-renders on large documents.
+            // Throttle: skip publishes smaller than ~0.4%. Writes the isolated
+            // scrollModel — only EditorStatusBar observes it, so the rest of the
+            // ContentView tree never re-renders while scrolling.
             guard abs(progress - lastPublishedProgress) >= 0.004 else { return }
             lastPublishedProgress = progress
-            parent.bridge.scrollProgress = progress
+            parent.scrollModel.value = progress
         }
 
         // MARK: - Mouse bridging
@@ -246,7 +272,13 @@ struct EditorView: NSViewRepresentable {
 
             let charIndex = lm.characterIndexForGlyph(at: glyphIndex)
             guard charIndex < ns.length else { return nil }
-            return LiveMarkdownStyler.linkDestination(in: ns, coveringIndex: charIndex)
+            // Cheap lookup over the per-version cache — no full-document regex on
+            // mouseMoved. Same hit result as scanning linkRegex live (cache built
+            // from that exact regex + image-skip logic in refreshTextCaches).
+            for link in cachedLinkRanges where NSLocationInRange(charIndex, link.range) {
+                return link.url
+            }
+            return nil
         }
 
         func computeProgress() -> Double {
