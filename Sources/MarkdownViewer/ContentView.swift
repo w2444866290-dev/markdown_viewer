@@ -119,6 +119,11 @@ struct ContentView: View {
                 .padding(.vertical, 10)
                 .background(DesignTokens.swiftUI.paper)
                 .cornerRadius(10)
+                // spec L221: 0 0 0 1px rgba(0,0,0,0.05) hairline border hugging the radius
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                )
                 .shadow(color: .black.opacity(0.14), radius: 14, y: 8)
         }
         .padding(10)
@@ -255,21 +260,14 @@ private struct EditorHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Sidebar toggle — spec: 26×26, radius 6, color #aeaeb2, hover bg rgba(0,0,0,0.05)
-            Button(action: { docManager.sidebarOpen.toggle() }) {
+            // Sidebar toggle — spec: 26×26, radius 6, color #aeaeb2, hover bg rgba(0,0,0,0.05) + #6e6e73
+            HeaderIconButton(action: { docManager.sidebarOpen.toggle() },
+                             frame: CGSize(width: 26, height: 26),
+                             tip: "显示 / 隐藏侧栏") { color in
                 CIcon { CustomIcons.sidebarToggle }
                     .frame(width: 16, height: 13)
-                    .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                    .frame(width: 26, height: 26)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.black.opacity(0.05))
-                            .opacity(0)
-                    )
-                    .contentShape(Rectangle())
+                    .foregroundColor(color)
             }
-            .buttonStyle(HeaderButtonStyle())
-            .mvTip("显示 / 隐藏侧栏")
 
             // Tabs area
             ScrollView(.horizontal, showsIndicators: false) {
@@ -277,41 +275,35 @@ private struct EditorHeader: View {
                     ForEach(docManager.tabs) { tab in
                         EditorTabPill(tab: tab)
                     }
-                    // + button — spec: 26×26, radius 6, font-size 16, hover bg rgba(0,0,0,0.05)
-                    Button(action: { docManager.newDocument() }) {
+                    // + button — spec: 26×26, radius 6, font-size 16, hover bg rgba(0,0,0,0.05) + #6e6e73
+                    HeaderIconButton(action: { docManager.newDocument() },
+                                     frame: CGSize(width: 26, height: 26),
+                                     tip: "新建文档 · ⌘N") { color in
                         Text("＋")
                             .font(.system(size: 16))
-                            .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                            .frame(width: 26, height: 26)
-                            .contentShape(Rectangle())
+                            .foregroundColor(color)
                     }
-                    .buttonStyle(HeaderButtonStyle())
-                    .mvTip("新建文档 · ⌘N")
                 }
                 .padding(.horizontal, 8)
             }
 
-            // Find + Open buttons — spec: gap 2px
+            // Find + Open buttons — spec: gap 2px, 28×26, hover bg rgba(0,0,0,0.05) + #6e6e73
             HStack(spacing: 2) {
-                Button(action: { findState.toggleOpen() }) {
+                HeaderIconButton(action: { findState.toggleOpen() },
+                                 frame: CGSize(width: 28, height: 26),
+                                 tip: "查找 / 替换 · ⌘F") { color in
                     CIcon { CustomIcons.find }
                         .frame(width: 14, height: 14)
-                        .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                        .frame(width: 28, height: 26)
-                        .contentShape(Rectangle())
+                        .foregroundColor(color)
                 }
-                .buttonStyle(HeaderButtonStyle())
-                .mvTip("查找 / 替换 · ⌘F")
 
-                Button(action: { docManager.openDocument() }) {
+                HeaderIconButton(action: { docManager.openDocument() },
+                                 frame: CGSize(width: 28, height: 26),
+                                 tip: "打开 · ⌘O") { color in
                     CIcon { CustomIcons.openFolder }
                         .frame(width: 15, height: 14)
-                        .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                        .frame(width: 28, height: 26)
-                        .contentShape(Rectangle())
+                        .foregroundColor(color)
                 }
-                .buttonStyle(HeaderButtonStyle())
-                .mvTip("打开 · ⌘O")
             }
         }
         .padding(.trailing, 12)
@@ -323,12 +315,40 @@ private struct EditorHeader: View {
 private struct HeaderButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .overlay(
+            .background(
                 RoundedRectangle(cornerRadius: 6)
                     .fill(configuration.isPressed
                         ? Color.black.opacity(0.08)
                         : Color.clear)
             )
+    }
+}
+
+// spec L96/117/121/124: top-bar icon buttons hover → bg rgba(0,0,0,0.05) + icon
+// color #6e6e73 (secondaryText). Static color #aeaeb2 (placeholderText). The icon
+// foreground is set inside the label, so hover color must be driven per-button here
+// (an outer .foregroundColor in the ButtonStyle can't override the inner one).
+private struct HeaderIconButton<Label: View>: View {
+    let action: () -> Void
+    let frame: CGSize
+    let tip: String
+    @ViewBuilder let label: (Color) -> Label
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            label(hover ? DesignTokens.swiftUI.secondaryText
+                        : DesignTokens.swiftUI.placeholderText)
+                .frame(width: frame.width, height: frame.height)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(hover ? Color.black.opacity(0.05) : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HeaderButtonStyle())
+        .mvTip(tip)
+        .onHover { hover = $0 }
     }
 }
 
@@ -402,7 +422,7 @@ private struct EditorTabPill: View {
                     .frame(width: 7, height: 7)
             }
             if isHovered {
-                // spec L112: × font 13 / color #aeaeb2; hover bg rgba(0,0,0,0.08) + color #1d1d1f
+                // spec L112: × font-size 13, no weight; color #aeaeb2; hover bg rgba(0,0,0,0.08) + color #1d1d1f
                 Text("×")
                     .font(.system(size: 13))
                     .foregroundColor(closeHovered
