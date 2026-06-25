@@ -7,11 +7,25 @@ struct CommandPaletteView: View {
     @State private var hoveredIndex: Int?
     @State private var eventMonitor: Any?
 
-    private let commands: [(String, String)] = [
+    private let baseCommands: [(String, String)] = [
         ("新建文档", "⌘N"), ("保存", "⌘S"), ("查找 / 替换", "⌘F"),
-        ("打开…", "⌘O"), ("放大字号", "⌘+"), ("缩小字号", "⌘-"),
-        ("重置字号", "⌘0"), ("显示 / 隐藏侧栏", "")
+        ("打开…", "⌘O"), ("放大字号", "⌘ +"), ("缩小字号", "⌘ -"),
+        ("重置字号", "⌘ 0"), ("显示 / 隐藏侧栏", "")
     ]
+
+    // Reopen-last-closed command appended when a tab was recently closed.
+    private var reopenCommandLabel: String? {
+        guard let name = docManager.lastClosedTab?.name else { return nil }
+        return "恢复刚关闭的标签 · \(name)"
+    }
+
+    private var commands: [(String, String)] {
+        var cmds = baseCommands
+        if let label = reopenCommandLabel {
+            cmds.append((label, "⌘⇧T"))
+        }
+        return cmds
+    }
 
     var filteredCommands: [(String, String)] {
         guard !query.isEmpty else { return commands }
@@ -70,6 +84,7 @@ struct CommandPaletteView: View {
                                         title: doc.name,
                                         subtitle: nil,
                                         index: idx,
+                                        isActiveDoc: doc.url == activeDocURL,
                                         action: {
                                             docManager.openFileNode(doc)
                                             docManager.paletteOpen = false
@@ -106,7 +121,7 @@ struct CommandPaletteView: View {
                 .frame(width: 460)
                 .background(DesignTokens.swiftUI.paper)
                 .cornerRadius(14)
-                .shadow(color: .black.opacity(0.22), radius: 30, x: 0, y: 12)
+                .shadow(color: .black.opacity(0.22), radius: 30, x: 0, y: 24)
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
                         .stroke(DesignTokens.swiftUI.ring, lineWidth: 1)
@@ -120,6 +135,10 @@ struct CommandPaletteView: View {
 
     private func execute(_ name: String) {
         docManager.paletteOpen = false
+        if name.hasPrefix("恢复刚关闭的标签") {
+            docManager.reopenClosed()
+            return
+        }
         switch name {
         case "新建文档":     docManager.newDocument()
         case "保存":         docManager.saveCurrent()
@@ -177,7 +196,12 @@ struct CommandPaletteView: View {
             .padding(.top, topPadding ? 10 : 6)
     }
 
-    private func paletteRow(title: String, subtitle: String?, index: Int, action: @escaping () -> Void) -> some View {
+    // URL of the currently active document tab (nil if none).
+    private var activeDocURL: URL? {
+        docManager.tabs.first { $0.id == docManager.activeTabID }?.url
+    }
+
+    private func paletteRow(title: String, subtitle: String?, index: Int, isActiveDoc: Bool = false, action: @escaping () -> Void) -> some View {
         let isSelected = index == selectedIndex
         let isHovered = index == hoveredIndex
 
@@ -192,6 +216,11 @@ struct CommandPaletteView: View {
                     .font(.system(size: 13.5))
                     .foregroundColor(DesignTokens.swiftUI.titleText)
                 Spacer()
+                if subtitle == nil, isActiveDoc {
+                    Text("当前")
+                        .font(.system(size: 10))
+                        .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                }
                 if let sub = subtitle, !sub.isEmpty {
                     Text(sub)
                         .font(.system(size: 11, design: .monospaced))
