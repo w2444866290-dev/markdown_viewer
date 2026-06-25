@@ -36,8 +36,8 @@ struct OutlineRailView: View {
                 .padding(.vertical, 30)
                 .offset(y: geo.size.height * 0.46 - geo.size.height / 2)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .frame(width: hovered ? 250 : 84)
+            .frame(width: hovered ? 250 : 84, height: geo.size.height, alignment: .trailing)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             .contentShape(Rectangle())
             .onHover { h in
                 withAnimation(.easeOut(duration: 0.24)) { hovered = h }
