@@ -236,7 +236,8 @@ private struct EditorTabPill: View {
                     .padding(.leading, 4)
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 7)
+        .padding(.leading, 5)  // spec: 0 7px 0 12px
         .frame(height: 28)
         .background(
             RoundedRectangle(cornerRadius: 6)

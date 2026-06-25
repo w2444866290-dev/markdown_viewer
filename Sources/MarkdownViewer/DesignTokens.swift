@@ -75,6 +75,8 @@ enum DesignTokens {
     static let paperWidth: CGFloat = 540
     static let tabBarHeight: CGFloat = 44
     static let bodyFontSizes: [CGFloat] = [14, 15.5, 17]
+    static let editorTopInset: CGFloat = 44
+    static let editorBottomPadding: CGFloat = 200  // ~33vh on 760px window
 
     // MARK: - Color factory
 

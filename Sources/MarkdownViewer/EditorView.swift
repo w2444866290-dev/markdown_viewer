@@ -37,7 +37,7 @@ struct EditorView: NSViewRepresentable {
             c.lineFragmentPadding = 0
             c.containerSize = NSSize(width: DesignTokens.paperWidth, height: .greatestFiniteMagnitude)
         }
-        tv.textContainerInset = NSSize(width: 70, height: 44)
+        tv.textContainerInset = NSSize(width: 70, height: DesignTokens.editorTopInset)
 
         // Scroll syncing
         sv.contentView.postsBoundsChangedNotifications = true
@@ -204,7 +204,7 @@ final class PaperTextView: NSTextView {
         textContainer?.widthTracksTextView = false
         textContainer?.containerSize = NSSize(width: pw, height: .greatestFiniteMagnitude)
         textContainer?.lineFragmentPadding = 0
-        textContainerInset = NSSize(width: max(70, (w - pw) / 2), height: 44)
+        textContainerInset = NSSize(width: max(70, (w - pw) / 2), height: DesignTokens.editorTopInset)
     }
     override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); layout() }
 }

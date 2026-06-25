@@ -1,32 +1,52 @@
 import SwiftUI
 
-/// Sidebar matching the spec: 44px spacer (title-bar area) → filter → file tree → ⌘K button.
-/// Background #F7F7F8, file rows with hover highlight.
+/// Sidebar: 44px spacer → filter → file tree → ⌘K button.
+/// Matches spec: #F7F7F8 bg, 28px rows, 1px gap.
 struct SidebarView: View {
     @EnvironmentObject var docManager: DocumentManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 44px spacer matching the traffic-lights / unified-header height
+            // 44px spacer for traffic lights
             Color.clear.frame(height: 44)
 
-            // Filter
+            // Header row: folder name + open folder button
+            HStack(spacing: 4) {
+                Text(docManager.directoryURL?.lastPathComponent ?? "文件")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(DesignTokens.swiftUI.secondaryText)
+                    .lineLimit(1)
+                Spacer()
+                Button(action: { docManager.openDirectory() }) {
+                    CIcon { CustomIcons.openFolder }
+                        .frame(width: 15, height: 14)
+                        .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                        .padding(6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("打开文件夹")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+
+            // Filter — spec: padding 2px 12px 8px
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11))
                     .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                TextField("筛选…", text: $docManager.sideFilter)
+                TextField("筛选文档", text: $docManager.sideFilter)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12.5))
             }
-            .padding(.horizontal, 12)
-            .frame(height: 26)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
             .background(Color.black.opacity(0.04))
             .cornerRadius(6)
-            .padding(.horizontal, 10)
-            .padding(.bottom, 4)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
 
-            // File tree
+            // File tree — spec: padding 4px 10px 12px, gap 1px
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(filteredNodes) { node in
@@ -35,9 +55,10 @@ struct SidebarView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
+                .padding(.bottom, 8)
             }
 
-            // ⌘K "全部命令" button
+            // ⌘K "全部命令" — spec: 38px, #9a9a9e, 11.5px
             Button(action: { docManager.paletteOpen = true }) {
                 HStack(spacing: 7) {
                     Text("⌘K")
@@ -49,7 +70,7 @@ struct SidebarView: View {
                     Text("全部命令")
                         .font(.system(size: 11.5))
                 }
-                .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                .foregroundColor(DesignTokens.swiftUI.disabledText) // #9a9a9e ≈ disabledText
                 .padding(.horizontal, 16)
                 .frame(height: 38)
                 .contentShape(Rectangle())
@@ -59,7 +80,6 @@ struct SidebarView: View {
         .background(DesignTokens.swiftUI.sidebar)
     }
 
-    /// If the user is filtering, show matching non-directory nodes. Otherwise show full tree.
     private var filteredNodes: [FileNode] {
         if docManager.sideFilter.isEmpty {
             return docManager.fileTree
@@ -70,6 +90,8 @@ struct SidebarView: View {
         }
     }
 }
+
+// MARK: - Sidebar node row
 
 private struct SidebarNodeRow: View {
     let node: FileNode
@@ -95,7 +117,7 @@ private struct SidebarNodeRow: View {
                     if node.isDirectory {
                         Text(isExpanded ? "▾" : "▸")
                             .font(.system(size: 9))
-                            .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                            .foregroundColor(DesignTokens.swiftUI.placeholderText.opacity(0.7))
                             .frame(width: 9)
                         CIcon { CustomIcons.sidebarFolder(size: NSSize(width: 13, height: 11)) }
                             .frame(width: 13, height: 11)
@@ -109,7 +131,7 @@ private struct SidebarNodeRow: View {
                         .lineLimit(1)
                     Spacer()
                 }
-                .padding(.leading, CGFloat(depth * 14 + 2))
+                .padding(.leading, CGFloat(depth * 14 + (node.isDirectory ? 2 : 2)))
                 .padding(.trailing, 8)
                 .frame(height: 28)
                 .contentShape(Rectangle())
