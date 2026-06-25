@@ -69,6 +69,7 @@ struct SidebarView: View {
                 .onHover { hovering in
                     // No built-in hover color change via modifier; handled by style
                 }
+                .mvTip("所有命令与文档 · ⌘K")
             }
             .background(DesignTokens.swiftUI.sidebar)
 
