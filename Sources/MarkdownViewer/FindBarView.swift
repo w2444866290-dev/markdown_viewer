@@ -120,6 +120,7 @@ struct FindBarView: View {
                         .background(DesignTokens.swiftUI.fieldFill)
                         .cornerRadius(6)
                         .onSubmit { state.onReplaceCurrent?() }
+                    Spacer()
                     HStack(spacing: 4) {
                         Button("替换") { state.onReplaceCurrent?() }
                             .buttonStyle(.plain)
