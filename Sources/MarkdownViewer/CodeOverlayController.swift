@@ -14,18 +14,31 @@ final class CodeOverlayController {
     func handleMouse(at tvPoint: NSPoint) {
         guard let tv = textView else { return }
         for block in blocks {
-            let glyphRange = tv.layoutManager!.glyphRange(forCharacterRange: block.bodyRange, actualCharacterRange: nil)
-            var rect = tv.layoutManager!.boundingRect(forGlyphRange: glyphRange, in: tv.textContainer!)
-            rect.origin.y += tv.textContainerInset.height
-            if rect.contains(tvPoint) {
-                show(for: block, in: tv)
+            let card = cardRect(for: block, in: tv)
+            // Hover region is the WHOLE card (full column width × block height),
+            // not just the code-text glyph box — otherwise the right-edge button
+            // is unreachable: moving toward it leaves the text box and hides it.
+            if card.contains(tvPoint) {
+                show(for: block, cardRect: card, in: tv)
                 return
             }
         }
         hide()
     }
 
-    private func show(for block: LiveMarkdownStyler.FencedCodeBlock, in tv: NSTextView) {
+    /// On-screen rect of a fenced block's card: full textContainer column width,
+    /// spanning the whole block (fence/lang line through body) + a little slack —
+    /// matches the painted #FAFAFA card and is the hover/hit region.
+    private func cardRect(for block: LiveMarkdownStyler.FencedCodeBlock, in tv: NSTextView) -> NSRect {
+        let lm = tv.layoutManager!, tc = tv.textContainer!
+        let glyphs = lm.glyphRange(forCharacterRange: block.containerRange, actualCharacterRange: nil)
+        var r = lm.boundingRect(forGlyphRange: glyphs, in: tc)
+        r.origin.y += tv.textContainerInset.height
+        let left = tv.textContainerInset.width
+        return NSRect(x: left, y: r.minY - 4, width: tc.size.width, height: r.height + 8)
+    }
+
+    private func show(for block: LiveMarkdownStyler.FencedCodeBlock, cardRect: NSRect, in tv: NSTextView) {
         bodyRange = block.bodyRange
         if button == nil {
             let btn = NSButton(title: "复制", target: self, action: #selector(copyCode))
@@ -40,16 +53,9 @@ final class CodeOverlayController {
             button = btn
         }
         guard let btn = button else { return }
-        let glyphRange = tv.layoutManager!.glyphRange(forCharacterRange: block.bodyRange, actualCharacterRange: nil)
-        var rect = tv.layoutManager!.boundingRect(forGlyphRange: glyphRange, in: tv.textContainer!)
-        rect.origin.y += tv.textContainerInset.height
-        // Pin the button to the card's top-right corner. The card spans the full
-        // textContainer column width (not the longest code line), so base x on the
-        // card's right edge instead of rect.maxX (the glyph bounding box).
-        let cardLeft = tv.textContainerInset.width
-        let cardRight = cardLeft + tv.textContainer!.size.width
+        // Top-right corner of the card (independent of code-line length).
         let btnWidth: CGFloat = 44
-        btn.frame = NSRect(x: cardRight - btnWidth - 14, y: rect.minY + 8, width: btnWidth, height: 20)
+        btn.frame = NSRect(x: cardRect.maxX - btnWidth - 14, y: cardRect.minY + 6, width: btnWidth, height: 20)
         btn.isHidden = false
         btn.animator().alphaValue = 1
     }
