@@ -134,7 +134,7 @@ struct ContentView: View {
     // MARK: - Status bar — spec: bottom 14px, right 20px, fade on scroll
 
     private var statusBar: some View {
-        Text("\(docManager.currentText.count) 字 · \(Int(bridge.scrollProgress * 100))%")
+        Text("\(statusWordCount) 字 · \(statusLineCount) 行 · \(Int(bridge.scrollProgress * 100))%")
             .font(.system(size: 11.5, design: .monospaced))
             .foregroundColor(DesignTokens.swiftUI.statusText)
             .opacity(statusFaded ? 0 : 1)
@@ -167,6 +167,20 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
         .allowsHitTesting(false)
+    }
+
+    // statusBar helpers only — word count with thousands separator, line count
+    private var statusWordCount: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: docManager.currentText.count))
+            ?? "\(docManager.currentText.count)"
+    }
+
+    private var statusLineCount: Int {
+        docManager.currentText.isEmpty
+            ? 0
+            : docManager.currentText.components(separatedBy: "\n").count
     }
 
     // MARK: - Drop handling
