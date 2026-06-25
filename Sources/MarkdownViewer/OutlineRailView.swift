@@ -36,8 +36,9 @@ struct OutlineRailView: View {
                 .padding(.vertical, 30)
                 .offset(y: geo.size.height * 0.46 - geo.size.height / 2)
             }
+            // Size the interactive rail to the narrow right strip (resting 84 /
+            // hovered 250) and attach hit-testing + hover to THAT strip only.
             .frame(width: hovered ? 250 : 84, height: geo.size.height, alignment: .trailing)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             .contentShape(Rectangle())
             .onHover { h in
                 withAnimation(.easeOut(duration: 0.24)) { hovered = h }
@@ -51,6 +52,9 @@ struct OutlineRailView: View {
                         .offset(x: -46, y: 0)
                 }
             }
+            // THEN pin that strip to the right edge. This positioning frame has no
+            // contentShape, so it never intercepts scroll/hover over the editor.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         }
     }
 
