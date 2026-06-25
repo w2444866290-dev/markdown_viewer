@@ -69,10 +69,10 @@ private struct TabPill: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button("关闭") { docManager.closeTab(tab) }
+            Button("关闭") { docManager.doClose(tab) }
             Button("关闭其他") {
                 for t in docManager.tabs where t.id != tab.id {
-                    docManager.closeTab(t)
+                    docManager.doClose(t)
                 }
             }
         }
