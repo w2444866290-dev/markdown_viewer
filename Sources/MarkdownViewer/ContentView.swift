@@ -48,6 +48,7 @@ struct ContentView: View {
         }
         .background(MovableByBackground())
         .background(DesignTokens.swiftUI.paper)
+        .ignoresSafeArea()
         .overlay {
             if docManager.paletteOpen {
                 CommandPaletteView()
