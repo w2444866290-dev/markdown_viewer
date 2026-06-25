@@ -106,7 +106,7 @@ struct OutlineRailView: View {
         HStack(spacing: 0) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.black.opacity(0.92))
+                    .fill(Color(hex: 0x1C1C1E, opacity: 0.92))
                 Text("本页目录 · 悬停展开")
                     .font(.system(size: 12))
                     .foregroundColor(.white)
@@ -114,8 +114,9 @@ struct OutlineRailView: View {
                     .padding(.vertical, 7)
             }
             .fixedSize()
+            .shadow(color: .black.opacity(0.22), radius: 14, y: 8)
             Triangle()
-                .fill(Color.black.opacity(0.92))
+                .fill(Color(hex: 0x1C1C1E, opacity: 0.92))
                 .frame(width: 6, height: 10)
         }
         .allowsHitTesting(false)

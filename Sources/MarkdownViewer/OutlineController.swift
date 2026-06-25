@@ -44,6 +44,20 @@ final class OutlineController {
         rect.origin.y += tv.textContainerInset.height
         let target = max(0, min(rect.minY - 40, max(0, tv.frame.height - sv.contentView.bounds.height)))
         sv.contentView.animator().setBoundsOrigin(NSPoint(x: 0, y: target))
+        washHeading(lineRange, in: tv, lm: lm)
+    }
+
+    /// Amber "wash" flash on the jumped-to heading line, mirroring the web
+    /// washHeading animation (bg rgba(232,163,61,0.30) → 0 over ~900ms).
+    /// Clears only this line's range so it won't disturb find highlights, which
+    /// use the same .backgroundColor temporary attribute on other ranges.
+    private func washHeading(_ lineRange: NSRange, in tv: NSTextView, lm: NSLayoutManager) {
+        let wash = NSColor(hex: 0xE8A33D, alpha: 0.30)
+        lm.addTemporaryAttribute(.backgroundColor, value: wash, forCharacterRange: lineRange)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak tv] in
+            guard let tv, let lm = tv.layoutManager else { return }
+            lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: lineRange)
+        }
     }
 
     func activeIndex(for scrollY: CGFloat) -> Int {

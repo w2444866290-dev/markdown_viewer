@@ -6,6 +6,7 @@ struct SidebarView: View {
     @EnvironmentObject var docManager: DocumentManager
     @State private var hoveredNodeID: UUID?
     @State private var resizeHover = false
+    @State private var paletteHover = false
     @GestureState private var dragOffset: CGFloat = 0
 
     var body: some View {
@@ -55,15 +56,15 @@ struct SidebarView: View {
                         Text("全部命令")
                             .font(.system(size: 11.5))
                     }
-                    .foregroundColor(DesignTokens.swiftUI.paletteKbd)
+                    .foregroundColor(paletteHover
+                        ? DesignTokens.swiftUI.secondaryText
+                        : DesignTokens.swiftUI.paletteKbd)
                     .padding(.horizontal, 16)
                     .frame(height: 38)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hovering in
-                    // No built-in hover color change via modifier; handled by style
-                }
+                .onHover { paletteHover = $0 }
                 .mvTip("所有命令与文档 · ⌘K")
             }
             .background(DesignTokens.swiftUI.sidebar)
