@@ -184,6 +184,46 @@ struct EditorView: NSViewRepresentable {
 
         func handleMouseAt(_ tvPoint: NSPoint) {
             codeOverlay.handleMouse(at: tvPoint)
+            updateHoveredURL(at: tvPoint)
+        }
+
+        /// Browser-convention link URL preview: map `tvPoint` (text-view
+        /// coordinates, same space codeOverlay uses) to a character index, then
+        /// ask the styler for the `[label](url)` covering it. Writes the URL (or
+        /// "") into the bridge, only on change to avoid churn. Any failure in the
+        /// coordinate math falls through to clearing the preview — never crashes.
+        private func updateHoveredURL(at tvPoint: NSPoint) {
+            let url = linkURL(at: tvPoint) ?? ""
+            if parent.bridge.hoveredURL != url {
+                parent.bridge.hoveredURL = url
+            }
+        }
+
+        private func linkURL(at tvPoint: NSPoint) -> String? {
+            guard let tv = textView,
+                  let lm = tv.layoutManager,
+                  let tc = tv.textContainer else { return nil }
+            let ns = tv.string as NSString
+            guard ns.length > 0 else { return nil }
+
+            // Reverse of codeOverlay's `rect.origin.y += textContainerInset.height`:
+            // strip the inset to land in text-container coordinates.
+            let containerPoint = NSPoint(
+                x: tvPoint.x - tv.textContainerInset.width,
+                y: tvPoint.y - tv.textContainerInset.height
+            )
+            // Reject points outside any glyph: glyphIndex(for:) clamps to the
+            // nearest glyph, so verify the point is actually inside that glyph's
+            // fragment rect before trusting the hit.
+            var partial: CGFloat = 0
+            let glyphIndex = lm.glyphIndex(for: containerPoint, in: tc, fractionOfDistanceThroughGlyph: &partial)
+            guard lm.numberOfGlyphs > 0 else { return nil }
+            let glyphRect = lm.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: tc)
+            guard glyphRect.contains(containerPoint) else { return nil }
+
+            let charIndex = lm.characterIndexForGlyph(at: glyphIndex)
+            guard charIndex < ns.length else { return nil }
+            return LiveMarkdownStyler.linkDestination(in: ns, coveringIndex: charIndex)
         }
 
         func computeProgress() -> Double {

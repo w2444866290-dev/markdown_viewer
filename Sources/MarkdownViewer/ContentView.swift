@@ -50,6 +50,9 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(DesignTokens.swiftUI.paper)
                 .overlay(alignment: .bottomTrailing) { statusBar }
+                .overlay(alignment: .bottomLeading) {
+                    if !bridge.hoveredURL.isEmpty { hoverURLPreview }
+                }
             }
         }
         .background(MovableByBackground())
@@ -137,6 +140,24 @@ struct ContentView: View {
             .onReceive(bridge.$scrollProgress) { _ in
                 statusFaded = true
             }
+    }
+
+    // MARK: - Link URL preview — spec L213: bottom 14, left 20, 11.5px,
+    // #767676, single line ellipsis, max-width 42%, no hit testing.
+
+    private var hoverURLPreview: some View {
+        GeometryReader { geo in
+            Text(bridge.hoveredURL)
+                .font(.system(size: 11.5))
+                .foregroundColor(DesignTokens.swiftUI.statusText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: geo.size.width * 0.42, alignment: .leading)
+                .padding(.leading, 20)
+                .padding(.bottom, 14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        }
+        .allowsHitTesting(false)
     }
 
     // MARK: - Drop handling
