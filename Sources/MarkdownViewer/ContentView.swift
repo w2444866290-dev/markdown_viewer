@@ -16,7 +16,6 @@ struct ContentView: View {
                     .frame(width: docManager.sidebarWidth)
             }
 
-            // Editor pane: tab bar (44px) on top of editor
             VStack(spacing: 0) {
                 EditorHeader(findState: findState)
                     .frame(height: 44)
@@ -46,6 +45,7 @@ struct ContentView: View {
                 .overlay(alignment: .bottomTrailing) { statusBar }
             }
         }
+        .background(MovableByBackground())
         .background(DesignTokens.swiftUI.paper)
         .overlay {
             if docManager.paletteOpen {
@@ -69,7 +69,6 @@ struct ContentView: View {
                 docManager.newDocument(text: sampleText)
             }
         }
-        .background(WindowConfigurator().frame(width: 0, height: 0))
     }
 
     private var emptyState: some View {
@@ -152,8 +151,6 @@ private struct EditorHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Sidebar toggle — always on left edge, clears traffic lights when
-            // sidebar is closed (matching the old AppKit tabBarLeftPadding logic).
             Button(action: { docManager.sidebarOpen.toggle() }) {
                 CIcon { CustomIcons.sidebarToggle }
                     .frame(width: 16, height: 13)
@@ -163,7 +160,6 @@ private struct EditorHeader: View {
             }
             .buttonStyle(.plain)
 
-            // Tabs
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
                     ForEach(docManager.tabs) { tab in
@@ -181,7 +177,6 @@ private struct EditorHeader: View {
                 .padding(.horizontal, 8)
             }
 
-            // Actions
             HStack(spacing: 2) {
                 Button(action: { findState.toggleOpen() }) {
                     CIcon { CustomIcons.find }
