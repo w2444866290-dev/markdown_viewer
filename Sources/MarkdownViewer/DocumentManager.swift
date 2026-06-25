@@ -133,9 +133,16 @@ final class DocumentManager: ObservableObject {
     func openDirectory() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
-        panel.canChooseFiles = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.message = "选择一个文件夹以加载其中的文档"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        loadDirectory(url)
+        // Resolve to directory if user selected a file inside it
+        var dirURL = url
+        if !dirURL.hasDirectoryPath {
+            dirURL = url.deletingLastPathComponent()
+        }
+        loadDirectory(dirURL)
     }
 
     func loadDirectory(_ url: URL) {
