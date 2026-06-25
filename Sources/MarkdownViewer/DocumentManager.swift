@@ -76,7 +76,7 @@ final class DocumentManager: ObservableObject {
     }
 
     func newDocument(text: String = "# 未命名\n\n") {
-        let tab = DocumentTab(url: nil, name: "未命名.md", text: text, isDirty: false)
+        let tab = DocumentTab(url: nil, name: "未命名.md", text: text, isDirty: true)
         tabs.append(tab)
         activeTabID = tab.id
     }

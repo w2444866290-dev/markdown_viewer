@@ -41,6 +41,13 @@ struct MarkdownViewerApp: App {
                 Button("显示 / 隐藏侧栏") { docManager.sidebarOpen.toggle() }
                     .keyboardShortcut("\\")
                 Divider()
+                Button("关闭标签页") {
+                    if let tab = docManager.activeTab { docManager.requestClose(tab) }
+                }
+                .keyboardShortcut("w")
+                Button("恢复关闭的标签") { docManager.reopenClosed() }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
+                Divider()
                 Button("放大字号") { docManager.applyFont(docManager.fontIndex + 1) }
                     .keyboardShortcut("=")
                 Button("缩小字号") { docManager.applyFont(docManager.fontIndex - 1) }
