@@ -1,11 +1,16 @@
 import AppKit
 import SwiftUI
 
-/// SwiftUI wrapper: Image(nsImage: cachedIcon)
+/// SwiftUI wrapper: Image(nsImage: cachedIcon) with template rendering
+/// so .foregroundColor() tints the icon.
 struct CIcon: View {
     let image: NSImage
     init(_ builder: () -> NSImage) { self.image = builder() }
-    var body: some View { Image(nsImage: image).resizable() }
+    var body: some View {
+        Image(nsImage: image)
+            .renderingMode(.template)
+            .resizable()
+    }
 }
 
 enum CustomIcons {
