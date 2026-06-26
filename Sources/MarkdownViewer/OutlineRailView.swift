@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Outline rail — spec: right 0, top 46%, translateY(-50%), tick→text melt animation.
 struct OutlineRailView: View {
@@ -41,6 +42,9 @@ struct OutlineRailView: View {
             .frame(width: hovered ? 250 : 84, height: geo.size.height, alignment: .trailing)
             .contentShape(Rectangle())
             .onHover { h in
+                // Pointing-hand cursor over the rail (clickable), instead of the
+                // text view's I-beam underneath.
+                if h { NSCursor.pointingHand.push() } else { NSCursor.pop() }
                 withAnimation(.easeOut(duration: 0.24)) { hovered = h }
                 if !h {
                     withAnimation(.easeOut(duration: 0.18)) { hoveredIndex = nil }

@@ -52,11 +52,24 @@ final class OutlineController {
     /// Clears only this line's range so it won't disturb find highlights, which
     /// use the same .backgroundColor temporary attribute on other ranges.
     private func washHeading(_ lineRange: NSRange, in tv: NSTextView, lm: NSLayoutManager) {
-        let wash = NSColor(hex: 0xE8A33D, alpha: 0.30)
-        lm.addTemporaryAttribute(.backgroundColor, value: wash, forCharacterRange: lineRange)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak tv] in
-            guard let tv, let lm = tv.layoutManager else { return }
-            lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: lineRange)
+        // Amber flash fading 0.30 → 0 over ~0.7s (web washHeading). Each step
+        // re-applies a lower-alpha temporary background AND forces a redraw of the
+        // line — removeTemporaryAttribute alone does NOT repaint, which previously
+        // left the highlight stuck on screen ("一直高亮").
+        let steps = 12
+        let total = 0.7
+        for i in 0...steps {
+            let t = Double(i) / Double(steps)
+            DispatchQueue.main.asyncAfter(deadline: .now() + total * t) { [weak tv] in
+                guard let tv, let lm = tv.layoutManager else { return }
+                if i == steps {
+                    lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: lineRange)
+                } else {
+                    let amber = NSColor(hex: 0xE8A33D, alpha: CGFloat(0.30 * (1 - t)))
+                    lm.addTemporaryAttribute(.backgroundColor, value: amber, forCharacterRange: lineRange)
+                }
+                lm.invalidateDisplay(forCharacterRange: lineRange)
+            }
         }
     }
 
