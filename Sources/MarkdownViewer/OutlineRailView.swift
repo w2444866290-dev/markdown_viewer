@@ -13,6 +13,7 @@ struct OutlineRailView: View {
     var onHoverChange: ((Bool) -> Void)? = nil
 
     @State private var hovered = false
+    @State private var collapseWork: DispatchWorkItem?   // debounced rail collapse
     @State private var hoveredIndex: Int?
     @State private var showCoach = false
     @State private var pulse = false
@@ -48,10 +49,22 @@ struct OutlineRailView: View {
                 .frame(width: hovered ? 250 : 84, alignment: .trailing)
                 .contentShape(Rectangle())
                 .onHover { h in
-                    onHoverChange?(h)   // editor shows pointing-hand over the rail (see PaperTextView)
-                    withAnimation(.easeOut(duration: 0.24)) { hovered = h }
-                    if !h {
-                        withAnimation(.easeOut(duration: 0.18)) { hoveredIndex = nil }
+                    if h {
+                        // Enter: cancel any pending collapse, expand immediately.
+                        collapseWork?.cancel(); collapseWork = nil
+                        onHoverChange?(true)
+                        withAnimation(.easeOut(duration: 0.24)) { hovered = true }
+                    } else {
+                        // Leave: debounce the collapse so a momentary false (from the
+                        // hover/resize feedback at the edge) doesn't toggle the cursor.
+                        collapseWork?.cancel()
+                        let work = DispatchWorkItem {
+                            onHoverChange?(false)
+                            withAnimation(.easeOut(duration: 0.24)) { hovered = false }
+                            withAnimation(.easeOut(duration: 0.18)) { hoveredIndex = nil }
+                        }
+                        collapseWork = work
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
                     }
                 }
                 .overlay(alignment: .trailing) {
