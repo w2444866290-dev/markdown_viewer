@@ -13,7 +13,6 @@ struct OutlineRailView: View {
     var onHoverChange: ((Bool) -> Void)? = nil
 
     @State private var hovered = false
-    @State private var collapseWork: DispatchWorkItem?   // debounced rail collapse
     @State private var hoveredIndex: Int?
     @State private var showCoach = false
     @State private var pulse = false
@@ -46,25 +45,18 @@ struct OutlineRailView: View {
                 // Hit/hover area = the ticks block ONLY (width strip; height = the
                 // ticks, NOT full column height). Hovering empty top/bottom-right
                 // space must not trigger the rail or the hand cursor.
-                .frame(width: hovered ? 250 : 84, alignment: .trailing)
+                // CONSTANT hit width (= expanded width). The previous `hovered?250:84`
+                // resized the hit area, which fed back at the edge and made onHover —
+                // and the cursor — flicker. With a fixed frame, onHover is stable, so
+                // the cursor is set immediately and reverts to I-beam the moment the
+                // mouse leaves the rail. Only the visual (ticks↔labels) animates.
+                .frame(width: 250, alignment: .trailing)
                 .contentShape(Rectangle())
                 .onHover { h in
-                    if h {
-                        // Enter: cancel any pending collapse, expand immediately.
-                        collapseWork?.cancel(); collapseWork = nil
-                        onHoverChange?(true)
-                        withAnimation(.easeOut(duration: 0.24)) { hovered = true }
-                    } else {
-                        // Leave: debounce the collapse so a momentary false (from the
-                        // hover/resize feedback at the edge) doesn't toggle the cursor.
-                        collapseWork?.cancel()
-                        let work = DispatchWorkItem {
-                            onHoverChange?(false)
-                            withAnimation(.easeOut(duration: 0.24)) { hovered = false }
-                            withAnimation(.easeOut(duration: 0.18)) { hoveredIndex = nil }
-                        }
-                        collapseWork = work
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+                    onHoverChange?(h)   // immediate; stable because the frame no longer resizes
+                    withAnimation(.easeOut(duration: 0.24)) { hovered = h }
+                    if !h {
+                        withAnimation(.easeOut(duration: 0.18)) { hoveredIndex = nil }
                     }
                 }
                 .overlay(alignment: .trailing) {

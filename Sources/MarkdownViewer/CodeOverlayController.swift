@@ -1,5 +1,12 @@
 import AppKit
 
+/// NSButton that shows the pointing-hand cursor over the text view. The parent
+/// PaperTextView has empty cursor rects + no-op cursorUpdate, so this button's own
+/// cursor rect wins cleanly (no I-beam fight).
+private final class HandButton: NSButton {
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+}
+
 /// Manages a floating "复制" button that appears over fenced code blocks
 /// when the mouse hovers over them.
 final class CodeOverlayController {
@@ -47,7 +54,7 @@ final class CodeOverlayController {
     private func show(for block: LiveMarkdownStyler.FencedCodeBlock, cardRect: NSRect, in tv: NSTextView) {
         bodyRange = block.bodyRange
         if button == nil {
-            let btn = NSButton(title: "复制", target: self, action: #selector(copyCode))
+            let btn = HandButton(title: "复制", target: self, action: #selector(copyCode))
             btn.identifier = NSUserInterfaceItemIdentifier("mvCopyButton")
             btn.isBordered = false
             btn.bezelStyle = .inline
