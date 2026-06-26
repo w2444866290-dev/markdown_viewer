@@ -75,12 +75,9 @@ struct ContentView: View {
         .background(MovableByBackground())
         .background(DesignTokens.swiftUI.paper)
         .ignoresSafeArea()
-        .overlay {
-            if docManager.paletteOpen {
-                CommandPaletteView()
-                    .transition(.opacity)
-            }
-        }
+        // ⌘K palette lives in a separate blur-backed window (PaletteBlurHost) so
+        // its backdrop can truly frost the main window content. Driven by paletteOpen.
+        .background(PaletteBlurHost(docManager: docManager))
         .overlay(alignment: .topTrailing) {
             if findState.isOpen {
                 FindBarView(state: findState)

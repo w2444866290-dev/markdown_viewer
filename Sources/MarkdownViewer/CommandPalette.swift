@@ -6,6 +6,7 @@ struct CommandPaletteView: View {
     @State private var selectedIndex: Int = 0
     @State private var hoveredIndex: Int?
     @State private var eventMonitor: Any?
+    @FocusState private var searchFocused: Bool
 
     private let baseCommands: [(String, String)] = [
         ("新建文档", "⌘N"), ("保存", "⌘S"), ("查找 / 替换", "⌘F"),
@@ -55,10 +56,11 @@ struct CommandPaletteView: View {
     var body: some View {
         ZStack {
             // Backdrop — spec: rgba(248,248,250,0.6) + blur(6px)
-            // Backdrop — spec: rgba(248,248,250,0.6) + blur(6px). SwiftUI Material
-            // blurs the app content behind (sidebar, text, rail) reliably.
-            Rectangle()
-                .fill(.ultraThinMaterial)
+            // Transparent — the frosted blur comes from the host window's
+            // NSVisualEffectView(.behindWindow) (see PaletteBlurHost). This layer
+            // only catches taps outside the card to dismiss.
+            Color.clear
+                .contentShape(Rectangle())
                 .ignoresSafeArea()
                 .onTapGesture { docManager.paletteOpen = false }
 
@@ -73,6 +75,7 @@ struct CommandPaletteView: View {
                         .foregroundColor(DesignTokens.swiftUI.titleText)
                         .padding(.horizontal, 18)
                         .frame(height: 46)
+                        .focused($searchFocused)
                         .onChange(of: query) { _ in selectedIndex = 0 }
 
                     Rectangle()
@@ -133,7 +136,10 @@ struct CommandPaletteView: View {
             }
         }
         .ignoresSafeArea()
-        .onAppear { installKeyMonitor() }
+        .onAppear {
+            installKeyMonitor()
+            DispatchQueue.main.async { searchFocused = true }  // autofocus the field
+        }
         .onDisappear { removeKeyMonitor() }
     }
 
