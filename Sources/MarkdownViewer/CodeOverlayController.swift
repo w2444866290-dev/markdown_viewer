@@ -73,6 +73,12 @@ final class CodeOverlayController {
         button?.isHidden = true
     }
 
+    /// True when point `p` (text-view coords) is over the visible copy button.
+    func hitsButton(_ p: NSPoint) -> Bool {
+        guard let b = button, !b.isHidden else { return false }
+        return b.frame.contains(p)
+    }
+
     @objc private func copyCode() {
         guard let range = bodyRange, let tv = textView else { return }
         let ns = tv.string as NSString

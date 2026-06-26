@@ -55,9 +55,10 @@ struct CommandPaletteView: View {
     var body: some View {
         ZStack {
             // Backdrop — spec: rgba(248,248,250,0.6) + blur(6px)
-            VisualEffectBlur(material: .fullScreenUI, blendingMode: .withinWindow)
-                .overlay(Color(red: 248/255, green: 248/255, blue: 250/255).opacity(0.55))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Backdrop — spec: rgba(248,248,250,0.6) + blur(6px). SwiftUI Material
+            // blurs the app content behind (sidebar, text, rail) reliably.
+            Rectangle()
+                .fill(.ultraThinMaterial)
                 .ignoresSafeArea()
                 .onTapGesture { docManager.paletteOpen = false }
 

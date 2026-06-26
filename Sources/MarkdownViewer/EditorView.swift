@@ -235,6 +235,12 @@ struct EditorView: NSViewRepresentable {
         func handleMouseAt(_ tvPoint: NSPoint) {
             codeOverlay.handleMouse(at: tvPoint)
             updateHoveredURL(at: tvPoint)
+            // Pointing-hand over the outline rail or copy button; I-beam over text.
+            if parent.bridge.cursorOverRail || codeOverlay.hitsButton(tvPoint) {
+                NSCursor.pointingHand.set()
+            } else {
+                NSCursor.iBeam.set()
+            }
         }
 
         /// Browser-convention link URL preview: map `tvPoint` (text-view
@@ -309,8 +315,13 @@ final class PaperTextView: NSTextView {
            !btn.isHidden, btn.frame.contains(p) {
             NSCursor.pointingHand.set(); return
         }
-        super.cursorUpdate(with: event)
+        NSCursor.iBeam.set()
     }
+
+    // Suppress the default I-beam cursor RECTS — they re-asserted right after
+    // cursorUpdate (the "hand flickers then reverts to I-beam" bug). With no
+    // rects, the cursor is driven solely by cursorUpdate + the MouseTracker.
+    override func resetCursorRects() {}
 
     override func layout() {
         super.layout()
