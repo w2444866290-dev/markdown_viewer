@@ -26,7 +26,6 @@ private enum Palette {
 
     static let accent         = 0xE8A33D
     static let danger         = 0xC7482E
-    static let link           = 0x2A6FDB
     static let systemBlue     = 0x007AFF
 }
 
@@ -58,7 +57,6 @@ enum DesignTokens {
     static let accentStrong = color(Palette.accent, alpha: 0.55)
     static let accentSoft = color(Palette.accent, alpha: 0.22)
     static let danger = color(Palette.danger)
-    static let link = color(Palette.link)
     static let systemBlue = color(Palette.systemBlue)
 
     // MARK: - Interaction (alpha-only over black)
@@ -109,7 +107,6 @@ enum DesignTokens {
         static let line = color(Palette.line)
         static let accent = color(Palette.accent)
         static let danger = color(Palette.danger)
-        static let link = color(Palette.link)
         static let hover = color(blackAlpha: 0.05)
         static let sidebarHover = color(blackAlpha: 0.045)
         static let pressed = color(blackAlpha: 0.08)

@@ -55,7 +55,8 @@ struct CommandPaletteView: View {
     var body: some View {
         ZStack {
             // Backdrop — spec: rgba(248,248,250,0.6) + blur(6px)
-            Color(red: 248/255, green: 248/255, blue: 250/255).opacity(0.6)
+            VisualEffectBlur(material: .fullScreenUI, blendingMode: .withinWindow)
+                .overlay(Color(red: 248/255, green: 248/255, blue: 250/255).opacity(0.55))
                 .onTapGesture { docManager.paletteOpen = false }
 
             VStack(spacing: 0) {

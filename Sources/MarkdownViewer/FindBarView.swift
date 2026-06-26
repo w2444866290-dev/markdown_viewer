@@ -173,8 +173,10 @@ struct FindBarView: View {
         .fixedSize(horizontal: true, vertical: false)
         .padding(6)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.white.opacity(0.97))
+            // spec L135: rgba(255,255,255,0.97) + backdrop blur(8px)
+            VisualEffectBlur(material: .popover, blendingMode: .withinWindow)
+                .overlay(Color.white.opacity(0.97))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(Color.black.opacity(0.05), lineWidth: 1)

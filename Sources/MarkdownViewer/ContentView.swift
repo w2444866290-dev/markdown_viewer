@@ -1,5 +1,9 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
+
+/// Reference holder for double-Shift timing (mutated from an NSEvent monitor closure).
+private final class ShiftTracker { var last: TimeInterval = 0 }
 
 struct ContentView: View {
     @EnvironmentObject var docManager: DocumentManager
@@ -13,6 +17,9 @@ struct ContentView: View {
     @State private var scrollModel = ScrollProgressModel()
     @State private var isDragging = false
     @State private var hasInitialized = false
+    // Double-Shift → quick search (spec JS L478-490): event monitor + timing holder.
+    @State private var shiftMonitor: Any?
+    @State private var shiftTracker = ShiftTracker()
 
     private var tabPadLeft: CGFloat {
         docManager.sidebarOpen ? 12 : 84
@@ -101,6 +108,8 @@ struct ContentView: View {
                 docManager.newDocument(text: sampleText)
             }
         }
+        .onAppear { installShiftMonitor() }
+        .onDisappear { removeShiftMonitor() }
         .mvTooltipHost()
     }
 
@@ -159,6 +168,41 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
         .allowsHitTesting(false)
+    }
+
+    // MARK: - Double-Shift quick search (spec JS L478-490)
+
+    private func installShiftMonitor() {
+        guard shiftMonitor == nil else { return }
+        let tracker = shiftTracker
+        shiftMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [docManager, findState] event in
+            if event.type == .keyDown {
+                tracker.last = 0   // any non-modifier key breaks the streak (typing capitals)
+                return event
+            }
+            let isShiftKey = (event.keyCode == 56 || event.keyCode == 60)
+            let mods = event.modifierFlags
+            if isShiftKey, mods.contains(.shift),
+               mods.isDisjoint(with: [.command, .control, .option]) {
+                // Shift pressed down, no other modifiers.
+                let now = ProcessInfo.processInfo.systemUptime
+                if tracker.last > 0, now - tracker.last < 0.35 {
+                    tracker.last = 0
+                    if findState.isOpen { findState.isOpen = false }
+                    docManager.paletteOpen = true
+                } else {
+                    tracker.last = now
+                }
+            } else if !isShiftKey {
+                tracker.last = 0   // another modifier interrupted the streak
+            }
+            // (Shift release falls through: streak preserved.)
+            return event
+        }
+    }
+
+    private func removeShiftMonitor() {
+        if let m = shiftMonitor { NSEvent.removeMonitor(m); shiftMonitor = nil }
     }
 
     // MARK: - Drop handling
