@@ -1,11 +1,5 @@
 import AppKit
 
-/// NSButton that shows the pointing-hand cursor (web `cursor: pointer`) over the
-/// text view, instead of the editor's I-beam.
-private final class HandButton: NSButton {
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
-}
-
 /// Manages a floating "复制" button that appears over fenced code blocks
 /// when the mouse hovers over them.
 final class CodeOverlayController {
@@ -50,7 +44,7 @@ final class CodeOverlayController {
     private func show(for block: LiveMarkdownStyler.FencedCodeBlock, cardRect: NSRect, in tv: NSTextView) {
         bodyRange = block.bodyRange
         if button == nil {
-            let btn = HandButton(title: "复制", target: self, action: #selector(copyCode))
+            let btn = NSButton(title: "复制", target: self, action: #selector(copyCode))
             btn.identifier = NSUserInterfaceItemIdentifier("mvCopyButton")
             btn.isBordered = false
             btn.bezelStyle = .inline

@@ -56,11 +56,10 @@ struct CommandPaletteView: View {
     var body: some View {
         ZStack {
             // Backdrop — spec: rgba(248,248,250,0.6) + blur(6px)
-            // Transparent — the frosted blur comes from the host window's
-            // NSVisualEffectView(.behindWindow) (see PaletteBlurHost). This layer
-            // only catches taps outside the card to dismiss.
-            Color.clear
-                .contentShape(Rectangle())
+            // Light veil (spec rgba(248,248,250,0.6)) over the host window's
+            // NSVisualEffectView(.behindWindow) blur — kept lighter (0.4) so the
+            // real frosted blur of the content behind stays visible, not flat gray.
+            Color(red: 248/255, green: 248/255, blue: 250/255).opacity(0.4)
                 .ignoresSafeArea()
                 .onTapGesture { docManager.paletteOpen = false }
 

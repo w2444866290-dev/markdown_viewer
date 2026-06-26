@@ -69,7 +69,6 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.codeOverlay.textView = tv
         context.coordinator.textView = tv
         context.coordinator.scrollView = sv
-        tv.wantsHandCursor = { [weak bridge] in bridge?.cursorOverRail ?? false }
         sv.documentView = tv
         return sv
     }
@@ -301,22 +300,11 @@ struct EditorView: NSViewRepresentable {
 // MARK: - PaperTextView
 
 final class PaperTextView: NSTextView {
-    /// True while the mouse is over the outline rail (read from the bridge).
-    var wantsHandCursor: (() -> Bool)?
-
-    /// Spec uses `cursor: pointer` on clickables. NSTextView otherwise forces the
-    /// I-beam over its whole bounds (incl. the SwiftUI rail overlay and the
-    /// floating copy button), so intercept cursorUpdate: pointing-hand over the
-    /// rail or the copy button, I-beam elsewhere.
-    override func cursorUpdate(with event: NSEvent) {
-        if wantsHandCursor?() == true { NSCursor.pointingHand.set(); return }
-        let p = convert(event.locationInWindow, from: nil)
-        if let btn = subviews.first(where: { $0.identifier?.rawValue == "mvCopyButton" }),
-           !btn.isHidden, btn.frame.contains(p) {
-            NSCursor.pointingHand.set(); return
-        }
-        NSCursor.iBeam.set()
-    }
+    /// Cursor is managed by ONE source — the MouseTracker (Coordinator.handleMouseAt):
+    /// pointing-hand over the outline rail / copy button, I-beam over text. Suppress
+    /// NSTextView's own cursor mechanisms (cursorUpdate + cursor rects) so they don't
+    /// fight that single source — the earlier "flicker / 抽风" was two setters racing.
+    override func cursorUpdate(with event: NSEvent) {}
 
     // Suppress the default I-beam cursor RECTS — they re-asserted right after
     // cursorUpdate (the "hand flickers then reverts to I-beam" bug). With no
