@@ -42,27 +42,29 @@ struct OutlineRailView: View {
                 }
                 .padding(.trailing, 18)
                 .padding(.vertical, 30)
+                // Hit/hover area = the ticks block ONLY (width strip; height = the
+                // ticks, NOT full column height). Hovering empty top/bottom-right
+                // space must not trigger the rail or the hand cursor.
+                .frame(width: hovered ? 250 : 84, alignment: .trailing)
+                .contentShape(Rectangle())
+                .onHover { h in
+                    onHoverChange?(h)   // editor shows pointing-hand over the rail (see PaperTextView)
+                    withAnimation(.easeOut(duration: 0.24)) { hovered = h }
+                    if !h {
+                        withAnimation(.easeOut(duration: 0.18)) { hoveredIndex = nil }
+                    }
+                }
+                .overlay(alignment: .trailing) {
+                    if showCoach {
+                        coachBubble
+                            .offset(x: -46, y: 0)
+                    }
+                }
                 .offset(y: geo.size.height * 0.46 - geo.size.height / 2)
             }
-            // Size the interactive rail to the narrow right strip (resting 84 /
-            // hovered 250) and attach hit-testing + hover to THAT strip only.
-            .frame(width: hovered ? 250 : 84, height: geo.size.height, alignment: .trailing)
-            .contentShape(Rectangle())
-            .onHover { h in
-                onHoverChange?(h)   // editor shows pointing-hand over the rail (see PaperTextView)
-                withAnimation(.easeOut(duration: 0.24)) { hovered = h }
-                if !h {
-                    withAnimation(.easeOut(duration: 0.18)) { hoveredIndex = nil }
-                }
-            }
-            .overlay(alignment: .trailing) {
-                if showCoach {
-                    coachBubble
-                        .offset(x: -46, y: 0)
-                }
-            }
-            // THEN pin that strip to the right edge. This positioning frame has no
-            // contentShape, so it never intercepts scroll/hover over the editor.
+            // Position the ticks block at the right edge, vertically centred (then
+            // nudged to 46% by the offset). No contentShape here → never intercepts
+            // scroll/hover/clicks over the editor.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         }
     }

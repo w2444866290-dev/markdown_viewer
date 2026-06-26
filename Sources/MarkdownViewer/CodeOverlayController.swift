@@ -29,6 +29,9 @@ final class CodeOverlayController {
                 return
             }
         }
+        // Keep it shown while the cursor is on the button itself (it can sit a hair
+        // past the card's measured edge); only hide once the cursor is truly away.
+        if hitsButton(tvPoint) { return }
         hide()
     }
 
