@@ -48,6 +48,7 @@ final class CodeOverlayController {
         bodyRange = block.bodyRange
         if button == nil {
             let btn = HandButton(title: "复制", target: self, action: #selector(copyCode))
+            btn.identifier = NSUserInterfaceItemIdentifier("mvCopyButton")
             btn.isBordered = false
             btn.bezelStyle = .inline
             btn.font = NSFont.systemFont(ofSize: 11)

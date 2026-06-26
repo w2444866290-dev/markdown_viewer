@@ -6,11 +6,17 @@ struct OutlineRailView: View {
     let headings: [OutlineController.Heading]
     let activeIndex: Int
     let onJump: (Int) -> Void
+    /// Active document identity — changes on tab open/switch to fire the tick
+    /// pulse hint (spec pulseRail).
+    var docToken: UUID? = nil
+    /// Reports rail hover so the editor can show a pointing-hand cursor over it.
+    var onHoverChange: ((Bool) -> Void)? = nil
 
     @State private var hovered = false
     @State private var hoveredIndex: Int?
     @State private var showCoach = false
     @State private var pulse = false
+    @State private var pulseActive = false
     @AppStorage("railCoachShown") private var coachShown = false
 
     var body: some View {
@@ -18,7 +24,8 @@ struct OutlineRailView: View {
             EmptyView()
         } else {
             outlineContent
-                .onAppear { maybeShowCoach() }
+                .onAppear { maybeShowCoach(); firePulse() }
+                .onChange(of: docToken) { _ in firePulse() }
         }
     }
 
@@ -42,9 +49,7 @@ struct OutlineRailView: View {
             .frame(width: hovered ? 250 : 84, height: geo.size.height, alignment: .trailing)
             .contentShape(Rectangle())
             .onHover { h in
-                // Pointing-hand cursor over the rail (clickable), instead of the
-                // text view's I-beam underneath.
-                if h { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                onHoverChange?(h)   // editor shows pointing-hand over the rail (see PaperTextView)
                 withAnimation(.easeOut(duration: 0.24)) { hovered = h }
                 if !h {
                     withAnimation(.easeOut(duration: 0.18)) { hoveredIndex = nil }
@@ -74,12 +79,14 @@ struct OutlineRailView: View {
             ZStack(alignment: .trailing) {
                 // Tick bar — fades out when expanded
                 RoundedRectangle(cornerRadius: 1)
-                    .fill(isActive ? DesignTokens.swiftUI.accent : DesignTokens.swiftUI.tickRest)
+                    .fill((isActive || (pulseActive && !hovered)) ? DesignTokens.swiftUI.accent : DesignTokens.swiftUI.tickRest)
                     .frame(width: tickW, height: 2)
                     .opacity(hovered ? 0 : 1)
                     .blur(radius: hovered ? 3 : 0)
-                    .scaleEffect(x: hovered ? 2.6 : 1, y: 1, anchor: .trailing)
+                    // Hint pulse (spec railHint): stretch to peak + amber, staggered.
+                    .scaleEffect(x: hovered ? 2.6 : (pulseActive ? (h.level == 1 ? 2.05 : 1.7) : 1), y: 1, anchor: .trailing)
                     .animation(.easeOut(duration: 0.18).delay(delay), value: hovered)
+                    .animation(.easeInOut(duration: 0.22).delay(Double(idx) * 0.084), value: pulseActive)
 
                 // Text label — fades in when expanded
                 Text(h.title)
@@ -124,6 +131,20 @@ struct OutlineRailView: View {
                 .frame(width: 6, height: 10)
         }
         .allowsHitTesting(false)
+    }
+
+    // MARK: - Tick pulse hint (spec railHint / pulseRail)
+
+    /// One-shot amber wave across the ticks: each stretches to its peak + turns
+    /// amber (staggered), then settles back. Fired on first appearance and on
+    /// document open/switch. Skipped while the rail is hovered/expanded.
+    private func firePulse() {
+        guard !headings.isEmpty, !hovered else { return }
+        pulseActive = true
+        let settle = Double(headings.count) * 0.084 + 0.30
+        DispatchQueue.main.asyncAfter(deadline: .now() + settle) {
+            if !hovered { pulseActive = false }
+        }
     }
 
     // MARK: - Coach logic

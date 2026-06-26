@@ -14,6 +14,11 @@ final class EditorBridge: ObservableObject {
 
     /// Set by EditorView.Coordinator — when called, scrolls to heading.
     var onJumpToHeading: ((Int) -> Void)?
+
+    /// True while the mouse is over the outline rail. Plain (non-@Published) so
+    /// setting it never re-renders ContentView; PaperTextView reads it in
+    /// `cursorUpdate` to show a pointing-hand over the rail instead of the I-beam.
+    var cursorOverRail = false
 }
 
 /// Isolated, single-value observable for the status-bar scroll percentage.

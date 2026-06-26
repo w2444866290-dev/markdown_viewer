@@ -53,7 +53,9 @@ struct ContentView: View {
                             OutlineRailView(
                                 headings: bridge.headings,
                                 activeIndex: bridge.activeHeadingIndex,
-                                onJump: { bridge.onJumpToHeading?($0) }
+                                onJump: { bridge.onJumpToHeading?($0) },
+                                docToken: docManager.activeTabID,
+                                onHoverChange: { bridge.cursorOverRail = $0 }
                             )
                         }
                     } else {
