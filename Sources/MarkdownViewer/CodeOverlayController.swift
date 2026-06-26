@@ -13,7 +13,10 @@ final class CodeOverlayController {
 
     func handleMouse(at tvPoint: NSPoint) {
         guard let tv = textView else { return }
-        for block in blocks {
+        // Use the cached blocks; fall back to a live parse if the cache is empty
+        // so the copy button always appears when the doc actually has code fences.
+        let list = blocks.isEmpty ? LiveMarkdownStyler.fencedCodeBlocks(in: tv.string as NSString) : blocks
+        for block in list {
             let card = cardRect(for: block, in: tv)
             // Hover region is the WHOLE card (full column width × block height),
             // not just the code-text glyph box — otherwise the right-edge button
