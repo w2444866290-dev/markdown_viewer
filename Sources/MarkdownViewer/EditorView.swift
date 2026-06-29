@@ -227,6 +227,18 @@ struct EditorView: NSViewRepresentable {
             guard abs(progress - lastPublishedProgress) >= 0.004 else { return }
             lastPublishedProgress = progress
             parent.scrollModel.value = progress
+
+            // Spec (syncScroll, ~line 655): a scroll updates BOTH progress AND the
+            // active outline heading (the amber tick in the rail). Reuse the same
+            // computation the text-change path uses. Gated by the progress throttle
+            // above so the O(headings) layout loop runs at most once per perceptible
+            // scroll delta, and only published when the index actually changes —
+            // avoiding redundant @Published invalidations on the ContentView tree.
+            let scrollY = scrollView?.contentView.bounds.origin.y ?? 0
+            let active = outlineController.activeIndex(for: scrollY)
+            if parent.bridge.activeHeadingIndex != active {
+                parent.bridge.activeHeadingIndex = active
+            }
         }
 
         // MARK: - Mouse bridging
