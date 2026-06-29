@@ -113,6 +113,10 @@ struct ContentView: View {
             }
         }
         .onAppear { installShiftMonitor() }
+        // Wire the palette's always-open find path (spec #14). Parallels the
+        // findStateToggle closure set in App.swift; lives here because ContentView
+        // owns the findState reference passed to the rest of the UI.
+        .onAppear { docManager.findStateOpen = { findState.openFind() } }
         .onDisappear { removeShiftMonitor() }
         .mvTooltipHost()
     }
@@ -192,7 +196,7 @@ struct ContentView: View {
                 let now = ProcessInfo.processInfo.systemUptime
                 if tracker.last > 0, now - tracker.last < 0.35 {
                     tracker.last = 0
-                    if findState.isOpen { findState.isOpen = false }
+                    if findState.isOpen { findState.closeFind() }
                     docManager.paletteOpen = true
                 } else {
                     tracker.last = now
@@ -337,7 +341,7 @@ private struct EditorHeader: View {
 
             // Find + Open buttons — spec: gap 2px, 28×26, hover bg rgba(0,0,0,0.05) + #6e6e73
             HStack(spacing: 2) {
-                HeaderIconButton(action: { findState.toggleOpen() },
+                HeaderIconButton(action: { findState.openFind() },
                                  frame: CGSize(width: 28, height: 26),
                                  tip: "查找 / 替换 · ⌘F") { color in
                     CIcon { CustomIcons.find }

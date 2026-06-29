@@ -30,6 +30,10 @@ final class DocumentManager: ObservableObject {
 
     /// Set by App to let the command palette toggle findState.
     var findStateToggle: (() -> Void)?
+    /// Set by ContentView so the ⌘K palette can ALWAYS-open find (spec #14):
+    /// the "查找 / 替换" entry must never close an already-open find, so it routes
+    /// through openFind() rather than the toggle.
+    var findStateOpen: (() -> Void)?
 
     // MARK: - Derived
 

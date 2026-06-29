@@ -45,10 +45,39 @@ struct CommandPaletteView: View {
         return result
     }
 
-    var filteredDocs: [FileNode] {
-        let all = flattenedFiles(docManager.fileTree)
-        guard !query.isEmpty else { return all }
-        return all.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    /// A palette-listable document: either a file on disk (FileNode) or an open
+    /// tab (which may be the unsaved 未命名 doc with no URL).
+    private struct PaletteDoc: Identifiable {
+        let id: AnyHashable      // tab UUID or FileNode UUID
+        let name: String
+        let url: URL?            // nil for the unsaved untitled tab
+        let tabID: UUID?         // non-nil when this entry is an open tab
+    }
+
+    /// Spec #15: the palette doc list must include open tabs and the unsaved
+    /// 未命名 doc, not just files on disk. MINIMAL FIX — union docManager.tabs with
+    /// the flattened fileTree, deduped by path (or by name for url-less tabs).
+    /// TODO(spec #15): full buildDefs parity (extraOrder / pinning) in data-model wave.
+    private var allDocs: [PaletteDoc] {
+        var result: [PaletteDoc] = []
+        var seenPaths = Set<String>()
+
+        // Open tabs first (so the active/untitled doc is reachable), then disk files.
+        for tab in docManager.tabs {
+            if let path = tab.url?.path { seenPaths.insert(path) }
+            result.append(PaletteDoc(id: tab.id, name: tab.name, url: tab.url, tabID: tab.id))
+        }
+        for node in flattenedFiles(docManager.fileTree) {
+            if seenPaths.contains(node.url.path) { continue }
+            seenPaths.insert(node.url.path)
+            result.append(PaletteDoc(id: node.id, name: node.name, url: node.url, tabID: nil))
+        }
+        return result
+    }
+
+    private var filteredDocs: [PaletteDoc] {
+        guard !query.isEmpty else { return allDocs }
+        return allDocs.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
     var totalItems: Int { filteredDocs.count + filteredCommands.count }
@@ -98,9 +127,9 @@ struct CommandPaletteView: View {
                                         title: doc.name,
                                         subtitle: nil,
                                         index: idx,
-                                        isActiveDoc: doc.url == activeDocURL,
+                                        isActiveDoc: isActiveDoc(doc),
                                         action: {
-                                            docManager.openFileNode(doc)
+                                            openPaletteDoc(doc)
                                             docManager.paletteOpen = false
                                         }
                                     )
@@ -161,7 +190,8 @@ struct CommandPaletteView: View {
         switch name {
         case "新建文档":     docManager.newDocument()
         case "保存":         docManager.saveCurrent()
-        case "查找 / 替换":   docManager.findStateToggle?()
+        // Spec #14: always-open (never toggle closed) — same path as ⌘F / header icon.
+        case "查找 / 替换":   docManager.findStateOpen?()
         case "打开…":        docManager.openDocument()
         case "放大字号":     docManager.applyFont(docManager.fontIndex + 1)
         case "缩小字号":     docManager.applyFont(docManager.fontIndex - 1)
@@ -173,13 +203,23 @@ struct CommandPaletteView: View {
 
     private func activateSelected() {
         if selectedIndex < filteredDocs.count {
-            let doc = filteredDocs[selectedIndex]
-            docManager.openFileNode(doc)
+            openPaletteDoc(filteredDocs[selectedIndex])
         } else {
             let cmd = filteredCommands[selectedIndex - filteredDocs.count]
             execute(cmd.0)
         }
         docManager.paletteOpen = false
+    }
+
+    /// Open or re-activate a palette doc. An entry backed by an open tab just
+    /// re-activates that tab (works for the url-less 未命名 doc too); a disk-only
+    /// entry loads via openFileNode.
+    private func openPaletteDoc(_ doc: PaletteDoc) {
+        if let tabID = doc.tabID {
+            docManager.activeTabID = tabID
+        } else if let url = doc.url {
+            docManager.openFileNode(FileNode(url: url, name: doc.name, isDirectory: false))
+        }
     }
 
     private func installKeyMonitor() {
@@ -215,9 +255,13 @@ struct CommandPaletteView: View {
             .padding(.top, topPadding ? 10 : 6)
     }
 
-    // URL of the currently active document tab (nil if none).
-    private var activeDocURL: URL? {
-        docManager.tabs.first { $0.id == docManager.activeTabID }?.url
+    // Whether this palette doc maps to the currently active tab. Matches by tab
+    // id when the entry is an open tab, else by URL against the active tab's URL.
+    private func isActiveDoc(_ doc: PaletteDoc) -> Bool {
+        guard let activeID = docManager.activeTabID else { return false }
+        if let tabID = doc.tabID { return tabID == activeID }
+        guard let url = doc.url else { return false }
+        return docManager.tabs.first { $0.id == activeID }?.url?.path == url.path
     }
 
     private func paletteRow(title: String, subtitle: String?, index: Int, isActiveDoc: Bool = false, action: @escaping () -> Void) -> some View {

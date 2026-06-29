@@ -16,6 +16,11 @@ final class FindState: ObservableObject {
     @Published var currentIndex = 0
     @Published var isError = false
 
+    /// Bumped each time `openFind()` is called so FindBarView can drive its
+    /// @FocusState (focus + select-all) on open — even when find is already
+    /// visible. A plain `isOpen` toggle wouldn't re-fire when already true.
+    @Published var focusRequest = 0
+
     /// Called by EditorView.Coordinator to perform the actual search.
     var onSearch: ((String) -> Void)?
     var onNavigate: ((Int) -> Void)?
@@ -28,5 +33,30 @@ final class FindState: ObservableObject {
         return "\(currentIndex + 1)/\(matchCount)"
     }
 
-    func toggleOpen() { isOpen.toggle() }
+    /// Spec L901 `openFind`: opening must ALWAYS (a) set isOpen, (b) focus the
+    /// find field, (c) select-all its text, (d) recompute matches if a prior
+    /// query is non-empty. Never toggles closed — re-invoking while open simply
+    /// re-focuses and re-selects (via the bumped focusRequest).
+    func openFind() {
+        isOpen = true
+        focusRequest &+= 1            // FindBarView observes this to focus + select-all
+        if !query.isEmpty { onSearch?(query) }
+    }
+
+    /// Spec L907 `closeFind`: closing resets the whole find/replace state and
+    /// clears highlights (the latter via onSearch("") through FindController).
+    func closeFind() {
+        onSearch?("")                 // clears temporary highlights + match state
+        isOpen = false
+        query = ""
+        matchCount = 0
+        currentIndex = 0
+        isError = false
+        showReplace = false
+    }
+
+    /// Retained for the App.swift ⌘F menu binding and the findStateToggle
+    /// closure. Per spec #9 ⌘F must ALWAYS open (never toggle closed), so this
+    /// now routes to `openFind()` rather than flipping `isOpen`.
+    func toggleOpen() { openFind() }
 }

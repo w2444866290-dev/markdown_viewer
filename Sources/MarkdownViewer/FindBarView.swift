@@ -1,8 +1,11 @@
 import SwiftUI
+import AppKit
 
 /// Find/replace bar — spec: position absolute top 10px right 18px, blur backdrop.
 struct FindBarView: View {
     @ObservedObject var state: FindState
+    /// Drives focus on open — spec #9 (b)/(c): focus the field + select-all.
+    @FocusState private var fieldFocused: Bool
     @State private var hoverChevron = false
     @State private var hoverPrev = false
     @State private var hoverNext = false
@@ -41,6 +44,7 @@ struct FindBarView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .foregroundColor(DesignTokens.swiftUI.titleText)
+                        .focused($fieldFocused)
                         .onChange(of: state.query) { _ in
                             state.onSearch?(state.query)
                         }
@@ -115,8 +119,9 @@ struct FindBarView: View {
                     .fill(Color.black.opacity(0.08))
                     .frame(width: 1, height: 16)
 
-                // Close — spec: 24×24, color #aeaeb2, hover #1d1d1f
-                Button(action: { state.isOpen = false }) {
+                // Close — spec: 24×24, color #aeaeb2, hover #1d1d1f.
+                // Spec L907 closeFind: also resets query/counts/replace + clears highlights.
+                Button(action: { state.closeFind() }) {
                     Text("×")
                         .font(.system(size: 14))
                         .foregroundColor(hoverClose
@@ -184,6 +189,18 @@ struct FindBarView: View {
         )
         .padding(.top, 10)
         .padding(.trailing, 18)
+        // Spec #9 (b)/(c): every openFind() bumps focusRequest → focus the field
+        // and select-all so the prior query is ready to overtype. requestAnimationFrame
+        // in the spec maps to a main-async hop here (let SwiftUI commit focus first).
+        .onChange(of: state.focusRequest) { _ in focusAndSelectAll() }
+        .onAppear { focusAndSelectAll() }
+    }
+
+    private func focusAndSelectAll() {
+        fieldFocused = true
+        DispatchQueue.main.async {
+            NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+        }
     }
 }
 
