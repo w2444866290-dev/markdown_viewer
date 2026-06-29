@@ -14,6 +14,20 @@ final class OutlineController {
 
     private(set) var headings: [Heading] = []
 
+    // Cached minY (one per heading, in document order → ascending) so the
+    // throttled scroll path is O(log n) instead of O(headings × doc-length).
+    private var headingYs: [CGFloat] = []
+
+    // Cheap layout-version key derived from current geometry. When it (and the
+    // heading count) match the stored key, headingYs is still valid and we skip
+    // the expensive layout queries — the pure-scroll fast path.
+    private struct LayoutKey: Equatable {
+        let count: Int
+        let containerWidth: CGFloat
+        let usedHeight: CGFloat
+    }
+    private var cacheKey: LayoutKey?
+
     func rebuild() {
         guard let tv = textView else { headings = []; return }
         let ns = tv.string as NSString
@@ -73,17 +87,56 @@ final class OutlineController {
         }
     }
 
-    func activeIndex(for scrollY: CGFloat) -> Int {
-        guard let tv = textView, !headings.isEmpty else { return 0 }
-        let threshold = scrollY + 140
-        var active = 0
-        for (i, h) in headings.enumerated() {
-            let ns = tv.string as NSString
+    /// Rebuilds `headingYs` only when geometry actually changed. On a pure
+    /// scroll the layout key still matches, so this returns immediately and the
+    /// expensive per-heading layout queries are skipped entirely.
+    private func ensureHeadingYsFresh() {
+        guard let tv = textView, let lm = tv.layoutManager, let tc = tv.textContainer else {
+            headingYs = []
+            cacheKey = nil
+            return
+        }
+        let key = LayoutKey(
+            count: headings.count,
+            containerWidth: tc.size.width,
+            usedHeight: lm.usedRect(for: tc).height
+        )
+        if key == cacheKey, headingYs.count == headings.count { return }
+
+        // Bridge the document once, not once per heading.
+        let ns = tv.string as NSString
+        var ys: [CGFloat] = []
+        ys.reserveCapacity(headings.count)
+        for h in headings {
             let lr = ns.lineRange(for: NSRange(location: h.charIndex, length: 0))
-            let gr = tv.layoutManager!.glyphRange(forCharacterRange: lr, actualCharacterRange: nil)
-            var r = tv.layoutManager!.boundingRect(forGlyphRange: gr, in: tv.textContainer!)
+            let gr = lm.glyphRange(forCharacterRange: lr, actualCharacterRange: nil)
+            var r = lm.boundingRect(forGlyphRange: gr, in: tc)
             r.origin.y += tv.textContainerInset.height
-            if r.minY <= threshold { active = i } else { break }
+            ys.append(r.minY)
+        }
+        headingYs = ys
+        cacheKey = key
+    }
+
+    func activeIndex(for scrollY: CGFloat) -> Int {
+        ensureHeadingYsFresh()
+        guard !headingYs.isEmpty else { return 0 }
+        let threshold = scrollY + 140
+        // Binary search for the LAST index whose minY <= threshold (default 0).
+        // headingYs is ascending (document order), so this is identical to the
+        // old linear scan that set active=i while minY<=threshold and broke at
+        // the first minY>threshold.
+        var lo = 0
+        var hi = headingYs.count - 1
+        var active = 0
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            if headingYs[mid] <= threshold {
+                active = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
         }
         return active
     }
