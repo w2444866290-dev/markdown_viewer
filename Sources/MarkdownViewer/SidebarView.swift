@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Sidebar matching spec: 44px spacer → filter → file tree → ⌘K button.
 /// Background #F7F7F8, 28px rows with hover/active states, resize handle.
@@ -8,6 +9,11 @@ struct SidebarView: View {
     @State private var resizeHover = false
     @State private var paletteHover = false
     @GestureState private var dragOffset: CGFloat = 0
+
+    // Filter keyboard navigation (spec JS `onSideFilterKey` / `kbName`).
+    @FocusState private var filterFocused: Bool
+    @State private var kbSel = 0
+    @State private var keyMonitor: Any?
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -20,6 +26,7 @@ struct SidebarView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5))
                     .foregroundColor(DesignTokens.swiftUI.titleText)
+                    .focused($filterFocused)
                     .padding(.horizontal, 10)
                     .frame(height: 28)
                     .background(Color.black.opacity(0.04))
@@ -27,6 +34,12 @@ struct SidebarView: View {
                     .padding(.top, 2)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
+                    // Reset keyboard selection whenever the filter query changes.
+                    .onChange(of: docManager.sideFilter) { _ in kbSel = 0 }
+                    .onChange(of: filterFocused) { focused in
+                        if focused { installKeyMonitor() } else { removeKeyMonitor() }
+                    }
+                    .onDisappear { removeKeyMonitor() }
 
                 // File tree — spec: padding 4px 10px 12px, gap 1px
                 ScrollView {
@@ -35,7 +48,8 @@ struct SidebarView: View {
                             SidebarNodeRow(
                                 node: node,
                                 depth: 0,
-                                hoveredNodeID: $hoveredNodeID
+                                hoveredNodeID: $hoveredNodeID,
+                                kbSelectedID: kbSelectedNodeID
                             )
                         }
                     }
@@ -105,6 +119,55 @@ struct SidebarView: View {
             !$0.isDirectory && $0.name.lowercased().contains(q)
         }
     }
+
+    // Files eligible for keyboard navigation — spec `sideVisibleFiles()`.
+    // Highlight only appears while filtering (matching the spec's `kbName`,
+    // which is null unless the filter query is non-empty).
+    private var kbVisibleFiles: [FileNode] {
+        docManager.sideFilter.isEmpty
+            ? []
+            : filteredNodes.filter { !$0.isDirectory }
+    }
+
+    // The node id of the current keyboard selection, clamped to range.
+    private var kbSelectedNodeID: UUID? {
+        let vis = kbVisibleFiles
+        guard !vis.isEmpty else { return nil }
+        return vis[min(max(kbSel, 0), vis.count - 1)].id
+    }
+
+    // MARK: - Filter keyboard navigation (spec JS `onSideFilterKey`)
+
+    // The filter TextField is a focusable NSTextField, so plain `.onKeyPress`
+    // is unavailable on macOS 13 (Package.swift target). Mirror the local
+    // NSEvent monitor pattern used for the Double-Shift palette trigger.
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            // Only intercept while the filter field is focused and filtering.
+            guard filterFocused else { return event }
+            let vis = kbVisibleFiles
+            guard !vis.isEmpty else { return event }
+            switch event.keyCode {
+            case 125: // ↓ — clamp to last
+                kbSel = min(kbSel + 1, vis.count - 1)
+                return nil
+            case 126: // ↑ — clamp to first
+                kbSel = max(kbSel - 1, 0)
+                return nil
+            case 36, 76: // Return / keypad Enter
+                let idx = min(max(kbSel, 0), vis.count - 1)
+                docManager.openFileNode(vis[idx])
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
+    }
 }
 
 // MARK: - Sidebar node row
@@ -113,6 +176,8 @@ private struct SidebarNodeRow: View {
     let node: FileNode
     let depth: Int
     @Binding var hoveredNodeID: UUID?
+    /// Node currently selected via filter keyboard navigation (spec `kbName`).
+    let kbSelectedID: UUID?
     @EnvironmentObject var docManager: DocumentManager
 
     private var isExpanded: Bool { docManager.expandedFolders.contains(node.id) }
@@ -120,6 +185,7 @@ private struct SidebarNodeRow: View {
         !node.isDirectory && docManager.tabs.contains(where: { $0.url == node.url && $0.id == docManager.activeTabID })
     }
     private var isHovered: Bool { hoveredNodeID == node.id }
+    private var isKbSelected: Bool { kbSelectedID == node.id }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -173,7 +239,7 @@ private struct SidebarNodeRow: View {
 
             if node.isDirectory && isExpanded {
                 ForEach(node.children) { child in
-                    SidebarNodeRow(node: child, depth: depth + 1, hoveredNodeID: $hoveredNodeID)
+                    SidebarNodeRow(node: child, depth: depth + 1, hoveredNodeID: $hoveredNodeID, kbSelectedID: kbSelectedID)
                 }
             }
         }
@@ -181,6 +247,9 @@ private struct SidebarNodeRow: View {
 
     private var rowBackground: Color {
         if isActive { return Color.black.opacity(0.06) }
+        // Spec `kbName`: keyboard selection highlight, but never over the
+        // active row — rgba(0,0,0,0.05), the project's existing hover token.
+        if isKbSelected { return DesignTokens.swiftUI.hover }
         if isHovered { return Color.black.opacity(0.045) }
         return .clear
     }
