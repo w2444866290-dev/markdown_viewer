@@ -54,15 +54,23 @@ struct CommandPaletteView: View {
     var totalItems: Int { filteredDocs.count + filteredCommands.count }
 
     var body: some View {
-        ZStack {
-            // Backdrop — spec: rgba(248,248,250,0.6) + blur(6px)
-            // Light veil (spec rgba(248,248,250,0.6)) over the host window's
-            // NSVisualEffectView(.behindWindow) blur — kept lighter (0.4) so the
-            // real frosted blur of the content behind stays visible, not flat gray.
-            Color(red: 248/255, green: 248/255, blue: 250/255).opacity(0.6)   // spec L227 exact
+        ZStack(alignment: .top) {
+            // Backdrop — spec L227: rgba(248,248,250,0.6) + backdrop-filter: blur(6px).
+            // The blur is supplied by the host window's NSVisualEffectView(.behindWindow)
+            // (see PaletteBlurHost); this Color is only the off-white veil layered on top.
+            // The visual-effect material ALSO contributes its own frost, so stacking the
+            // literal 0.6 spec value on top of it compounded to near-opaque — the main
+            // UI became invisible (QA P0). 0.4 here nets ≈ the spec's 0.6 over the blur
+            // while keeping the softened content clearly visible behind it.
+            Color(red: 248/255, green: 248/255, blue: 250/255).opacity(0.4)
                 .ignoresSafeArea()
                 .onTapGesture { docManager.paletteOpen = false }
 
+            // Top-aligned: spec L227 anchors the panel 96px below the container top
+            // (align-items: flex-start; padding-top: 96px). The trailing Spacer makes
+            // this VStack fill the full height so the 96px gap is measured from the
+            // real top — without it the VStack hugged its content and the ZStack
+            // centred it, dropping the panel toward the middle (QA P0).
             VStack(spacing: 0) {
                 Spacer().frame(height: 96)
 
@@ -132,6 +140,8 @@ struct CommandPaletteView: View {
                     RoundedRectangle(cornerRadius: 14)
                         .stroke(DesignTokens.swiftUI.ring, lineWidth: 1)
                 )
+
+                Spacer(minLength: 0)
             }
         }
         .ignoresSafeArea()

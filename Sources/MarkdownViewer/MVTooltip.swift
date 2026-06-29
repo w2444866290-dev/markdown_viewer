@@ -23,9 +23,10 @@ import SwiftUI
 /// publishes `(text, Anchor<CGRect>)` up the tree via a `PreferenceKey`; the root
 /// host (`.mvTooltipHost()`) reads it and draws the single global bubble.
 ///
-/// Position: 8px below the target, horizontally centred (`rect.midX, rect.maxY + 8`).
-/// The 5 targets (4 header buttons + sidebar ⌘K) never sit near the window bottom,
-/// so we always anchor **below** (see "待确认" note in the deliverable).
+/// Position: 8px below the target, horizontally centred (`rect.midX, rect.maxY + 8`),
+/// **flipping above** the target when a below-anchored bubble would clip the bottom
+/// of the content host (spec L518). The sidebar "全部命令 · ⌘K" row sits at the very
+/// bottom, so its tooltip opens upward; the header buttons keep opening downward.
 
 // MARK: - Preference plumbing
 
@@ -114,14 +115,19 @@ private struct MVTooltipHostModifier: ViewModifier {
             GeometryReader { proxy in
                 if let payload {
                     let rect = proxy[payload.anchor]
-                    // `.position` places the bubble's CENTRE. We want its TOP edge
-                    // 8px below the target, horizontally centred on the target →
-                    // centre x = rect.midX, centre y = rect.maxY + gap + height/2.
+                    // `.position` places the bubble's CENTRE. Default: TOP edge 8px
+                    // below the target (centre y = rect.maxY + gap + height/2).
+                    // Flip ABOVE when a below-anchored bubble would clip the container
+                    // bottom — e.g. the sidebar "全部命令 · ⌘K" row sits at the very
+                    // bottom, so its tooltip must open upward (spec L518, QA P2).
+                    let centreYBelow = rect.maxY + Self.gap + bubbleHeight / 2
+                    let centreYAbove = rect.minY - Self.gap - bubbleHeight / 2
+                    let overflowsBottom = rect.maxY + Self.gap + bubbleHeight > proxy.size.height
                     bubble(payload.text)
                         .fixedSize()
                         .position(
                             x: rect.midX,
-                            y: rect.maxY + Self.gap + bubbleHeight / 2
+                            y: overflowsBottom ? centreYAbove : centreYBelow
                         )
                         .allowsHitTesting(false)
                         .transition(.opacity)

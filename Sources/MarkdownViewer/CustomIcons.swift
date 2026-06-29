@@ -1,14 +1,21 @@
 import AppKit
 import SwiftUI
 
-/// SwiftUI wrapper: Image(nsImage: cachedIcon) with template rendering
-/// so .foregroundColor() tints the icon.
+/// SwiftUI wrapper: Image(nsImage:) that honours the NSImage's `isTemplate` flag.
+///
+/// - Chrome icons (sidebarToggle / find / openFolder) set `isTemplate = true`:
+///   rendered as `.template` so `.foregroundColor()` can tint them (hover color).
+/// - Fixed-color icons (docFile / sidebarFolder) leave `isTemplate = false`:
+///   rendered as `.original` so their own fill/stroke colors survive. Forcing
+///   `.template` on these flattened them to a solid black block (the white doc
+///   fill + light-gray folder both collapsed to the tint color) — that was the
+///   "黑色实心块" the QA pass flagged. Driving the mode off `isTemplate` fixes it.
 struct CIcon: View {
     let image: NSImage
     init(_ builder: () -> NSImage) { self.image = builder() }
     var body: some View {
         Image(nsImage: image)
-            .renderingMode(.template)
+            .renderingMode(image.isTemplate ? .template : .original)
             .resizable()
     }
 }

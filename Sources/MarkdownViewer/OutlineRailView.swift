@@ -99,10 +99,19 @@ struct OutlineRailView: View {
                 Text(h.title)
                     .font(.system(size: h.level == 1 ? 13 : 12,
                                   weight: isActive ? .semibold : .regular))
-                    .foregroundColor(isHovered
-                        ? DesignTokens.swiftUI.titleText
-                        : (isActive ? DesignTokens.swiftUI.accent : DesignTokens.swiftUI.tertiaryText))
+                    // Active wins over hover: the current heading stays amber even
+                    // while the row is hovered (QA P2). Non-active rows darken to
+                    // titleText on hover, tertiary at rest.
+                    .foregroundColor(isActive
+                        ? DesignTokens.swiftUI.accent
+                        : (isHovered ? DesignTokens.swiftUI.titleText : DesignTokens.swiftUI.tertiaryText))
                     .lineLimit(1)
+                    // White glow halo (spec L192: text-shadow 0 0 8/5/2px #fff) so the
+                    // expanded labels float above the body text instead of colliding
+                    // with it. Stacked shadows ≈ the three CSS layers.
+                    .shadow(color: .white, radius: 4)
+                    .shadow(color: .white, radius: 2.5)
+                    .shadow(color: .white, radius: 1)
                     .opacity(hovered ? 1 : 0)
                     .blur(radius: hovered ? 0 : 5)
                     .scaleEffect(isHovered ? 1.14 : 1, anchor: .trailing)

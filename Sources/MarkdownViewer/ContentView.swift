@@ -64,6 +64,17 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(DesignTokens.swiftUI.paper)
+                // ⌘F find/replace panel — spec L131-135: lives INSIDE the content area
+                // (the flex:1 box below the 44px tab bar), anchored top:10 right:18.
+                // Overlaying here (not on the outer column) makes top/right relative to
+                // the content area, so it sits just under the tab bar instead of being
+                // measured against the whole window and riding up over the top bar (QA P1).
+                .overlay(alignment: .topTrailing) {
+                    if findState.isOpen {
+                        FindBarView(state: findState)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
                 .overlay(alignment: .bottomTrailing) {
                     EditorStatusBar(scrollModel: scrollModel, bridge: bridge)
                 }
@@ -78,12 +89,6 @@ struct ContentView: View {
         // ⌘K palette lives in a separate blur-backed window (PaletteBlurHost) so
         // its backdrop can truly frost the main window content. Driven by paletteOpen.
         .background(PaletteBlurHost(docManager: docManager))
-        .overlay(alignment: .topTrailing) {
-            if findState.isOpen {
-                FindBarView(state: findState)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
         .overlay {
             if isDragging {
                 dragOverlay
