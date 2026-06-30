@@ -278,6 +278,8 @@ struct CommandPaletteView: View {
                 Text(title)
                     .font(.system(size: 13.5))
                     .foregroundColor(DesignTokens.swiftUI.titleText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer()
                 if subtitle == nil, isActiveDoc {
                     Text("当前")
@@ -288,6 +290,8 @@ struct CommandPaletteView: View {
                     Text(sub)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
             .padding(.horizontal, 12)
