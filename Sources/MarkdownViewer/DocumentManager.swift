@@ -77,6 +77,7 @@ final class DocumentManager: ObservableObject {
                               isMarkdown: DocumentTab.isMarkdownExtension(of: url))
         tabs.append(tab)
         activeTabID = tab.id
+        MVLog.info("open document: \(tab.name)", category: "document")
         Toaster.shared.flash("已打开 " + tab.name)
     }
 
@@ -84,6 +85,7 @@ final class DocumentManager: ObservableObject {
         let tab = DocumentTab(url: nil, name: "未命名.md", text: text, isDirty: true)
         tabs.append(tab)
         activeTabID = tab.id
+        MVLog.info("new document", category: "document")
     }
 
     /// Two-stage close. A dirty tab's first × shows the "确认关闭?" capsule and
@@ -106,6 +108,7 @@ final class DocumentManager: ObservableObject {
     }
 
     func doClose(_ tab: DocumentTab) {
+        MVLog.info("close document: \(tab.name)", category: "document")
         let idx = tabs.firstIndex(where: { $0.id == tab.id })
         lastClosedTab = tab
         tabs.removeAll { $0.id == tab.id }

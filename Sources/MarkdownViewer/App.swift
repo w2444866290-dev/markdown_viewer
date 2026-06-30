@@ -5,11 +5,20 @@ struct MarkdownViewerApp: App {
     @StateObject private var docManager = DocumentManager()
     @StateObject private var findState = FindState()
 
+    init() {
+        // Earliest point in app startup: arm the in-memory logger's crash flush.
+        MVLog.installCrashHandlers()
+        MVLog.info("app launched", category: "lifecycle")
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView(findState: findState)
                 .environmentObject(docManager)
                 .onAppear { docManager.findStateToggle = { findState.toggleOpen() } }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    MVLog.info("app will terminate", category: "lifecycle")
+                }
                 .frame(minWidth: 860, minHeight: 560)
                 .ignoresSafeArea()
         }
