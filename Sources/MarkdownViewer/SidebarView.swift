@@ -110,19 +110,37 @@ struct SidebarView: View {
         }
     }
 
+    // Browse mode renders the nested `fileTree`; filtered mode renders a FLAT
+    // list of every file (any depth) — spec `sideVisibleFiles()` filters the
+    // flat `buildDefs()` list regardless of folder nesting.
     private var filteredNodes: [FileNode] {
         if docManager.sideFilter.isEmpty {
             return docManager.fileTree
         }
         let q = docManager.sideFilter.lowercased()
-        return docManager.fileTree.filter {
-            !$0.isDirectory && $0.name.lowercased().contains(q)
+        return flattenFiles(docManager.fileTree).filter {
+            $0.name.lowercased().contains(q)
         }
+    }
+
+    // Depth-first flatten to all non-directory nodes (spec's flat file list).
+    private func flattenFiles(_ nodes: [FileNode]) -> [FileNode] {
+        var out: [FileNode] = []
+        for node in nodes {
+            if node.isDirectory {
+                out.append(contentsOf: flattenFiles(node.children))
+            } else {
+                out.append(node)
+            }
+        }
+        return out
     }
 
     // Files eligible for keyboard navigation — spec `sideVisibleFiles()`.
     // Highlight only appears while filtering (matching the spec's `kbName`,
-    // which is null unless the filter query is non-empty).
+    // which is null unless the filter query is non-empty). In filter mode
+    // `filteredNodes` is already the flattened, all-files-only match list, so
+    // keyboard nav traverses the same nested matches the rows display.
     private var kbVisibleFiles: [FileNode] {
         docManager.sideFilter.isEmpty
             ? []
