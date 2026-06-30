@@ -372,18 +372,35 @@ final class PaperTextView: NSTextView {
 /// Scroll view whose bottom content inset tracks 33vh of its own visible height
 /// (spec L180), without ever nudging the user's scroll position.
 ///
-/// #27 regression: the inset used to be recomputed inside `tile()`. Mutating
-/// `contentInsets` from within the layout pass shifts the (flipped) clip view's
-/// `bounds.origin.y`, so repeatedly resizing the window drifted the document
-/// downward a little each cycle and was effectively re-entrant.
+/// #27 regression history: the inset was first recomputed inside `tile()` (which
+/// shifted the flipped clip view's `bounds.origin.y` re-entrantly), then moved to
+/// a clip-view `frameDidChange` observer that captured `bounds.origin.y` just
+/// before the inset write and restored it after.
 ///
-/// Fix: `tile()` only lays out. The inset is recomputed in response to the clip
-/// view's *size* changes (frame-did-change), and the scroll origin is captured
-/// before and restored after the write so the responsive inset never moves the
-/// view. Only writes when the rounded value actually changes (>= 0.5pt guard).
+/// #27 follow-up (THIS fix): that capture-and-restore was asymmetric on SHRINK.
+/// The `frameDidChange` observer fires *after* AppKit has already resized the clip
+/// view AND already constrained its `bounds.origin.y` for the new (smaller)
+/// visible height while the OLD (larger) inset was still in effect — so the `y`
+/// we captured was a value the system had already shifted. We then "restored" that
+/// already-drifted `y`, and the clamp used a `maxY` derived from the NEW inset /
+/// NEW visibleH (which on shrink is *more* permissive), so the drift was never
+/// pulled back and accumulated a little downward each shrink cycle. Growing didn't
+/// drift because the upward shift clamps cleanly to 0.
+///
+/// Fix: anchor on the user's scroll position in *document space*, snapshotted at
+/// the moment a live resize BEGINS (before any clip-view shift), and re-pin to it
+/// after every inset write during and at the end of the drag. The document point
+/// at the top of the viewport is invariant to inset / visible-height changes, so
+/// re-pinning it keeps both grow and shrink rock-stable. Programmatic (non-live)
+/// size changes still take a fresh per-frame capture, which is correct there
+/// because no live-resize shift sequence precedes them.
 final class ResponsiveScrollView: NSScrollView {
     private var sizeObserver: NSObjectProtocol?
     private var lastVisibleHeight: CGFloat = 0
+    /// Document-space y of the top of the viewport, captured at live-resize start.
+    /// `nil` outside a live resize, in which case `updateBottomInset` falls back to
+    /// a fresh capture of the current origin (fine for programmatic size changes).
+    private var liveResizeAnchorY: CGFloat?
 
     override func tile() {
         super.tile()
@@ -409,32 +426,54 @@ final class ResponsiveScrollView: NSScrollView {
         }
     }
 
-    /// Recompute the 33vh bottom inset for the current visible height, pinning
-    /// the scroll origin so the inset change never moves the user's position.
-    private func updateBottomInset() {
+    // Snapshot the scroll anchor BEFORE the drag mutates the clip view, so every
+    // intermediate `frameDidChange` during the drag re-pins to the same untouched
+    // document position instead of to an already-shifted (stale) origin.
+    override func viewWillStartLiveResize() {
+        super.viewWillStartLiveResize()
+        liveResizeAnchorY = contentView.bounds.origin.y
+    }
+
+    // One authoritative re-pin once the drag settles, then drop the anchor so
+    // later programmatic resizes take a fresh capture.
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        updateBottomInset(force: true)
+        liveResizeAnchorY = nil
+    }
+
+    /// Recompute the 33vh bottom inset for the current visible height, pinning the
+    /// scroll origin so neither the inset change nor the resize moves the user's
+    /// position. During a live resize the anchor is the document position captured
+    /// at `viewWillStartLiveResize` (invariant to the drag); otherwise it is a
+    /// fresh capture of the current origin.
+    private func updateBottomInset(force: Bool = false) {
         let visibleH = contentView.bounds.height
-        guard visibleH > 0, abs(visibleH - lastVisibleHeight) >= 0.5 else { return }
+        guard visibleH > 0 else { return }
+        // The per-frame path still throttles on visible-height delta; the
+        // end-of-resize re-pin forces through so the final position is exact.
+        if !force {
+            guard abs(visibleH - lastVisibleHeight) >= 0.5 else { return }
+        }
         lastVisibleHeight = visibleH
 
         let target = (0.33 * visibleH).rounded()
-        guard abs(contentInsets.bottom - target) >= 0.5 else { return }
+        // The anchor (document y at the top of the viewport) is what we hold fixed.
+        // It is invariant to the inset, so capture it independent of the write.
+        let anchorY = liveResizeAnchorY ?? contentView.bounds.origin.y
 
-        // Capture the current scroll position BEFORE touching the inset, then
-        // restore it afterward (clamped to the new max offset) so the responsive
-        // inset never nudges the document. contentView is flipped (doc view top
-        // is origin.y == 0), so a larger bottom inset would otherwise pull
-        // bounds.origin.y down each resize cycle — that was the #27 drift.
-        let y = contentView.bounds.origin.y
-        contentInsets.bottom = target
+        if abs(contentInsets.bottom - target) >= 0.5 {
+            contentInsets.bottom = target
+        }
 
-        let docHeight = (documentView?.frame.height ?? 0) + contentInsets.top + target
+        let docHeight = (documentView?.frame.height ?? 0) + contentInsets.top + contentInsets.bottom
         let maxY = max(0, docHeight - visibleH)
-        let restoredY = min(max(0, y), maxY)
+        let restoredY = min(max(0, anchorY), maxY)
         contentView.scroll(to: CGPoint(x: contentView.bounds.origin.x, y: restoredY))
         reflectScrolledClipView(contentView)
 
         MVLog.debug(
-            "ResponsiveScrollView inset → \(target) (visibleH \(Int(visibleH)), scrollY pinned at \(Int(restoredY)))",
+            "ResponsiveScrollView inset → \(target) (visibleH \(Int(visibleH)), anchorY \(Int(anchorY)) → pinned \(Int(restoredY)))",
             category: "editor"
         )
     }
