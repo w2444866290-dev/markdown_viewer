@@ -126,12 +126,22 @@ final class FindController {
     /// whole-document `removeTemporaryAttribute(0..length)` on every keystroke was
     /// the cause of the "flash white" + jank. Each previous range is bounds-clamped
     /// against the live storage length so a stale range can't make AppKit throw.
+    ///
+    /// #search-flash (delete/empty query): `removeTemporaryAttribute` alone does
+    /// NOT repaint (same AppKit quirk OutlineController.washHeading documents), so
+    /// the cleared tint lingered until some *other* event forced a full-viewport
+    /// redraw — which then flashed every previously-highlighted glyph at once. That
+    /// is why TYPING (query grows → `applyHighlights` immediately re-paints via
+    /// `addTemporaryAttributes`) looked clean but DELETING/EMPTYING (clear-only,
+    /// nothing re-paints) flashed. Fix: commit the removal immediately by
+    /// invalidating exactly the cleared ranges — incremental, never whole-document.
     private func clearHighlights() {
         guard let lm = textView?.layoutManager else { highlightedRanges = []; return }
         let length = lm.textStorage?.length ?? 0
         for r in highlightedRanges {
             guard let safe = clamped(r, max: length) else { continue }
             lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: safe)
+            lm.invalidateDisplay(forCharacterRange: safe)
         }
         highlightedRanges = []
     }
