@@ -15,6 +15,11 @@ struct ContentView: View {
     // scroll updates to scrollModel.value never re-render ContentView. Only the
     // isolated EditorStatusBar observes it.
     @State private var scrollModel = ScrollProgressModel()
+    // Same isolation as scrollModel: the active outline heading changes on every
+    // scroll frame, so it gets its own observable held via @State (NOT observed
+    // here) — only OutlineRailView subscribes. ContentView.body must never read
+    // it, or scrolling would re-render the whole tree again.
+    @State private var activeHeading = ActiveHeadingModel()
     @State private var isDragging = false
     @State private var hasInitialized = false
     // Double-Shift → quick search (spec JS L478-490): event monitor + timing holder.
@@ -46,13 +51,14 @@ struct ContentView: View {
                                 fontIndex: $docManager.fontIndex,
                                 findState: findState,
                                 bridge: bridge,
-                                scrollModel: scrollModel
+                                scrollModel: scrollModel,
+                                activeHeadingModel: activeHeading
                             )
                             .id(docManager.activeTabID)
 
                             OutlineRailView(
                                 headings: bridge.headings,
-                                activeIndex: bridge.activeHeadingIndex,
+                                activeHeading: activeHeading,
                                 onJump: { bridge.onJumpToHeading?($0) },
                                 docToken: docManager.activeTabID,
                                 onHoverChange: { bridge.cursorOverRail = $0 }

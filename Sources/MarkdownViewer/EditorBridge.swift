@@ -3,7 +3,6 @@ import SwiftUI
 /// Single AppKit → SwiftUI observable bridge and command channel.
 final class EditorBridge: ObservableObject {
     @Published var headings: [OutlineController.Heading] = []
-    @Published var activeHeadingIndex: Int = 0
     /// Cached document metrics — recomputed only on text change (not per scroll
     /// frame) so the status bar never does O(n) work while scrolling.
     @Published var charCount: Int = 0
@@ -32,4 +31,18 @@ final class EditorBridge: ObservableObject {
 /// re-renders just that one small view.
 final class ScrollProgressModel: ObservableObject {
     @Published var value: Double = 0
+}
+
+/// Isolated, single-value observable for the active outline heading.
+///
+/// The active heading changes on every scroll frame (as new headings cross the
+/// top of the viewport). For the exact reason `ScrollProgressModel` is isolated:
+/// if it lived on `EditorBridge`, each `@Published` change would re-evaluate the
+/// whole `ContentView` body (editor, sidebar, rail, overlays) because SwiftUI
+/// invalidation is object-level. Keeping it on its own tiny object — held by
+/// `ContentView` via `@State` (which does NOT subscribe to `objectWillChange`)
+/// and observed only by the isolated `OutlineRailView` — means scrolling
+/// re-renders just the rail.
+final class ActiveHeadingModel: ObservableObject {
+    @Published var index: Int = 0
 }

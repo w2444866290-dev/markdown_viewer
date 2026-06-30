@@ -10,6 +10,9 @@ struct EditorView: NSViewRepresentable {
     /// Isolated scroll-progress sink. NOT observed by ContentView (held there via
     /// @State), so writing it on every scroll frame does not re-render the tree.
     var scrollModel: ScrollProgressModel
+    /// Isolated active-heading sink, same rationale as `scrollModel`: written on
+    /// every perceptible scroll frame, observed only by OutlineRailView.
+    var activeHeadingModel: ActiveHeadingModel
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -98,7 +101,7 @@ struct EditorView: NSViewRepresentable {
                 context.coordinator.outlineController.rebuild()
                 let bridge = context.coordinator.parent.bridge
                 bridge.headings = context.coordinator.outlineController.headings
-                bridge.activeHeadingIndex = 0
+                context.coordinator.parent.activeHeadingModel.index = 0
                 bridge.charCount = newText.count
                 bridge.lineCount = newText.isEmpty ? 0 : newText.components(separatedBy: "\n").count
             }
@@ -209,7 +212,7 @@ struct EditorView: NSViewRepresentable {
                     // Text changed → refresh hover caches (cheap lookups stay valid).
                     self.refreshTextCaches()
                     self.parent.bridge.headings = self.outlineController.headings
-                    self.parent.bridge.activeHeadingIndex = self.outlineController.activeIndex(for: scrollY)
+                    self.parent.activeHeadingModel.index = self.outlineController.activeIndex(for: scrollY)
                     self.parent.bridge.charCount = text.count
                     self.parent.bridge.lineCount = text.isEmpty ? 0 : text.components(separatedBy: "\n").count
                 }
@@ -236,8 +239,8 @@ struct EditorView: NSViewRepresentable {
             // avoiding redundant @Published invalidations on the ContentView tree.
             let scrollY = scrollView?.contentView.bounds.origin.y ?? 0
             let active = outlineController.activeIndex(for: scrollY)
-            if parent.bridge.activeHeadingIndex != active {
-                parent.bridge.activeHeadingIndex = active
+            if parent.activeHeadingModel.index != active {
+                parent.activeHeadingModel.index = active
             }
         }
 

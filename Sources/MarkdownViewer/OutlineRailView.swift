@@ -4,7 +4,10 @@ import AppKit
 /// Outline rail — spec: right 0, top 46%, translateY(-50%), tick→text melt animation.
 struct OutlineRailView: View {
     let headings: [OutlineController.Heading]
-    let activeIndex: Int
+    /// Isolated active-heading observable. Owned by ContentView via @State and
+    /// observed ONLY here, so the per-scroll-frame active-heading updates re-render
+    /// just this rail instead of the whole ContentView body.
+    @ObservedObject var activeHeading: ActiveHeadingModel
     let onJump: (Int) -> Void
     /// Active document identity — changes on tab open/switch to fire the tick
     /// pulse hint (spec pulseRail).
@@ -77,7 +80,7 @@ struct OutlineRailView: View {
     // MARK: - Row
 
     private func outlineRow(_ h: OutlineController.Heading, idx: Int) -> some View {
-        let isActive = h.id == activeIndex
+        let isActive = h.id == activeHeading.index
         let isHovered = hoveredIndex == idx
         let delay = hovered ? Double(idx) * 0.012 : 0
         let tickW: CGFloat = h.level == 1 ? 22 : 14
