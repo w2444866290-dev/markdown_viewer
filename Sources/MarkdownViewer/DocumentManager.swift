@@ -73,13 +73,14 @@ final class DocumentManager: ObservableObject {
             activeTabID = existing.id
             return
         }
-        let tab = DocumentTab(url: url, name: url.lastPathComponent, text: text, isDirty: false)
+        let tab = DocumentTab(url: url, name: url.lastPathComponent, text: text, isDirty: false,
+                              isMarkdown: DocumentTab.isMarkdownExtension(of: url))
         tabs.append(tab)
         activeTabID = tab.id
         Toaster.shared.flash("已打开 " + tab.name)
     }
 
-    func newDocument(text: String = "# 未命名\n\n") {
+    func newDocument(text: String = "") {
         let tab = DocumentTab(url: nil, name: "未命名.md", text: text, isDirty: true)
         tabs.append(tab)
         activeTabID = tab.id
@@ -281,4 +282,14 @@ struct DocumentTab: Identifiable {
     var name: String
     var text: String
     var isDirty: Bool
+    /// Whether the document renders as live Markdown. Derived from the file
+    /// extension: `.md`/`.markdown` → true; untitled/new docs (url == nil) → true;
+    /// everything else (e.g. .yaml/.json) → false, shown as plain source.
+    var isMarkdown: Bool = true
+
+    /// Classify a file URL as Markdown. `nil` (untitled/new) is treated as Markdown.
+    static func isMarkdownExtension(of url: URL?) -> Bool {
+        guard let url else { return true }
+        return ["md", "markdown"].contains(url.pathExtension.lowercased())
+    }
 }

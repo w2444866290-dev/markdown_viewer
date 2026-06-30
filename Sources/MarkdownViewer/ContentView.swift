@@ -20,6 +20,10 @@ struct ContentView: View {
     // here) — only OutlineRailView subscribes. ContentView.body must never read
     // it, or scrolling would re-render the whole tree again.
     @State private var activeHeading = ActiveHeadingModel()
+    // Same isolation as scrollModel/activeHeading: the hovered link URL changes on
+    // every mouse move over a link. Held via @State (NOT observed here) so only the
+    // bottom-left hover-preview leaf re-renders. ContentView.body must never read it.
+    @State private var hoverURL = HoverURLModel()
     @State private var isDragging = false
     @State private var hasInitialized = false
     // Double-Shift → quick search (spec JS L478-490): event monitor + timing holder.
@@ -44,15 +48,17 @@ struct ContentView: View {
                     .padding(.leading, tabPadLeft)
 
                 ZStack(alignment: .topTrailing) {
-                    if docManager.activeTab != nil {
+                    if let active = docManager.activeTab {
                         ZStack(alignment: .trailing) {
                             EditorView(
                                 text: docManager.textBinding,
                                 fontIndex: $docManager.fontIndex,
+                                isMarkdown: active.isMarkdown,
                                 findState: findState,
                                 bridge: bridge,
                                 scrollModel: scrollModel,
-                                activeHeadingModel: activeHeading
+                                activeHeadingModel: activeHeading,
+                                hoverURL: hoverURL
                             )
                             .id(docManager.activeTabID)
 
@@ -81,11 +87,20 @@ struct ContentView: View {
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
+                // #22: non-Markdown source banner (spec ~L391). Pinned to the top of
+                // the content area so it reads as a header above the source text.
+                .overlay(alignment: .top) {
+                    if let active = docManager.activeTab, !active.isMarkdown {
+                        nonMarkdownBanner
+                    }
+                }
                 .overlay(alignment: .bottomTrailing) {
                     EditorStatusBar(scrollModel: scrollModel, bridge: bridge)
                 }
                 .overlay(alignment: .bottomLeading) {
-                    if !bridge.hoveredURL.isEmpty { hoverURLPreview }
+                    // Observes the isolated HoverURLModel — a mouse move over a link
+                    // re-renders only this leaf, never ContentView.body (性能-2).
+                    HoverURLPreview(model: hoverURL)
                 }
             }
         }
@@ -115,7 +130,8 @@ struct ContentView: View {
             guard !hasInitialized else { return }
             hasInitialized = true
             if docManager.tabs.isEmpty {
-                docManager.newDocument(text: sampleText)
+                // First launch: one empty untitled doc, empty sidebar (spec #1/#2).
+                docManager.newDocument()
             }
         }
         .onAppear { installShiftMonitor() }
@@ -166,22 +182,18 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Link URL preview — spec L213: bottom 14, left 20, 11.5px,
-    // #767676, single line ellipsis, max-width 42%, no hit testing.
+    // MARK: - Non-Markdown source banner (spec ~L391)
 
-    private var hoverURLPreview: some View {
-        GeometryReader { geo in
-            Text(bridge.hoveredURL)
-                .font(.system(size: 11.5))
-                .foregroundColor(DesignTokens.swiftUI.statusText)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: geo.size.width * 0.42, alignment: .leading)
-                .padding(.leading, 20)
-                .padding(.bottom, 14)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        }
-        .allowsHitTesting(false)
+    private var nonMarkdownBanner: some View {
+        // spec: font-size 12px, color #86868b (tertiaryText), sits above the source.
+        Text("非 Markdown 文件 · 以源码形式查看")
+            .font(.system(size: 12))
+            .foregroundColor(DesignTokens.swiftUI.tertiaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 70)
+            .padding(.vertical, 12)
+            .background(DesignTokens.swiftUI.paper)
+            .allowsHitTesting(false)
     }
 
     // MARK: - Double-Shift quick search (spec JS L478-490)
@@ -228,7 +240,13 @@ struct ContentView: View {
                   let path = String(data: data, encoding: .utf8),
                   let url = URL(string: path) else { return }
             let ext = url.pathExtension.lowercased()
-            guard ["md", "markdown", "txt", "text"].contains(ext) else { return }
+            // spec L857: only Markdown / text files; reject everything else with a toast.
+            guard ["md", "markdown", "txt"].contains(ext) else {
+                DispatchQueue.main.async {
+                    Toaster.shared.flash("仅支持 Markdown / 文本文件")
+                }
+                return
+            }
             if let text = try? String(contentsOf: url, encoding: .utf8) {
                 DispatchQueue.main.async {
                     docManager.openTab(for: url, text: text)
@@ -237,32 +255,6 @@ struct ContentView: View {
         }
         return true
     }
-
-    private let sampleText = """
-    # Markdown Viewer
-
-    一个为 macOS 设计的轻量 Markdown 阅读器：打开即读，不打扰。
-
-    ## 特性
-
-    - 安静侧栏与文档树，支持按名称筛选
-    - 顶部多标签页，未保存的文档以琥珀点提示
-    - 右侧悬浮目录，滚动同步高亮
-    - ⌘F 查找与替换，⌘K 命令面板
-
-    ## 快捷键
-
-    | 快捷键 | 功能 |
-    |--------|------|
-    | ⌘ N | 新建文档 |
-    | ⌘ S | 保存 |
-    | ⌘ F | 查找 / 替换 |
-    | ⌘ K | 命令面板 |
-    | ⌘ + | 放大字号 |
-    | ⌘ - | 缩小字号 |
-
-    > 设计原则：读起来像一页纸，而不是一个应用。
-    """
 }
 
 // MARK: - Status bar — isolated so scroll only re-renders THIS view
@@ -291,8 +283,11 @@ private struct EditorStatusBar: View {
     }
 
     var body: some View {
+        // spec L208: 11.5px with tabular numerals (font-variant-numeric: tabular-nums),
+        // NOT a monospaced family.
         Text("\(wordCount) 字 · \(bridge.lineCount) 行 · \(Int(scrollModel.value * 100))%")
-            .font(.system(size: 11.5, design: .monospaced))
+            .font(.system(size: 11.5))
+            .monospacedDigit()
             .foregroundColor(DesignTokens.swiftUI.statusText)
             .opacity(faded ? 0 : 1)
             .animation(.easeInOut(duration: 0.3), value: faded)
@@ -306,6 +301,33 @@ private struct EditorStatusBar: View {
             .onReceive(scrollModel.$value) { _ in
                 faded = true
             }
+    }
+}
+
+// MARK: - Link URL preview — isolated so a mouse move over a link re-renders
+// ONLY this leaf (性能-2). Spec L213: bottom 14, left 20, 11.5px, #767676,
+// single line ellipsis, max-width 42%, no hit testing.
+//
+// Observes the isolated HoverURLModel. Because ContentView holds the model via
+// @State and does NOT observe it, hovering links never re-evaluates ContentView.body.
+private struct HoverURLPreview: View {
+    @ObservedObject var model: HoverURLModel
+
+    var body: some View {
+        GeometryReader { geo in
+            if !model.url.isEmpty {
+                Text(model.url)
+                    .font(.system(size: 11.5))
+                    .foregroundColor(DesignTokens.swiftUI.statusText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: geo.size.width * 0.42, alignment: .leading)
+                    .padding(.leading, 20)
+                    .padding(.bottom, 14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 

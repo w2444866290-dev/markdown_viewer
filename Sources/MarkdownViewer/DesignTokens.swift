@@ -75,7 +75,10 @@ enum DesignTokens {
     static let tabBarHeight: CGFloat = 44
     static let bodyFontSizes: [CGFloat] = [14, 15.5, 17]
     static let editorTopInset: CGFloat = 44
-    static let editorBottomPadding: CGFloat = 220  // ~33vh on 760px window
+    /// Fallback bottom inset used only before the scroll view has a measured
+    /// height. The live value is responsive (spec L180 = 33vh): EditorView
+    /// recomputes it as 0.33 × the scroll view's visible height on every layout.
+    static let editorBottomPadding: CGFloat = 220  // ~33vh on a 760px window
     static let bodyLineHeight: CGFloat = 1.7
     static let paletteKbdColor = 0x9A9A9E
 
