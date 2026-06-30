@@ -125,6 +125,48 @@ final class CardLayoutManager: NSLayoutManager {
             self.cardBorder.setStroke()
             path.lineWidth = 1
             path.stroke()
+            // The opaque card fill just covered any find/outline highlight inside
+            // it (a semi-transparent temporary `.backgroundColor` painted by
+            // `super.drawBackground`). Re-stamp those highlights on top so matches
+            // inside a code block stay visible (paint-order fix).
+            self.refillTemporaryBackgrounds(in: blockRange, at: origin)
+        }
+    }
+
+    /// Re-paint any temporary `.backgroundColor` (the find/outline highlight,
+    /// applied by `FindController`/`OutlineController` via `addTemporaryAttributes`)
+    /// over the opaque inline-code pill or code card that `drawInlineCodePills` /
+    /// `drawCodeCards` just filled on top of it. The base class already painted
+    /// these once in `super.drawBackground`, so we mirror that geometry: walk the
+    /// temp-bg sub-ranges of `charRange` and fill each one's glyph bounding rect
+    /// (offset by the same `origin`) with its temp color. Because the find accent
+    /// is semi-transparent (alpha 0.55/0.22) it reads correctly over the pill, and
+    /// touching only temporary `.backgroundColor` leaves selection and the
+    /// permanent quote/table `.backgroundColor` attributes untouched.
+    private func refillTemporaryBackgrounds(in charRange: NSRange, at origin: NSPoint) {
+        guard charRange.length > 0, let container = textContainers.first else { return }
+        let full = NSRange(location: 0, length: (textStorage?.length ?? 0))
+        var index = charRange.location
+        let end = charRange.location + charRange.length
+        while index < end {
+            var effective = NSRange(location: 0, length: 0)
+            let value = temporaryAttribute(.backgroundColor, atCharacterIndex: index,
+                                           longestEffectiveRange: &effective, in: full)
+            guard effective.length > 0 else { break }
+            // Clip the run to the range we are re-filling.
+            let runStart = max(effective.location, charRange.location)
+            let runEnd = min(effective.location + effective.length, end)
+            if let color = value as? NSColor, runEnd > runStart {
+                let subRange = NSRange(location: runStart, length: runEnd - runStart)
+                let glyphRange = self.glyphRange(forCharacterRange: subRange, actualCharacterRange: nil)
+                color.setFill()
+                self.enumerateEnclosingRects(forGlyphRange: glyphRange,
+                                             withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                                             in: container) { rect, _ in
+                    rect.offsetBy(dx: origin.x, dy: origin.y).fill()
+                }
+            }
+            index = max(index + 1, effective.location + effective.length)
         }
     }
 
@@ -145,6 +187,10 @@ final class CardLayoutManager: NSLayoutManager {
                 self.pillFill.setFill()
                 path.fill()
             }
+            // The opaque pill fill just covered any find/outline highlight inside
+            // this inline-code run; re-stamp it on top (paint-order fix). See
+            // `refillTemporaryBackgrounds`.
+            self.refillTemporaryBackgrounds(in: runCharRange, at: origin)
         }
     }
 
