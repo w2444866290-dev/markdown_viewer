@@ -57,8 +57,17 @@ final class OutlineController {
         var rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
         rect.origin.y += tv.textContainerInset.height
         let target = max(0, min(rect.minY - 40, max(0, tv.frame.height - sv.contentView.bounds.height)))
-        sv.contentView.animator().setBoundsOrigin(NSPoint(x: 0, y: target))
-        washHeading(lineRange, in: tv, lm: lm)
+        // Scroll over 300ms with cubic ease-in-out (web jump dur=300), then run
+        // the amber wash from the completion handler so it starts AFTER the
+        // scroll settles — not immediately, while the view is still moving.
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.3
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            sv.contentView.animator().setBoundsOrigin(NSPoint(x: 0, y: target))
+        }, completionHandler: { [weak self, weak tv] in
+            guard let self, let tv, let lm = tv.layoutManager else { return }
+            self.washHeading(lineRange, in: tv, lm: lm)
+        })
     }
 
     /// Amber "wash" flash on the jumped-to heading line, mirroring the web
@@ -71,7 +80,7 @@ final class OutlineController {
         // line — removeTemporaryAttribute alone does NOT repaint, which previously
         // left the highlight stuck on screen ("一直高亮").
         let steps = 12
-        let total = 0.7
+        let total = 0.9
         for i in 0...steps {
             let t = Double(i) / Double(steps)
             DispatchQueue.main.asyncAfter(deadline: .now() + total * t) { [weak tv] in
