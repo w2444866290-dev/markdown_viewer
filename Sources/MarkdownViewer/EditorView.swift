@@ -13,17 +13,22 @@ struct EditorView: NSViewRepresentable {
     /// Isolated active-heading sink, same rationale as `scrollModel`: written on
     /// every perceptible scroll frame, observed only by OutlineRailView.
     var activeHeadingModel: ActiveHeadingModel
+    /// Isolated hovered-link-URL sink, same rationale as `scrollModel`: written on
+    /// every mouse move over a link, observed only by the bottom-left preview leaf.
+    var hoverURL: HoverURLModel
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let sv = NSScrollView()
+        let sv = ResponsiveScrollView()
         sv.hasVerticalScroller = true
         sv.autohidesScrollers = true
         sv.scrollerStyle = .overlay
         sv.drawsBackground = true
         sv.backgroundColor = DesignTokens.paper
-        // Bottom padding — spec: 33vh ≈ 220pt
+        // Bottom padding — spec L180: 33vh. ResponsiveScrollView keeps
+        // contentInsets.bottom = 0.33 × visible height in sync on every layout;
+        // editorBottomPadding is only the pre-measurement fallback.
         sv.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: DesignTokens.editorBottomPadding, right: 0)
 
         let tv = PaperTextView(frame: .zero)
@@ -85,12 +90,18 @@ struct EditorView: NSViewRepresentable {
         let fontChanged = tv.font != newFont
         if fontChanged {
             tv.font = newFont
-            if let s = tv.textStorage, isMarkdown { LiveMarkdownStyler.apply(to: s) }
+            if let s = tv.textStorage {
+                if isMarkdown { LiveMarkdownStyler.apply(to: s) }
+                else { applyPlainSource(to: s, font: newFont) }
+            }
         }
 
         if tv.string != text {
             tv.string = text
-            if let s = tv.textStorage, isMarkdown { LiveMarkdownStyler.apply(to: s) }
+            if let s = tv.textStorage {
+                if isMarkdown { LiveMarkdownStyler.apply(to: s) }
+                else { applyPlainSource(to: s, font: newFont) }
+            }
             // Text changed → refresh the per-version mouse-hover caches so
             // mouseMoved stays cheap (no full-document scan per move).
             context.coordinator.refreshTextCaches()
@@ -106,6 +117,19 @@ struct EditorView: NSViewRepresentable {
                 bridge.lineCount = newText.isEmpty ? 0 : newText.components(separatedBy: "\n").count
             }
         }
+    }
+
+    /// Non-Markdown documents (#22, spec ~L391) are shown as PLAIN source — the
+    /// live styler is never run. Reset the whole storage to one flat monospaced
+    /// run so any attributes left over from a prior styling pass are cleared.
+    private func applyPlainSource(to storage: NSTextStorage, font: NSFont) {
+        let size = font.pointSize
+        let mono = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let full = NSRange(location: 0, length: storage.length)
+        storage.setAttributes([
+            .font: mono,
+            .foregroundColor: DesignTokens.bodyText,
+        ], range: full)
     }
 
     // MARK: - Coordinator (thin delegate dispatcher)
@@ -219,7 +243,12 @@ struct EditorView: NSViewRepresentable {
                 self.debounceWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
             }
-            LiveMarkdownStyler.apply(to: s)
+            // #22: non-Markdown source files are never live-styled — keep them flat.
+            if parent.isMarkdown {
+                LiveMarkdownStyler.apply(to: s)
+            } else {
+                parent.applyPlainSource(to: s, font: tv.font ?? NSFont.systemFont(ofSize: DesignTokens.bodyFontSizes[parent.fontIndex]))
+            }
         }
 
         @objc func scrollDidChange() {
@@ -264,8 +293,8 @@ struct EditorView: NSViewRepresentable {
         /// coordinate math falls through to clearing the preview — never crashes.
         private func updateHoveredURL(at tvPoint: NSPoint) {
             let url = linkURL(at: tvPoint) ?? ""
-            if parent.bridge.hoveredURL != url {
-                parent.bridge.hoveredURL = url
+            if parent.hoverURL.url != url {
+                parent.hoverURL.url = url
             }
         }
 
@@ -336,6 +365,26 @@ final class PaperTextView: NSTextView {
         textContainerInset = NSSize(width: max(70, (w - pw) / 2), height: DesignTokens.editorTopInset)
     }
     override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); layout() }
+}
+
+// MARK: - ResponsiveScrollView
+
+/// Scroll view whose bottom content inset tracks 33vh of its own visible height
+/// (spec L180). `tile()` is AppKit's layout pass — it runs on every resize and
+/// scroller change, so recomputing the inset here keeps the editor's bottom
+/// breathing room proportional to the window without any SwiftUI/UIScreen
+/// dependency. Only writes when the rounded value actually changes to avoid
+/// re-entrant layout.
+final class ResponsiveScrollView: NSScrollView {
+    override func tile() {
+        super.tile()
+        let visibleH = contentView.bounds.height
+        guard visibleH > 0 else { return }
+        let target = (0.33 * visibleH).rounded()
+        if abs(contentInsets.bottom - target) >= 0.5 {
+            contentInsets.bottom = target
+        }
+    }
 }
 
 // MARK: - Mouse tracker

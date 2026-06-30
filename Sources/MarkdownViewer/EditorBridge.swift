@@ -7,9 +7,6 @@ final class EditorBridge: ObservableObject {
     /// frame) so the status bar never does O(n) work while scrolling.
     @Published var charCount: Int = 0
     @Published var lineCount: Int = 0
-    /// URL under the mouse cursor (browser-convention bottom-left preview).
-    /// Empty string = nothing hovered.
-    @Published var hoveredURL: String = ""
 
     /// Set by EditorView.Coordinator — when called, scrolls to heading.
     var onJumpToHeading: ((Int) -> Void)?
@@ -45,4 +42,18 @@ final class ScrollProgressModel: ObservableObject {
 /// re-renders just the rail.
 final class ActiveHeadingModel: ObservableObject {
     @Published var index: Int = 0
+}
+
+/// Isolated, single-value observable for the link URL under the mouse cursor.
+///
+/// The hovered URL changes on every mouse move over a link. For the exact reason
+/// `ActiveHeadingModel` is isolated: if it lived on `EditorBridge`, each
+/// `@Published` change would re-evaluate the whole `ContentView` body because
+/// SwiftUI invalidation is object-level. Keeping it on its own tiny object — held
+/// by `ContentView` via `@State` (which does NOT subscribe to `objectWillChange`)
+/// and observed only by the isolated bottom-left hover-preview leaf — means a
+/// mouse move over a link re-renders just that preview.
+/// Empty string = nothing hovered.
+final class HoverURLModel: ObservableObject {
+    @Published var url: String = ""
 }
