@@ -6,6 +6,10 @@ struct FindBarView: View {
     @ObservedObject var state: FindState
     /// Drives focus on open — spec #9 (b)/(c): focus the field + select-all.
     @FocusState private var fieldFocused: Bool
+    /// Tracks focus on the replace field so the key monitor can route Esc there.
+    @FocusState private var replaceFocused: Bool
+    /// Local NSEvent monitor for Shift+Enter / Esc — spec #11 (design L919/L925).
+    @State private var keyMonitor: Any?
     @State private var hoverChevron = false
     @State private var hoverPrev = false
     @State private var hoverNext = false
@@ -17,6 +21,11 @@ struct FindBarView: View {
 
     /// Spec: style-hover="background: rgba(0,0,0,0.05)" on panel buttons.
     private static let hoverFill = Color.black.opacity(0.05)
+
+    /// Spec #12 (design L138): find/replace input bg = rgba(0,0,0,0.045). LOCAL to
+    /// this view — the shared DesignTokens.fieldFill is used by other views, so we
+    /// don't mutate it here.
+    private static let inputFill = Color.black.opacity(0.045)
 
     var body: some View {
         VStack(spacing: 6) {
@@ -57,7 +66,7 @@ struct FindBarView: View {
                 }
                 .padding(.horizontal, 9)
                 .frame(width: 240, height: 28)
-                .background(DesignTokens.swiftUI.fieldFill)
+                .background(Self.inputFill)
                 .cornerRadius(6)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
@@ -146,9 +155,10 @@ struct FindBarView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .foregroundColor(DesignTokens.swiftUI.titleText)
+                        .focused($replaceFocused)
                         .padding(.horizontal, 9)
                         .frame(width: 240, height: 28)
-                        .background(DesignTokens.swiftUI.fieldFill)
+                        .background(Self.inputFill)
                         .cornerRadius(6)
                         .onSubmit { state.onReplaceCurrent?() }
                     Spacer()
@@ -178,9 +188,15 @@ struct FindBarView: View {
         .fixedSize(horizontal: true, vertical: false)
         .padding(6)
         .background(
-            // spec L135: rgba(255,255,255,0.97) + backdrop blur(8px) → frosted panel
+            // spec L135: rgba(255,255,255,0.97) + backdrop blur(8px) → frosted panel.
+            // SwiftUI has no real backdrop blur; we approximate with an .ultraThinMaterial
+            // base (the blur) tinted by a near-opaque white at 0.97 (the spec's white veil).
             RoundedRectangle(cornerRadius: 10)
-                .fill(.regularMaterial)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.white.opacity(0.97))
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(Color.black.opacity(0.05), lineWidth: 1)
@@ -193,7 +209,11 @@ struct FindBarView: View {
         // and select-all so the prior query is ready to overtype. requestAnimationFrame
         // in the spec maps to a main-async hop here (let SwiftUI commit focus first).
         .onChange(of: state.focusRequest) { _ in focusAndSelectAll() }
-        .onAppear { focusAndSelectAll() }
+        .onAppear {
+            focusAndSelectAll()
+            installKeyMonitor()
+        }
+        .onDisappear { removeKeyMonitor() }
     }
 
     private func focusAndSelectAll() {
@@ -201,6 +221,38 @@ struct FindBarView: View {
         DispatchQueue.main.async {
             NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
         }
+    }
+
+    // Spec #11 (design L919/L925): the find input needs Shift+Enter = previous and
+    // Esc = close; the replace input needs Esc = close. The macOS 13 target rules out
+    // `.onKeyPress`, so we mirror SidebarView's local NSEvent.keyDown monitor and gate
+    // it on the relevant field being focused. (Enter→next / Enter→replace are already
+    // handled by SwiftUI `.onSubmit`, so we leave plain Enter to fall through.)
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            // Only intercept while one of the find/replace fields is focused.
+            guard fieldFocused || replaceFocused else { return event }
+            switch event.keyCode {
+            case 53: // Esc — close from either field
+                state.closeFind()
+                return nil
+            case 36, 76: // Return / keypad Enter
+                // Shift+Enter in the find field = previous match. Plain Enter (next /
+                // replace) is left to SwiftUI's .onSubmit, so let it through.
+                if fieldFocused && event.modifierFlags.contains(.shift) {
+                    state.onNavigate?(-1)
+                    return nil
+                }
+                return event
+            default:
+                return event
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
     }
 }
 
