@@ -33,6 +33,10 @@ struct EditorView: NSViewRepresentable {
 
         let tv = PaperTextView(frame: .zero)
         tv.delegate = context.coordinator
+        // Become the textStorage delegate too, so we get the exact POST-edit
+        // character range of each change (the reliable scope source for the
+        // incremental re-style — see Coordinator.textStorage(_:didProcessEditing:…)).
+        tv.textStorage?.delegate = context.coordinator
         tv.isRichText = false
         tv.importsGraphics = false
         tv.allowsUndo = true
@@ -94,6 +98,10 @@ struct EditorView: NSViewRepresentable {
                 if isMarkdown { LiveMarkdownStyler.apply(to: s) }
                 else { applyPlainSource(to: s, font: newFont) }
             }
+            // Whole-document restyle: drop any captured edited range so the next
+            // keystroke scopes cleanly (the font change does not edit characters,
+            // but keep this symmetric with the doc-load path below).
+            context.coordinator.clearPendingEditedRange()
         }
 
         if tv.string != text {
@@ -102,6 +110,10 @@ struct EditorView: NSViewRepresentable {
                 if isMarkdown { LiveMarkdownStyler.apply(to: s) }
                 else { applyPlainSource(to: s, font: newFont) }
             }
+            // Whole-document restyle on load/switch: discard the char-edit range
+            // that `tv.string = …` just fired, so it can't leak a stale whole-doc
+            // scope into the next keystroke's incremental pass.
+            context.coordinator.clearPendingEditedRange()
             // Text changed → refresh the per-version mouse-hover caches so
             // mouseMoved stays cheap (no full-document scan per move).
             context.coordinator.refreshTextCaches()
@@ -145,11 +157,23 @@ struct EditorView: NSViewRepresentable {
 
     // MARK: - Coordinator (thin delegate dispatcher)
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         var parent: EditorView
         weak var textView: PaperTextView?
         weak var scrollView: NSScrollView?
         var mouseTracker: MouseTracker?  // kept alive for NSTrackingArea
+
+        /// The character range that the LAST text edit actually changed (post-edit),
+        /// captured from `NSTextStorageDelegate`. `textDidChange` consumes it to
+        /// scope the incremental re-style, then clears it. `nil` means "no captured
+        /// range" → `textDidChange` falls back to a full restyle (correctness-first).
+        private var pendingEditedRange: NSRange?
+
+        /// Discard any captured edited range. Called after a WHOLE-document event
+        /// (doc load/switch, font change) does a full restyle, so the char-edit that
+        /// `tv.string = …` itself fires does not leak a stale (whole-doc) scope into
+        /// the next keystroke's incremental pass.
+        func clearPendingEditedRange() { pendingEditedRange = nil }
 
         let findController = FindController()
         let outlineController = OutlineController()
@@ -234,6 +258,27 @@ struct EditorView: NSViewRepresentable {
 
         // MARK: - Delegate
 
+        /// Capture the post-edit character range of each real text change. This is
+        /// the reliable source for the incremental re-style scope (NOT
+        /// `tv.selectedRange`). We react ONLY to `.editedCharacters`; the styler's
+        /// own attribute writes (inside `beginEditing`/`endEditing`) fire this with
+        /// `.editedAttributes` and must be ignored to avoid feedback.
+        func textStorage(_ textStorage: NSTextStorage,
+                         didProcessEditing editedMask: NSTextStorageEditActions,
+                         range editedRange: NSRange,
+                         changeInLength delta: Int) {
+            guard editedMask.contains(.editedCharacters) else { return }
+            // `editedRange` here is already the POST-edit range of the changed
+            // characters (length reflects the inserted text). Union successive
+            // character edits that arrive before `textDidChange` consumes them
+            // (e.g. a replace = delete+insert) so the scope covers all of them.
+            if let existing = pendingEditedRange {
+                pendingEditedRange = NSUnionRange(existing, editedRange)
+            } else {
+                pendingEditedRange = editedRange
+            }
+        }
+
         func textDidChange(_ n: Notification) {
             guard let tv = textView, let s = tv.textStorage else { return }
             let current = tv.string
@@ -268,7 +313,21 @@ struct EditorView: NSViewRepresentable {
             }
             // #22: non-Markdown source files are never live-styled — keep them flat.
             if parent.isMarkdown {
-                LiveMarkdownStyler.apply(to: s)
+                // INCREMENTAL re-style: scope the work to the block(s) the edit
+                // touched (captured via NSTextStorageDelegate), so typing in one
+                // paragraph no longer resets/relays the WHOLE document (the
+                // white-flash + jank). The styler itself falls back to a full
+                // `apply` whenever the edit could change block boundaries
+                // downstream (open/close a fence, add/remove a blank line, change a
+                // table/list shape) — correctness over speed. If we somehow have no
+                // captured range, do a full restyle (also correctness-first).
+                let edited = pendingEditedRange
+                pendingEditedRange = nil
+                if let edited {
+                    LiveMarkdownStyler.applyIncremental(to: s, editedCharRange: edited)
+                } else {
+                    LiveMarkdownStyler.apply(to: s)
+                }
             } else {
                 parent.applyPlainSource(to: s, font: tv.font ?? NSFont.systemFont(ofSize: DesignTokens.bodyFontSizes[parent.fontIndex]))
             }
