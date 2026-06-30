@@ -62,13 +62,17 @@ struct ContentView: View {
                             )
                             .id(docManager.activeTabID)
 
-                            OutlineRailView(
-                                headings: bridge.headings,
-                                activeHeading: activeHeading,
-                                onJump: { bridge.onJumpToHeading?($0) },
-                                docToken: docManager.activeTabID,
-                                onHoverChange: { bridge.cursorOverRail = $0 }
-                            )
+                            // Outline rail is Markdown-only (#22): non-Markdown source
+                            // (TOML/YAML/etc.) has no headings, so render no rail at all.
+                            if active.isMarkdown {
+                                OutlineRailView(
+                                    headings: bridge.headings,
+                                    activeHeading: activeHeading,
+                                    onJump: { bridge.onJumpToHeading?($0) },
+                                    docToken: docManager.activeTabID,
+                                    onHoverChange: { bridge.cursorOverRail = $0 }
+                                )
+                            }
                         }
                     } else {
                         emptyState

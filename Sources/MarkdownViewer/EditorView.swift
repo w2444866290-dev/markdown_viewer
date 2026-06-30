@@ -108,10 +108,21 @@ struct EditorView: NSViewRepresentable {
             // Document opened/switched → rebuild outline + refresh cached metrics.
             // Async to avoid mutating @Published state during a view update.
             let newText = text
+            let isMarkdown = self.isMarkdown
             DispatchQueue.main.async {
-                context.coordinator.outlineController.rebuild()
                 let bridge = context.coordinator.parent.bridge
-                bridge.headings = context.coordinator.outlineController.headings
+                // Outline is Markdown-only (#22): in TOML/YAML/etc. `#` is the comment
+                // character, so building headings off `# ` turns the whole file into
+                // hundreds of fake H1s and the rail's per-heading layout queries freeze
+                // the app. Skip the outline entirely for non-Markdown docs and clear any
+                // stale headings left over from a previously-active Markdown tab.
+                if isMarkdown {
+                    context.coordinator.outlineController.rebuild()
+                    bridge.headings = context.coordinator.outlineController.headings
+                } else {
+                    bridge.headings = []
+                    MVLog.info("non-Markdown document opened — outline skipped (\(newText.count) chars)", category: "editor")
+                }
                 context.coordinator.parent.activeHeadingModel.index = 0
                 bridge.charCount = newText.count
                 bridge.lineCount = newText.isEmpty ? 0 : newText.components(separatedBy: "\n").count
@@ -232,11 +243,19 @@ struct EditorView: NSViewRepresentable {
                     guard let self else { return }
                     let scrollY = self.scrollView?.contentView.bounds.origin.y ?? 0
                     let text = self.parent.text
-                    self.outlineController.rebuild()
                     // Text changed → refresh hover caches (cheap lookups stay valid).
                     self.refreshTextCaches()
-                    self.parent.bridge.headings = self.outlineController.headings
-                    self.parent.activeHeadingModel.index = self.outlineController.activeIndex(for: scrollY)
+                    // Outline is Markdown-only (#22) — see updateNSView for why a
+                    // non-Markdown file's `#` comments must not become fake headings.
+                    if self.parent.isMarkdown {
+                        self.outlineController.rebuild()
+                        self.parent.bridge.headings = self.outlineController.headings
+                        self.parent.activeHeadingModel.index = self.outlineController.activeIndex(for: scrollY)
+                    } else {
+                        self.parent.bridge.headings = []
+                        self.parent.activeHeadingModel.index = 0
+                    }
+                    // Status bar needs char/line counts for ALL files.
                     self.parent.bridge.charCount = text.count
                     self.parent.bridge.lineCount = text.isEmpty ? 0 : text.components(separatedBy: "\n").count
                 }
@@ -266,6 +285,10 @@ struct EditorView: NSViewRepresentable {
             // above so the O(headings) layout loop runs at most once per perceptible
             // scroll delta, and only published when the index actually changes —
             // avoiding redundant @Published invalidations on the ContentView tree.
+            //
+            // Outline is Markdown-only (#22): a non-Markdown doc has no headings and no
+            // rail, so skip the layout work entirely — scroll progress still publishes.
+            guard parent.isMarkdown else { return }
             let scrollY = scrollView?.contentView.bounds.origin.y ?? 0
             let active = outlineController.activeIndex(for: scrollY)
             if parent.activeHeadingModel.index != active {
