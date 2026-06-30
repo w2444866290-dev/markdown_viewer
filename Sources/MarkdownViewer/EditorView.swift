@@ -370,20 +370,77 @@ final class PaperTextView: NSTextView {
 // MARK: - ResponsiveScrollView
 
 /// Scroll view whose bottom content inset tracks 33vh of its own visible height
-/// (spec L180). `tile()` is AppKit's layout pass — it runs on every resize and
-/// scroller change, so recomputing the inset here keeps the editor's bottom
-/// breathing room proportional to the window without any SwiftUI/UIScreen
-/// dependency. Only writes when the rounded value actually changes to avoid
-/// re-entrant layout.
+/// (spec L180), without ever nudging the user's scroll position.
+///
+/// #27 regression: the inset used to be recomputed inside `tile()`. Mutating
+/// `contentInsets` from within the layout pass shifts the (flipped) clip view's
+/// `bounds.origin.y`, so repeatedly resizing the window drifted the document
+/// downward a little each cycle and was effectively re-entrant.
+///
+/// Fix: `tile()` only lays out. The inset is recomputed in response to the clip
+/// view's *size* changes (frame-did-change), and the scroll origin is captured
+/// before and restored after the write so the responsive inset never moves the
+/// view. Only writes when the rounded value actually changes (>= 0.5pt guard).
 final class ResponsiveScrollView: NSScrollView {
+    private var sizeObserver: NSObjectProtocol?
+    private var lastVisibleHeight: CGFloat = 0
+
     override func tile() {
         super.tile()
-        let visibleH = contentView.bounds.height
-        guard visibleH > 0 else { return }
-        let target = (0.33 * visibleH).rounded()
-        if abs(contentInsets.bottom - target) >= 0.5 {
-            contentInsets.bottom = target
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        startObservingSizeChanges()
+        updateBottomInset()
+    }
+
+    private func startObservingSizeChanges() {
+        guard sizeObserver == nil else { return }
+        // The clip view posts frame-change notifications when the scroll view is
+        // resized; that is precisely when the responsive 33vh inset must update.
+        contentView.postsFrameChangedNotifications = true
+        sizeObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: contentView,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateBottomInset()
         }
+    }
+
+    /// Recompute the 33vh bottom inset for the current visible height, pinning
+    /// the scroll origin so the inset change never moves the user's position.
+    private func updateBottomInset() {
+        let visibleH = contentView.bounds.height
+        guard visibleH > 0, abs(visibleH - lastVisibleHeight) >= 0.5 else { return }
+        lastVisibleHeight = visibleH
+
+        let target = (0.33 * visibleH).rounded()
+        guard abs(contentInsets.bottom - target) >= 0.5 else { return }
+
+        // Capture the current scroll position BEFORE touching the inset, then
+        // restore it afterward (clamped to the new max offset) so the responsive
+        // inset never nudges the document. contentView is flipped (doc view top
+        // is origin.y == 0), so a larger bottom inset would otherwise pull
+        // bounds.origin.y down each resize cycle — that was the #27 drift.
+        let y = contentView.bounds.origin.y
+        contentInsets.bottom = target
+
+        let docHeight = (documentView?.frame.height ?? 0) + contentInsets.top + target
+        let maxY = max(0, docHeight - visibleH)
+        let restoredY = min(max(0, y), maxY)
+        contentView.scroll(to: CGPoint(x: contentView.bounds.origin.x, y: restoredY))
+        reflectScrolledClipView(contentView)
+
+        MVLog.debug(
+            "ResponsiveScrollView inset → \(target) (visibleH \(Int(visibleH)), scrollY pinned at \(Int(restoredY)))",
+            category: "editor"
+        )
+    }
+
+    deinit {
+        if let sizeObserver { NotificationCenter.default.removeObserver(sizeObserver) }
     }
 }
 
