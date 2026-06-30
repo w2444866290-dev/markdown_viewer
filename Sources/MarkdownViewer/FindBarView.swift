@@ -10,6 +10,12 @@ struct FindBarView: View {
     @FocusState private var replaceFocused: Bool
     /// Local NSEvent monitor for Shift+Enter / Esc — spec #11 (design L919/L925).
     @State private var keyMonitor: Any?
+    /// Debounce for query typing — each keystroke previously fired a full
+    /// whole-document re-scan + re-highlight, causing a visible "flash white".
+    /// We coalesce rapid typing into one search (mirrors EditorView's text-change
+    /// DispatchWorkItem debounce). Navigation and option toggles bypass this.
+    @State private var searchDebounce: DispatchWorkItem?
+    private static let searchDebounceDelay: TimeInterval = 0.120
     @State private var hoverChevron = false
     @State private var hoverPrev = false
     @State private var hoverNext = false
@@ -55,9 +61,14 @@ struct FindBarView: View {
                         .foregroundColor(DesignTokens.swiftUI.titleText)
                         .focused($fieldFocused)
                         .onChange(of: state.query) { _ in
-                            state.onSearch?(state.query)
+                            scheduleSearch()
                         }
-                        .onSubmit { state.onNavigate?(1) }
+                        .onSubmit {
+                            // Enter = next match. Flush any pending debounce first so
+                            // we navigate against the current query's matches.
+                            flushSearch()
+                            state.onNavigate?(1)
+                        }
                     Text(state.displayText)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(state.isError
@@ -81,11 +92,11 @@ struct FindBarView: View {
                 // Toggle chips — spec: 22×22, radius 6
                 HStack(spacing: 2) {
                     ToggleChip("Aa", isOn: $state.caseSensitive)
-                        .onChange(of: state.caseSensitive) { _ in state.onSearch?(state.query) }
+                        .onChange(of: state.caseSensitive) { _ in searchNow() }
                     ToggleChip("W", isOn: $state.wholeWord)
-                        .onChange(of: state.wholeWord) { _ in state.onSearch?(state.query) }
+                        .onChange(of: state.wholeWord) { _ in searchNow() }
                     ToggleChip(".*", isOn: $state.useRegex)
-                        .onChange(of: state.useRegex) { _ in state.onSearch?(state.query) }
+                        .onChange(of: state.useRegex) { _ in searchNow() }
                 }
 
                 // Separator
@@ -213,7 +224,38 @@ struct FindBarView: View {
             focusAndSelectAll()
             installKeyMonitor()
         }
-        .onDisappear { removeKeyMonitor() }
+        .onDisappear {
+            removeKeyMonitor()
+            searchDebounce?.cancel()
+            searchDebounce = nil
+        }
+    }
+
+    /// Coalesce rapid typing: cancel any pending search and reschedule. The actual
+    /// (re-scan + highlight) work runs once after `searchDebounceDelay` of quiet.
+    private func scheduleSearch() {
+        searchDebounce?.cancel()
+        let q = state.query
+        let work = DispatchWorkItem { state.onSearch?(q) }
+        searchDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.searchDebounceDelay, execute: work)
+    }
+
+    /// Run the pending debounced search immediately (used before navigating on
+    /// Enter so we move against the current query). No-op if nothing is pending.
+    private func flushSearch() {
+        guard let work = searchDebounce else { return }
+        work.cancel()
+        searchDebounce = nil
+        work.perform()
+    }
+
+    /// Recompute promptly (option toggles) — cancel any queued query debounce and
+    /// search now. Toggles are infrequent, so there's no flash concern here.
+    private func searchNow() {
+        searchDebounce?.cancel()
+        searchDebounce = nil
+        state.onSearch?(state.query)
     }
 
     private func focusAndSelectAll() {
