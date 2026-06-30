@@ -169,7 +169,11 @@ struct EditorView: NSViewRepresentable {
         /// Recompute the hover caches from the current text-view contents. Call on
         /// any text change (debounce block + the updateNSView text branch).
         func refreshTextCaches() {
-            guard let ns = textView?.string as NSString? else {
+            // Non-Markdown docs are shown as plain source: the code-copy overlay
+            // and link-hover ranges are meaningless, so skip the full-document
+            // regex/scan passes and clear the caches (also drops any stale ranges
+            // left over from a previously-open Markdown doc).
+            guard parent.isMarkdown, let ns = textView?.string as NSString? else {
                 cachedFencedBlocks = []
                 cachedLinkRanges = []
                 codeOverlay.blocks = []
