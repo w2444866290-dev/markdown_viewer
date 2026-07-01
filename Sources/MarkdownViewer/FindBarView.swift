@@ -10,12 +10,12 @@ struct FindBarView: View {
     @FocusState private var replaceFocused: Bool
     /// Local NSEvent monitor for Shift+Enter / Esc — spec #11 (design L919/L925).
     @State private var keyMonitor: Any?
-    /// Debounce for query typing — each keystroke previously fired a full
-    /// whole-document re-scan + re-highlight, causing a visible "flash white".
-    /// We coalesce rapid typing into one search (mirrors EditorView's text-change
-    /// DispatchWorkItem debounce). Navigation and option toggles bypass this.
-    @State private var searchDebounce: DispatchWorkItem?
-    private static let searchDebounceDelay: TimeInterval = 0.120
+    /// The query/options signature that produced the currently-highlighted matches.
+    /// Search now fires on RETURN (not per-keystroke), so we need to know whether the
+    /// field's contents have changed since the last search: if they have, Return runs
+    /// a fresh search + jumps to the first match; if they haven't, Return navigates to
+    /// the next match (standard cycling). `nil` means "nothing searched yet".
+    @State private var lastSearchedSignature: SearchSignature?
     @State private var hoverChevron = false
     @State private var hoverPrev = false
     @State private var hoverNext = false
@@ -60,14 +60,21 @@ struct FindBarView: View {
                         .font(.system(size: 13))
                         .foregroundColor(DesignTokens.swiftUI.titleText)
                         .focused($fieldFocused)
-                        .onChange(of: state.query) { _ in
-                            scheduleSearch()
+                        .onChange(of: state.query) { newValue in
+                            // Search fires on RETURN, not per-keystroke — this avoids the
+                            // whole-document highlight recompute flash on every edit (worst
+                            // when deleting broadens the query → more matches). The ONE
+                            // exception: an empty query clears highlights immediately. That
+                            // path (onSearch("")) clears incrementally and is cheap (no
+                            // flash), and it stops stale highlights lingering while the
+                            // field is empty.
+                            if newValue.isEmpty { clearSearch() }
                         }
                         .onSubmit {
-                            // Enter = next match. Flush any pending debounce first so
-                            // we navigate against the current query's matches.
-                            flushSearch()
-                            state.onNavigate?(1)
+                            // Return in the find field: search if the query/options changed
+                            // since the last search (compute matches + highlight + jump to
+                            // first), otherwise go to the NEXT match (repeated Return cycles).
+                            performSearch(navigateIfUnchanged: 1)
                         }
                     Text(state.displayText)
                         .font(.system(size: 11, design: .monospaced))
@@ -97,6 +104,8 @@ struct FindBarView: View {
                         .onChange(of: state.wholeWord) { _ in searchNow() }
                     ToggleChip(".*", isOn: $state.useRegex)
                         .onChange(of: state.useRegex) { _ in searchNow() }
+                    // Toggling an option is a single deliberate action (not per-keystroke),
+                    // so re-running the search immediately is fine — no flash concern.
                 }
 
                 // Separator
@@ -219,43 +228,70 @@ struct FindBarView: View {
         // Spec #9 (b)/(c): every openFind() bumps focusRequest → focus the field
         // and select-all so the prior query is ready to overtype. requestAnimationFrame
         // in the spec maps to a main-async hop here (let SwiftUI commit focus first).
-        .onChange(of: state.focusRequest) { _ in focusAndSelectAll() }
+        .onChange(of: state.focusRequest) { _ in
+            focusAndSelectAll()
+            // openFind() re-runs the search for a non-empty prior query, so record
+            // that signature: a Return without editing then navigates (matches exist)
+            // instead of firing a dead re-search. Empty → nothing searched.
+            lastSearchedSignature = state.query.isEmpty ? nil : currentSignature
+        }
         .onAppear {
             focusAndSelectAll()
             installKeyMonitor()
         }
         .onDisappear {
             removeKeyMonitor()
-            searchDebounce?.cancel()
-            searchDebounce = nil
         }
     }
 
-    /// Coalesce rapid typing: cancel any pending search and reschedule. The actual
-    /// (re-scan + highlight) work runs once after `searchDebounceDelay` of quiet.
-    private func scheduleSearch() {
-        searchDebounce?.cancel()
-        let q = state.query
-        let work = DispatchWorkItem { state.onSearch?(q) }
-        searchDebounce = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.searchDebounceDelay, execute: work)
+    /// The query + option combination that a search ran against. When Return is
+    /// pressed we compare the field's current values to the last-searched signature:
+    /// equal → the matches are already computed, so navigate; different → search.
+    private struct SearchSignature: Equatable {
+        var query: String
+        var caseSensitive: Bool
+        var wholeWord: Bool
+        var useRegex: Bool
     }
 
-    /// Run the pending debounced search immediately (used before navigating on
-    /// Enter so we move against the current query). No-op if nothing is pending.
-    private func flushSearch() {
-        guard let work = searchDebounce else { return }
-        work.cancel()
-        searchDebounce = nil
-        work.perform()
+    private var currentSignature: SearchSignature {
+        SearchSignature(
+            query: state.query,
+            caseSensitive: state.caseSensitive,
+            wholeWord: state.wholeWord,
+            useRegex: state.useRegex
+        )
     }
 
-    /// Recompute promptly (option toggles) — cancel any queued query debounce and
-    /// search now. Toggles are infrequent, so there's no flash concern here.
+    /// Return in the find field. If the query/options changed since the last search,
+    /// run the search — `onSearch` computes matches, highlights, and jumps to the
+    /// first (currentIndex = 0). If unchanged (already searched), navigate by
+    /// `navigateIfUnchanged` so repeated Return cycles through matches (Shift+Return
+    /// passes -1). An empty query is a no-op (the onChange clear already handled it).
+    private func performSearch(navigateIfUnchanged delta: Int) {
+        guard !state.query.isEmpty else { return }
+        if currentSignature == lastSearchedSignature {
+            state.onNavigate?(delta)
+        } else {
+            state.onSearch?(state.query)
+            lastSearchedSignature = currentSignature
+        }
+    }
+
+    /// Option toggles (case/word/regex): a single deliberate action, so search now
+    /// against the current query. Empty query is left to the onChange clear.
     private func searchNow() {
-        searchDebounce?.cancel()
-        searchDebounce = nil
+        guard !state.query.isEmpty else { return }
         state.onSearch?(state.query)
+        lastSearchedSignature = currentSignature
+    }
+
+    /// Empty query: clear highlights immediately. `onSearch("")` clears incrementally
+    /// (cheap, no flash) so stale highlights don't linger while the field is empty.
+    /// Reset the searched signature so the next non-empty Return searches afresh.
+    private func clearSearch() {
+        state.onSearch?("")
+        lastSearchedSignature = nil
     }
 
     private func focusAndSelectAll() {
@@ -280,10 +316,12 @@ struct FindBarView: View {
                 state.closeFind()
                 return nil
             case 36, 76: // Return / keypad Enter
-                // Shift+Enter in the find field = previous match. Plain Enter (next /
-                // replace) is left to SwiftUI's .onSubmit, so let it through.
+                // Shift+Enter in the find field = previous match. Route through the
+                // same perform-search path so a first Shift+Return after typing also
+                // searches (then navigates -1 on subsequent presses). Plain Enter
+                // (next / replace) is left to SwiftUI's .onSubmit, so let it through.
                 if fieldFocused && event.modifierFlags.contains(.shift) {
-                    state.onNavigate?(-1)
+                    performSearch(navigateIfUnchanged: -1)
                     return nil
                 }
                 return event
