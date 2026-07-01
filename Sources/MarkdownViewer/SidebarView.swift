@@ -80,6 +80,17 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .onHover { paletteHover = $0 }
                 .mvTip("所有命令与文档 · ⌘K")
+
+                // Build version — quiet marker so the user can SEE which commit is
+                // running. Sits directly below the ⌘K button, left-aligned to line
+                // up under it. Plain label (no hit testing). Same dev fallback as
+                // the packaged build via AppVersion.label.
+                Text(AppVersion.label)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(DesignTokens.swiftUI.paletteKbd)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 2)
+                    .padding(.bottom, 8)
             }
             .background(DesignTokens.swiftUI.sidebar)
 

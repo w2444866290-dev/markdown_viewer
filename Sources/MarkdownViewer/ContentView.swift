@@ -287,34 +287,24 @@ private struct EditorStatusBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            // Build version — purely so the user can SEE which commit is running.
-            // Stays visible (does NOT fade with scroll) and uses the most muted token
-            // (#aeaeb2) at 10.5px so it reads as a quiet, unobtrusive marker.
-            Text(AppVersion.label)
-                .font(.system(size: 10.5))
-                .monospacedDigit()
-                .foregroundColor(DesignTokens.swiftUI.placeholderText)
-
-            // spec L208: 11.5px with tabular numerals (font-variant-numeric: tabular-nums),
-            // NOT a monospaced family.
-            Text("\(wordCount) 字 · \(bridge.lineCount) 行 · \(Int(scrollModel.value * 100))%")
-                .font(.system(size: 11.5))
-                .monospacedDigit()
-                .foregroundColor(DesignTokens.swiftUI.statusText)
-                .opacity(faded ? 0 : 1)
-                .animation(.easeInOut(duration: 0.3), value: faded)
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 14)
-        .onReceive(
-            scrollModel.$value.debounce(for: .seconds(0.8), scheduler: DispatchQueue.main)
-        ) { _ in
-            faded = false
-        }
-        .onReceive(scrollModel.$value) { _ in
-            faded = true
-        }
+        // spec L208: 11.5px with tabular numerals (font-variant-numeric: tabular-nums),
+        // NOT a monospaced family.
+        Text("\(wordCount) 字 · \(bridge.lineCount) 行 · \(Int(scrollModel.value * 100))%")
+            .font(.system(size: 11.5))
+            .monospacedDigit()
+            .foregroundColor(DesignTokens.swiftUI.statusText)
+            .opacity(faded ? 0 : 1)
+            .animation(.easeInOut(duration: 0.3), value: faded)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 14)
+            .onReceive(
+                scrollModel.$value.debounce(for: .seconds(0.8), scheduler: DispatchQueue.main)
+            ) { _ in
+                faded = false
+            }
+            .onReceive(scrollModel.$value) { _ in
+                faded = true
+            }
     }
 }
 
