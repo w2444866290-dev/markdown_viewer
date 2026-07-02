@@ -17,6 +17,9 @@ struct MarkdownViewerApp: App {
                 .environmentObject(docManager)
                 .onAppear { docManager.findStateToggle = { findState.toggleOpen() } }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    // Discrete reconcile point: fold the editor's live text back into
+                    // the active tab's snapshot before the app goes away.
+                    docManager.reconcileActiveText()
                     MVLog.info("app will terminate", category: "lifecycle")
                 }
                 .frame(minWidth: 860, minHeight: 560)

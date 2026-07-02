@@ -57,7 +57,11 @@ struct ContentView: View {
                     if let active = docManager.activeTab {
                         ZStack(alignment: .trailing) {
                             EditorView(
-                                text: docManager.textBinding,
+                                // Plain mount-time load value (NOT a two-way binding):
+                                // the live text lives in the NSTextView after mount, and
+                                // `.id(activeTabID)` below reloads it per tab switch.
+                                text: active.text,
+                                docManager: docManager,
                                 fontIndex: $docManager.fontIndex,
                                 isMarkdown: active.isMarkdown,
                                 findState: findState,
@@ -514,7 +518,8 @@ private struct EditorTabPill: View {
                     : (isHovered ? Color.black.opacity(0.05) : .clear))
         )
         .contentShape(Rectangle())
-        .onTapGesture { docManager.activeTabID = tab.id }
+        // Route through activateTab so the OUTGOING tab's live edits reconcile first.
+        .onTapGesture { docManager.activateTab(tab.id) }
         .onHover { isHovered = $0 }
     }
 

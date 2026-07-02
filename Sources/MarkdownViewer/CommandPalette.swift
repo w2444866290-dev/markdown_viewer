@@ -175,6 +175,11 @@ struct CommandPaletteView: View {
         }
         .ignoresSafeArea()
         .onAppear {
+            // Palette open is a discrete reconcile point: pull the editor's live text
+            // into the active tab's snapshot so the current unsaved doc is consistent
+            // here. A fresh CommandPaletteView is built on every open (PaletteBlurHost),
+            // so this fires for ⌘K, the sidebar button, and the double-Shift path alike.
+            docManager.reconcileActiveText()
             installKeyMonitor()
             DispatchQueue.main.async { searchFocused = true }  // autofocus the field
         }
@@ -216,7 +221,8 @@ struct CommandPaletteView: View {
     /// entry loads via openFileNode.
     private func openPaletteDoc(_ doc: PaletteDoc) {
         if let tabID = doc.tabID {
-            docManager.activeTabID = tabID
+            // Route through activateTab so the OUTGOING tab reconciles before switch.
+            docManager.activateTab(tabID)
         } else if let url = doc.url {
             docManager.openFileNode(FileNode(url: url, name: doc.name, isDirectory: false))
         }

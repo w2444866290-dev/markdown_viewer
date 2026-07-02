@@ -2,7 +2,15 @@ import SwiftUI
 import AppKit
 
 struct EditorView: NSViewRepresentable {
-    @Binding var text: String
+    /// The active tab's text AT MOUNT — a plain load value, NOT a two-way binding.
+    /// The live text lives in the NSTextView after mount; per-tab loads happen via
+    /// the `.id(activeTabID)` recreation in ContentView (a fresh makeNSView loads
+    /// the new tab's snapshot). Reconcile pulls the live text back into the snapshot
+    /// at discrete points — see DocumentManager.reconcileActiveText.
+    let text: String
+    /// Unobserved reference (class → no re-render subscription) used to wire the
+    /// reconcile channel on mount and to mark the tab dirty on the first edit.
+    let docManager: DocumentManager
     @Binding var fontIndex: Int
     var isMarkdown: Bool = true
     var findState: FindState?
@@ -90,6 +98,47 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.textView = tv
         context.coordinator.scrollView = sv
         sv.documentView = tv
+
+        // --- Per-tab load (two-tier text) --------------------------------------
+        // `.id(activeTabID)` in ContentView recreates this view on every tab switch,
+        // so makeNSView is the single load point: seed tv.string with the mount-time
+        // snapshot and run the initial whole-document style. updateNSView no longer
+        // touches tv.string, so it can never revert live edits during typing.
+        let bodySize = DesignTokens.bodyFontSizes[fontIndex]
+        LiveMarkdownStyler.bodyPointSize = bodySize
+        tv.string = text
+        if let s = tv.textStorage {
+            if isMarkdown { LiveMarkdownStyler.apply(to: s) }
+            else { applyPlainSource(to: s, font: tv.font ?? NSFont.systemFont(ofSize: bodySize)) }
+        }
+        // The `tv.string = text` above fired one character edit; discard it so it
+        // can't leak a stale whole-doc scope into the first keystroke's incremental.
+        context.coordinator.clearPendingEditedRange()
+        context.coordinator.refreshTextCaches()
+
+        // Reconcile channel: expose this tab's LIVE NSTextView text to
+        // DocumentManager, which pulls it into tabs[].text at discrete points. Weak
+        // coordinator ref so the closure held by docManager can't retain-cycle it.
+        docManager.pullActiveText = { [weak c = context.coordinator] in c?.textView?.string ?? "" }
+
+        // Document loaded → rebuild outline + refresh cached metrics (this moved out
+        // of updateNSView's old text branch). Async to avoid mutating @Published
+        // state during a view update. Outline is Markdown-only (#22).
+        let loadedText = text
+        let loadedIsMarkdown = isMarkdown
+        DispatchQueue.main.async {
+            let bridge = context.coordinator.parent.bridge
+            if loadedIsMarkdown {
+                context.coordinator.outlineController.rebuild()
+                bridge.headings = context.coordinator.outlineController.headings
+            } else {
+                bridge.headings = []
+                MVLog.info("non-Markdown document opened — outline skipped (\(loadedText.count) chars)", category: "editor")
+            }
+            context.coordinator.parent.activeHeadingModel.index = 0
+            bridge.charCount = loadedText.count
+            bridge.lineCount = loadedText.isEmpty ? 0 : loadedText.components(separatedBy: "\n").count
+        }
         return sv
     }
 
@@ -128,46 +177,11 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.lastStyledBodySize = size
         }
 
-        if tv.string != text {
-            // DIAG (temporary): PRIME SUSPECT - wholesale plain-string reassignment
-            // + full restyle. Deferred (see FONT note above) so the DiagModel write
-            // does not mutate observable state during this SwiftUI view update.
-            DispatchQueue.main.async { context.coordinator.diagRecord("SETSTR") }
-            tv.string = text
-            if let s = tv.textStorage {
-                if isMarkdown { LiveMarkdownStyler.apply(to: s) }
-                else { applyPlainSource(to: s, font: newFont) }
-            }
-            // Whole-document restyle on load/switch: discard the char-edit range
-            // that `tv.string = …` just fired, so it can't leak a stale whole-doc
-            // scope into the next keystroke's incremental pass.
-            context.coordinator.clearPendingEditedRange()
-            // Text changed → refresh the per-version mouse-hover caches so
-            // mouseMoved stays cheap (no full-document scan per move).
-            context.coordinator.refreshTextCaches()
-            // Document opened/switched → rebuild outline + refresh cached metrics.
-            // Async to avoid mutating @Published state during a view update.
-            let newText = text
-            let isMarkdown = self.isMarkdown
-            DispatchQueue.main.async {
-                let bridge = context.coordinator.parent.bridge
-                // Outline is Markdown-only (#22): in TOML/YAML/etc. `#` is the comment
-                // character, so building headings off `# ` turns the whole file into
-                // hundreds of fake H1s and the rail's per-heading layout queries freeze
-                // the app. Skip the outline entirely for non-Markdown docs and clear any
-                // stale headings left over from a previously-active Markdown tab.
-                if isMarkdown {
-                    context.coordinator.outlineController.rebuild()
-                    bridge.headings = context.coordinator.outlineController.headings
-                } else {
-                    bridge.headings = []
-                    MVLog.info("non-Markdown document opened — outline skipped (\(newText.count) chars)", category: "editor")
-                }
-                context.coordinator.parent.activeHeadingModel.index = 0
-                bridge.charCount = newText.count
-                bridge.lineCount = newText.isEmpty ? 0 : newText.components(separatedBy: "\n").count
-            }
-        }
+        // NO text branch here anymore. Two-tier text: the live text lives in
+        // tv.string, and `text` is only a STALE mount-time snapshot during typing.
+        // Per-tab loads happen via `.id(activeTabID)` recreation → makeNSView, so
+        // updateNSView must NEVER set tv.string (the old `if tv.string != text`
+        // branch would wrongly revert the user's just-typed edits on any re-render).
     }
 
     /// Non-Markdown documents (#22, spec ~L391) are shown as PLAIN source — the
@@ -346,17 +360,27 @@ struct EditorView: NSViewRepresentable {
 
         func textDidChange(_ n: Notification) {
             guard let tv = textView, let s = tv.textStorage else { return }
-            let current = tv.string
+            // The live text now lives ONLY in tv.string — NO per-keystroke write-back
+            // through docManager (that re-rendered the whole ContentView every
+            // keystroke, 性能-1). tabs[].text is reconciled at discrete points instead.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.parent.text = current
 
-                // Debounced heavy work → write to bridge
+                // Dirty as a DISCRETE transition: flip on the FIRST edit after a clean
+                // state only. markActiveDirty self-guards, so later keystrokes never
+                // re-publish — one publish lights the dot, the save path clears it.
+                let dm = self.parent.docManager
+                if let idx = dm.activeIdx, !dm.tabs[idx].isDirty {
+                    dm.markActiveDirty()
+                }
+
+                // Debounced heavy work → write to the (isolated) bridge. Counts/outline
+                // read the LIVE tv.string, never the stale tabs[].text snapshot.
                 self.debounceWork?.cancel()
                 let work = DispatchWorkItem { [weak self] in
-                    guard let self else { return }
+                    guard let self, let tv = self.textView else { return }
                     let scrollY = self.scrollView?.contentView.bounds.origin.y ?? 0
-                    let text = self.parent.text
+                    let text = tv.string
                     // Text changed → refresh hover caches (cheap lookups stay valid).
                     self.refreshTextCaches()
                     // Outline is Markdown-only (#22) — see updateNSView for why a
