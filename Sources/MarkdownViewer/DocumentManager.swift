@@ -2,9 +2,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Central state for the Markdown Viewer app.
-/// The active document's text is the single source of truth — stored
-/// in tabs[i].text.  A convenience Binding<String> is provided for
-/// SwiftUI views to read/write through.
+/// Two-tier text model: while editing, the LIVE text lives in the editor's
+/// NSTextView; `tabs[i].text` is a SNAPSHOT reconciled from it only at discrete
+/// points (save, tab switch, palette open, terminate) via `reconcileActiveText`,
+/// never per keystroke.
 @MainActor
 final class DocumentManager: ObservableObject {
     // MARK: - Sidebar
@@ -51,32 +52,58 @@ final class DocumentManager: ObservableObject {
         return fileTree.filter { $0.name.lowercased().contains(q) && !$0.isDirectory }
     }
 
-    // MARK: - Binding for EditorView (single source of truth)
+    /// Index of the active tab in `tabs`, or nil if none.
+    var activeIdx: Int? { tabs.firstIndex { $0.id == activeTabID } }
 
-    var textBinding: Binding<String> {
-        Binding<String>(
-            get: { [weak self] in self?.activeTab?.text ?? "" },
-            set: { [weak self] newValue in
-                guard let self, let id = self.activeTabID,
-                      let idx = self.tabs.firstIndex(where: { $0.id == id }) else { return }
-                self.objectWillChange.send()
-                self.tabs[idx].text = newValue
-                self.tabs[idx].isDirty = true
-            }
-        )
+    // MARK: - Two-tier text: live in the NSTextView, snapshot in tabs[].text
+    //
+    // Typing no longer writes back through DocumentManager (that re-rendered the
+    // whole ContentView on every keystroke — 性能-1). The LIVE text lives in the
+    // editor's NSTextView; `tabs[].text` is a SNAPSHOT reconciled only at discrete
+    // points (save, tab switch, palette open, terminate) — never per keystroke.
+
+    /// Set by the editor coordinator on mount (like the find closures): returns the
+    /// live text held in the active NSTextView. `reconcileActiveText` pulls through
+    /// this to refresh the snapshot.
+    var pullActiveText: (() -> String)?
+
+    /// Pull the editor's live text into the active tab's snapshot, but ONLY when it
+    /// actually differs — a single guarded `@Published` mutation. Call at every
+    /// discrete read point BEFORE reading `tabs[].text`.
+    func reconcileActiveText() {
+        guard let pull = pullActiveText, let idx = activeIdx else { return }
+        let live = pull()
+        if tabs[idx].text != live {
+            tabs[idx].text = live
+        }
+    }
+
+    /// Flip the active tab to dirty as a discrete transition — one publish. Self-
+    /// guards so repeated calls (e.g. every keystroke) never re-publish.
+    func markActiveDirty() {
+        guard let idx = activeIdx, !tabs[idx].isDirty else { return }
+        tabs[idx].isDirty = true
+    }
+
+    /// Single entry point for changing the active tab. Reconciles the OUTGOING
+    /// tab's live text into its snapshot FIRST (so its edits survive the switch),
+    /// then assigns `activeTabID`. ALL `activeTabID` writes route through here.
+    func activateTab(_ id: UUID?) {
+        reconcileActiveText()
+        activeTabID = id
     }
 
     // MARK: - Actions
 
     func openTab(for url: URL, text: String) {
         if let existing = tabs.first(where: { $0.url?.path == url.path }) {
-            activeTabID = existing.id
+            activateTab(existing.id)
             return
         }
         let tab = DocumentTab(url: url, name: url.lastPathComponent, text: text, isDirty: false,
                               isMarkdown: DocumentTab.isMarkdownExtension(of: url))
         tabs.append(tab)
-        activeTabID = tab.id
+        activateTab(tab.id)
         MVLog.info("open document: \(tab.name)", category: "document")
         Toaster.shared.flash("已打开 " + tab.name)
     }
@@ -84,7 +111,7 @@ final class DocumentManager: ObservableObject {
     func newDocument(text: String = "") {
         let tab = DocumentTab(url: nil, name: "未命名.md", text: text, isDirty: true)
         tabs.append(tab)
-        activeTabID = tab.id
+        activateTab(tab.id)
         MVLog.info("new document", category: "document")
     }
 
@@ -109,16 +136,23 @@ final class DocumentManager: ObservableObject {
 
     func doClose(_ tab: DocumentTab) {
         MVLog.info("close document: \(tab.name)", category: "document")
+        // If the closing tab is the active one, pull its LIVE editor text into the
+        // snapshot first so a later reopen restores the just-typed (unsaved) text,
+        // then capture that fresh snapshot as lastClosedTab.
+        if tab.id == activeTabID { reconcileActiveText() }
+        let closing = tabs.first { $0.id == tab.id } ?? tab
         let idx = tabs.firstIndex(where: { $0.id == tab.id })
-        lastClosedTab = tab
+        lastClosedTab = closing
         tabs.removeAll { $0.id == tab.id }
         if confirmingCloseTabID == tab.id { confirmingCloseTabID = nil }
         if activeTabID == tab.id {
             // Activate the tab that slid into the same slot, else the last one.
+            // The closed tab is already gone (and reconciled above), so activateTab's
+            // reconcile of the outgoing tab is a no-op here — routed for consistency.
             if let idx, !tabs.isEmpty {
-                activeTabID = tabs[min(idx, tabs.count - 1)].id
+                activateTab(tabs[min(idx, tabs.count - 1)].id)
             } else {
-                activeTabID = nil
+                activateTab(nil)
             }
         }
     }
@@ -127,7 +161,7 @@ final class DocumentManager: ObservableObject {
         guard let tab = lastClosedTab else { return }
         lastClosedTab = nil
         tabs.append(tab)
-        activeTabID = tab.id
+        activateTab(tab.id)
     }
 
     // MARK: - Font
@@ -162,6 +196,9 @@ final class DocumentManager: ObservableObject {
     }
 
     func saveCurrent() {
+        // Reconcile the live editor text into the snapshot BEFORE reading it, so we
+        // write the current (just-typed, unsaved) content to disk.
+        reconcileActiveText()
         guard let tab = activeTab else { return }
         if let url = tab.url {
             do {
@@ -179,6 +216,8 @@ final class DocumentManager: ObservableObject {
     }
 
     func saveAsCurrent() {
+        // Reconcile live editor text into the snapshot before reading tabs[idx].text.
+        reconcileActiveText()
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [UTType.plainText, UTType(filenameExtension: "md")!]
         savePanel.nameFieldStringValue = activeTab?.name ?? "未命名.md"
