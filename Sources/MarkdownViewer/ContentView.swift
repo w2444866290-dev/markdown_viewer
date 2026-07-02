@@ -24,6 +24,12 @@ struct ContentView: View {
     // every mouse move over a link. Held via @State (NOT observed here) so only the
     // bottom-left hover-preview leaf re-renders. ContentView.body must never read it.
     @State private var hoverURL = HoverURLModel()
+    // DIAG (temporary): restyle-path readout sink. Held via @State (NOT observed
+    // here) for the SAME isolation reason as scrollModel/hoverURL - writing it on
+    // every keystroke must NOT re-render ContentView, or the instrumentation would
+    // itself cause the whole-view re-render we are trying to catch. Only the
+    // top-center DiagReadout leaf observes it. Rip out with the other DIAG markers.
+    @State private var diag = DiagModel()
     @State private var isDragging = false
     @State private var hasInitialized = false
     // Double-Shift → quick search (spec JS L478-490): event monitor + timing holder.
@@ -58,7 +64,8 @@ struct ContentView: View {
                                 bridge: bridge,
                                 scrollModel: scrollModel,
                                 activeHeadingModel: activeHeading,
-                                hoverURL: hoverURL
+                                hoverURL: hoverURL,
+                                diag: diag  // DIAG (temporary)
                             )
                             .id(docManager.activeTabID)
 
@@ -105,6 +112,12 @@ struct ContentView: View {
                     // Observes the isolated HoverURLModel — a mouse move over a link
                     // re-renders only this leaf, never ContentView.body (性能-2).
                     HoverURLPreview(model: hoverURL)
+                }
+                // DIAG (temporary): always-visible restyle-path readout, pinned
+                // top-center of the content area. Observes only the isolated
+                // DiagModel, so it re-renders alone. Rip out with the DIAG markers.
+                .overlay(alignment: .top) {
+                    DiagReadout(model: diag)
                 }
             }
         }
@@ -332,6 +345,31 @@ private struct HoverURLPreview: View {
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+// DIAG (temporary) ----------------------------------------------------------
+// On-screen restyle-path readout for the "whole-document styling flashes for one
+// frame while typing/deleting" bug. Shows the LAST re-style path plus cumulative
+// per-path tallies, updated on every keystroke by EditorView.Coordinator.diagRecord.
+//
+// Observes the isolated DiagModel. ContentView holds that model via @State and does
+// NOT observe it, so the instrumentation re-renders ONLY this yellow leaf - it can
+// never itself trigger the whole-ContentView re-render we are hunting. Deliberately
+// loud debug styling. Rip out with the rest of the `// DIAG (temporary)` markers.
+private struct DiagReadout: View {
+    @ObservedObject var model: DiagModel
+
+    var body: some View {
+        Text(model.text.isEmpty ? "DIAG  (waiting for keystroke...)" : model.text)
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundColor(.black)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.yellow)
+            .cornerRadius(6)
+            .padding(.top, 6)
+            .allowsHitTesting(false)
     }
 }
 

@@ -16,6 +16,10 @@ struct EditorView: NSViewRepresentable {
     /// Isolated hovered-link-URL sink, same rationale as `scrollModel`: written on
     /// every mouse move over a link, observed only by the bottom-left preview leaf.
     var hoverURL: HoverURLModel
+    /// DIAG (temporary): isolated restyle-path readout sink. Written on every
+    /// keystroke by the Coordinator, observed only by the top-center `DiagReadout`
+    /// leaf - never by ContentView. Rip out with the other `// DIAG (temporary)`.
+    var diag: DiagModel
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -93,6 +97,11 @@ struct EditorView: NSViewRepresentable {
 
         let fontChanged = tv.font != newFont
         if fontChanged {
+            // DIAG (temporary): font-change whole-document restyle. Deferred to the
+            // next runloop tick so writing DiagModel does not mutate observable
+            // state during this SwiftUI view update (matches the async bridge writes
+            // in the text branch below).
+            DispatchQueue.main.async { context.coordinator.diagRecord("FONT") }
             tv.font = newFont
             if let s = tv.textStorage {
                 if isMarkdown { LiveMarkdownStyler.apply(to: s) }
@@ -105,6 +114,10 @@ struct EditorView: NSViewRepresentable {
         }
 
         if tv.string != text {
+            // DIAG (temporary): PRIME SUSPECT - wholesale plain-string reassignment
+            // + full restyle. Deferred (see FONT note above) so the DiagModel write
+            // does not mutate observable state during this SwiftUI view update.
+            DispatchQueue.main.async { context.coordinator.diagRecord("SETSTR") }
             tv.string = text
             if let s = tv.textStorage {
                 if isMarkdown { LiveMarkdownStyler.apply(to: s) }
@@ -174,6 +187,25 @@ struct EditorView: NSViewRepresentable {
         /// `tv.string = …` itself fires does not leak a stale (whole-doc) scope into
         /// the next keystroke's incremental pass.
         func clearPendingEditedRange() { pendingEditedRange = nil }
+
+        // DIAG (temporary) ---------------------------------------------------
+        /// Per-restyle-path cumulative tallies + last-event, for the typing-flash
+        /// diagnostic. Every re-style path funnels through `diagRecord(_:)`, which
+        /// bumps the matching counter, logs the path, and pushes a formatted line
+        /// into the isolated DiagModel (rendered top-center). Remove together with
+        /// the rest of the `// DIAG (temporary)` markers.
+        private var diagInc = 0, diagFull = 0, diagSetStr = 0, diagPlain = 0, diagFont = 0
+        func diagRecord(_ event: String) {
+            switch event {
+            case "INC": diagInc += 1
+            case "SETSTR": diagSetStr += 1
+            case "PLAIN": diagPlain += 1
+            case "FONT": diagFont += 1
+            default: diagFull += 1   // "FULL" and "FULL(norange)" both count as full
+            }
+            MVLog.debug("restyle path: \(event)", category: "diag")
+            parent.diag.text = "DIAG  last:\(event)  inc:\(diagInc) full:\(diagFull) setstr:\(diagSetStr) plain:\(diagPlain) font:\(diagFont)"
+        }
 
         let findController = FindController()
         let outlineController = OutlineController()
@@ -324,12 +356,18 @@ struct EditorView: NSViewRepresentable {
                 let edited = pendingEditedRange
                 pendingEditedRange = nil
                 if let edited {
-                    LiveMarkdownStyler.applyIncremental(to: s, editedCharRange: edited)
+                    // DIAG (temporary): capture the styler's own result - true means
+                    // an incremental (block-scoped) restyle ran, false means it fell
+                    // back to a full-document apply.
+                    let didIncremental = LiveMarkdownStyler.applyIncremental(to: s, editedCharRange: edited)
+                    diagRecord(didIncremental ? "INC" : "FULL")
                 } else {
                     LiveMarkdownStyler.apply(to: s)
+                    diagRecord("FULL(norange)")  // DIAG (temporary): no captured range → full restyle
                 }
             } else {
                 parent.applyPlainSource(to: s, font: tv.font ?? NSFont.systemFont(ofSize: DesignTokens.bodyFontSizes[parent.fontIndex]))
+                diagRecord("PLAIN")  // DIAG (temporary): non-Markdown flat source
             }
         }
 
