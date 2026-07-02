@@ -57,3 +57,18 @@ final class ActiveHeadingModel: ObservableObject {
 final class HoverURLModel: ObservableObject {
     @Published var url: String = ""
 }
+
+// DIAG (temporary) -----------------------------------------------------------
+/// TEMPORARY diagnostic sink for the "whole-document styling flashes for one
+/// frame while typing/deleting" bug. Records WHICH re-style code path each
+/// keystroke took and drives an always-visible on-screen readout.
+///
+/// Isolated exactly like `ScrollProgressModel`/`ActiveHeadingModel`/`HoverURLModel`:
+/// held by `ContentView` via `@State` (NOT observed there), so writing it on every
+/// keystroke does NOT re-evaluate the whole `ContentView` body. This matters here -
+/// the instrumentation itself must not trigger the very whole-view re-render we are
+/// hunting. Only the isolated `DiagReadout` leaf observes it. Rip out together with
+/// the rest of the `// DIAG (temporary)` markers once the bug is found.
+final class DiagModel: ObservableObject {
+    @Published var text: String = ""
+}
