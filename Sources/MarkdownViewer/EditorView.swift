@@ -220,6 +220,8 @@ struct EditorView: NSViewRepresentable {
         /// the rest of the `// DIAG (temporary)` markers.
         private var diagInc = 0, diagFull = 0, diagSetStr = 0, diagPlain = 0, diagFont = 0
         func diagRecord(_ event: String) {
+            // USER mode: no HUD, so skip every counter/log/format cost entirely.
+            guard AppEnv.debug else { return }
             switch event {
             case "INC": diagInc += 1
             case "SETSTR": diagSetStr += 1
