@@ -45,6 +45,10 @@ struct EditorView: NSViewRepresentable {
         tv.importsGraphics = false
         tv.allowsUndo = true
         tv.font = NSFont.systemFont(ofSize: DesignTokens.bodyFontSizes[fontIndex])
+        // Seed the Coordinator's tracked body size with the SAME initial size, so the
+        // first updateNSView (which requests this same size) sees no change and skips
+        // a redundant whole-document restyle at startup.
+        context.coordinator.lastStyledBodySize = DesignTokens.bodyFontSizes[fontIndex]
         tv.textColor = DesignTokens.bodyText
         tv.backgroundColor = DesignTokens.paper
         tv.insertionPointColor = DesignTokens.titleText
@@ -95,7 +99,15 @@ struct EditorView: NSViewRepresentable {
         let newFont = NSFont.systemFont(ofSize: size)
         LiveMarkdownStyler.bodyPointSize = size
 
-        let fontChanged = abs((tv.font?.pointSize ?? -1) - size) > 0.01
+        // Gate the whole-document restyle on the body size WE LAST STYLED WITH,
+        // tracked on the Coordinator — NOT on `tv.font?.pointSize`, which reflects
+        // the FIRST character's font. For any doc starting with a heading (`# Title`)
+        // that first-char size is the heading size, never the body `size`, so the
+        // old `tv.font` guard was true on every re-render → whole-doc font reset +
+        // restyle on every ContentView re-render (e.g. each find-box keystroke) →
+        // a one-frame styling flash. Comparing the tracked body size fires ONLY when
+        // the user actually changed the body size (⌘+/−/0 → fontIndex → size).
+        let fontChanged = context.coordinator.lastStyledBodySize != size
         if fontChanged {
             // DIAG (temporary): font-change whole-document restyle. Deferred to the
             // next runloop tick so writing DiagModel does not mutate observable
@@ -111,6 +123,9 @@ struct EditorView: NSViewRepresentable {
             // keystroke scopes cleanly (the font change does not edit characters,
             // but keep this symmetric with the doc-load path below).
             context.coordinator.clearPendingEditedRange()
+            // Record the body size we just styled with, so subsequent re-renders
+            // that request the SAME size are correctly treated as "no font change".
+            context.coordinator.lastStyledBodySize = size
         }
 
         if tv.string != text {
@@ -188,6 +203,15 @@ struct EditorView: NSViewRepresentable {
         /// the next keystroke's incremental pass.
         func clearPendingEditedRange() { pendingEditedRange = nil }
 
+        /// The body point size the document was LAST styled with. Seeded in
+        /// makeNSView with the initial size and updated inside updateNSView's
+        /// font-change branch. updateNSView gates its whole-document restyle on
+        /// `lastStyledBodySize != size` instead of reading `tv.font?.pointSize`
+        /// (which reflects the first character's font — a heading, not the body —
+        /// so it never equalled the body size and made the guard fire on every
+        /// re-render). `-1` means "never styled" → first pass restyles once.
+        var lastStyledBodySize: CGFloat = -1
+
         // DIAG (temporary) ---------------------------------------------------
         /// Per-restyle-path cumulative tallies + last-event, for the typing-flash
         /// diagnostic. Every re-style path funnels through `diagRecord(_:)`, which
@@ -204,7 +228,14 @@ struct EditorView: NSViewRepresentable {
             default: diagFull += 1   // "FULL" and "FULL(norange)" both count as full
             }
             MVLog.debug("restyle path: \(event)", category: "diag")
-            parent.diag.text = "DIAG  last:\(event)  inc:\(diagInc) full:\(diagFull) setstr:\(diagSetStr) plain:\(diagPlain) font:\(diagFont)"
+            // DIAG (temporary): also surface the raw values behind the font-change
+            // decision, so if FONT ever fires again we can read WHY at a glance:
+            //   sz   = the body size currently requested (fontIndex → size)
+            //   tvpt = tv.font?.pointSize (first-char font — the misleading old signal)
+            //   lsz  = lastStyledBodySize (the tracked size the guard now compares)
+            let sz = DesignTokens.bodyFontSizes[parent.fontIndex]
+            let tvpt = textView?.font?.pointSize ?? -1
+            parent.diag.text = "DIAG  last:\(event)  inc:\(diagInc) full:\(diagFull) setstr:\(diagSetStr) plain:\(diagPlain) font:\(diagFont)  sz:\(sz) tvpt:\(tvpt) lsz:\(lastStyledBodySize)"
         }
 
         let findController = FindController()
