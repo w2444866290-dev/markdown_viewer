@@ -113,11 +113,14 @@ struct ContentView: View {
                     // re-renders only this leaf, never ContentView.body (性能-2).
                     HoverURLPreview(model: hoverURL)
                 }
-                // DIAG (temporary): always-visible restyle-path readout, pinned
-                // top-center of the content area. Observes only the isolated
-                // DiagModel, so it re-renders alone. Rip out with the DIAG markers.
+                // DIAG (temporary): restyle-path readout, pinned top-center of the
+                // content area. Observes only the isolated DiagModel, so it
+                // re-renders alone. Gated to developer/debug launches (AppEnv.debug)
+                // so USER mode never shows it. Rip out with the DIAG markers.
                 .overlay(alignment: .top) {
-                    DiagReadout(model: diag)
+                    if AppEnv.debug {
+                        DiagReadout(model: diag)
+                    }
                 }
             }
         }
