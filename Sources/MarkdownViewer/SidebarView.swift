@@ -110,6 +110,9 @@ struct SidebarView: View {
                                 )
                             )
                             docManager.sidebarWidth = newWidth
+                            // Phase-2: persist the new sidebar width (debounced, fires
+                            // ~1s after the drag settles).
+                            docManager.scheduleSessionSave()
                         }
                 )
                 .overlay(

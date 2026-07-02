@@ -20,6 +20,10 @@ struct MarkdownViewerApp: App {
                     // Discrete reconcile point: fold the editor's live text back into
                     // the active tab's snapshot before the app goes away.
                     docManager.reconcileActiveText()
+                    // Forced synchronous session write so the latest state (incl. the
+                    // just-typed unsaved text and scroll position) survives the quit —
+                    // the debounced saves may not have fired yet.
+                    docManager.saveSession()
                     MVLog.info("app will terminate", category: "lifecycle")
                 }
                 .frame(minWidth: 860, minHeight: 560)

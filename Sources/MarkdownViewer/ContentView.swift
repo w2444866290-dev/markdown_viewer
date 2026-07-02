@@ -61,6 +61,9 @@ struct ContentView: View {
                                 // the live text lives in the NSTextView after mount, and
                                 // `.id(activeTabID)` below reloads it per tab switch.
                                 text: active.text,
+                                // Mount-time scroll offset to restore (same one-shot
+                                // load semantics as `text`) — Phase-2 per-tab scroll.
+                                scrollY: active.scrollY,
                                 docManager: docManager,
                                 fontIndex: $docManager.fontIndex,
                                 isMarkdown: active.isMarkdown,
@@ -153,8 +156,13 @@ struct ContentView: View {
         .onAppear {
             guard !hasInitialized else { return }
             hasInitialized = true
-            if docManager.tabs.isEmpty {
-                // First launch: one empty untitled doc, empty sidebar (spec #1/#2).
+            // Session restore (Phase 2): resume the previous tabs/active/font/sidebar/
+            // folder/scroll. A restored session takes over BEFORE the blank fallback,
+            // so the fallback never double-fires. No/empty/corrupt session → first-run
+            // behaviour is unchanged: one empty untitled doc, empty sidebar (spec #1/#2).
+            if let s = SessionStore.load(), !s.tabs.isEmpty {
+                docManager.restore(from: s)
+            } else if docManager.tabs.isEmpty {
                 docManager.newDocument()
             }
         }

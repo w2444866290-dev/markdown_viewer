@@ -67,14 +67,25 @@ final class DocumentManager: ObservableObject {
     /// this to refresh the snapshot.
     var pullActiveText: (() -> String)?
 
-    /// Pull the editor's live text into the active tab's snapshot, but ONLY when it
-    /// actually differs — a single guarded `@Published` mutation. Call at every
-    /// discrete read point BEFORE reading `tabs[].text`.
+    /// Set by the editor coordinator on mount (like `pullActiveText`): returns the
+    /// live vertical scroll offset (document-space y of the viewport top) of the
+    /// active editor. Pulled into `tabs[].scrollY` at discrete reconcile points and
+    /// read directly by `snapshotSession` so a session save captures the *current*
+    /// scroll without a per-frame write-back.
+    var pullActiveScrollY: (() -> CGFloat)?
+
+    /// Pull the editor's live text (and scroll offset) into the active tab's
+    /// snapshot, each ONLY when it actually differs — self-guarded single `@Published`
+    /// mutations. Call at every discrete read point BEFORE reading `tabs[]`.
     func reconcileActiveText() {
-        guard let pull = pullActiveText, let idx = activeIdx else { return }
-        let live = pull()
-        if tabs[idx].text != live {
-            tabs[idx].text = live
+        guard let idx = activeIdx else { return }
+        if let pull = pullActiveText {
+            let live = pull()
+            if tabs[idx].text != live { tabs[idx].text = live }
+        }
+        if let pullY = pullActiveScrollY {
+            let y = pullY()
+            if tabs[idx].scrollY != y { tabs[idx].scrollY = y }
         }
     }
 
@@ -91,6 +102,7 @@ final class DocumentManager: ObservableObject {
     func activateTab(_ id: UUID?) {
         reconcileActiveText()
         activeTabID = id
+        scheduleSessionSave()
     }
 
     // MARK: - Actions
@@ -155,6 +167,9 @@ final class DocumentManager: ObservableObject {
                 activateTab(nil)
             }
         }
+        // Closing a non-active tab changes the tab set without touching activeTabID
+        // (so activateTab's save above never fires) — persist the new set here too.
+        scheduleSessionSave()
     }
 
     func reopenClosed() {
@@ -162,6 +177,80 @@ final class DocumentManager: ObservableObject {
         lastClosedTab = nil
         tabs.append(tab)
         activateTab(tab.id)
+    }
+
+    // MARK: - Session persistence
+    //
+    // Remember where the user left off (open tabs incl. unsaved content, active tab,
+    // font, sidebar geometry, opened folder, per-tab scroll) and restore it on the
+    // next launch. Saves are DEBOUNCED for high-frequency triggers (typing/scroll)
+    // and forced synchronously on terminate; the debounce path builds+writes only
+    // and must never mutate `@Published` (no re-render).
+
+    /// Debounced session-save work item — cancelled/rescheduled on every trigger.
+    private var sessionSaveWork: DispatchWorkItem?
+
+    /// Build a `Session` from the CURRENT state WITHOUT mutating any `@Published`.
+    /// For the ACTIVE tab, pull the LIVE text + scroll offset through the editor
+    /// channels into a LOCAL copy so the snapshot is up to date without a per-keystroke
+    /// write-back into `tabs[].text` (which would re-render). Non-active tabs use their
+    /// already-reconciled snapshots.
+    func snapshotSession() -> Session {
+        var snap = tabs  // local value copy — mutating it never touches @Published tabs
+        if let idx = activeIdx {
+            if let pull = pullActiveText { snap[idx].text = pull() }
+            if let pullY = pullActiveScrollY { snap[idx].scrollY = pullY() }
+        }
+        return Session(
+            tabs: snap,
+            activeTabID: activeTabID,
+            fontIndex: fontIndex,
+            sidebarWidth: sidebarWidth,
+            sidebarOpen: sidebarOpen,
+            directoryPath: directoryURL?.path
+        )
+    }
+
+    /// Persist the current session NOW (synchronous, best-effort). Used by the
+    /// terminate hook and by the debounce block.
+    func saveSession() {
+        SessionStore.save(snapshotSession())
+    }
+
+    /// Debounced session save (~1s) for high-frequency triggers (typing, scrolling)
+    /// and reused by discrete events. Deliberately mutates NO `@Published` state — it
+    /// only (re)schedules a work item that builds a snapshot and writes it, so it can
+    /// never itself cause a re-render.
+    func scheduleSessionSave() {
+        sessionSaveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.saveSession()
+        }
+        sessionSaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+
+    /// Rebuild in-memory state from a saved session. Sets tabs/active/font/sidebar;
+    /// if the saved folder still exists, rebuilds the sidebar tree from it (no file is
+    /// auto-opened — tabs are already restored). Restored dirty tabs keep `isDirty`
+    /// and their unsaved text; nothing is written to disk here. `fontIndex` is set
+    /// FIRST so the editor seeds the correct body size when it mounts (Phase-1
+    /// `lastStyledBodySize` seeding in makeNSView reads the current fontIndex).
+    func restore(from s: Session) {
+        fontIndex = max(0, min(DesignTokens.bodyFontSizes.count - 1, s.fontIndex))
+        sidebarWidth = s.sidebarWidth
+        sidebarOpen = s.sidebarOpen
+        tabs = s.tabs
+        // Fall back to the first tab if the saved active id no longer matches.
+        activeTabID = (s.activeTabID.flatMap { id in tabs.first { $0.id == id }?.id })
+            ?? tabs.first?.id
+        // Rebuild the sidebar tree from the saved folder if it still exists. tabs is
+        // already non-empty, so loadDirectory's first-file auto-open never fires.
+        if let path = s.directoryPath,
+           FileManager.default.fileExists(atPath: path) {
+            loadDirectory(URL(fileURLWithPath: path))
+        }
+        MVLog.info("session restored: \(tabs.count) tab(s), font \(fontIndex)", category: "session")
     }
 
     // MARK: - Font
@@ -177,6 +266,7 @@ final class DocumentManager: ObservableObject {
             ? String(Int(size))
             : String(Double(size))
         Toaster.shared.flash("正文字号 " + label + "px")
+        scheduleSessionSave()
     }
 
     // MARK: - File I/O
@@ -207,6 +297,7 @@ final class DocumentManager: ObservableObject {
                     tabs[idx].isDirty = false
                 }
                 Toaster.shared.flash("已保存 " + tab.name)
+                scheduleSessionSave()
             } catch {
                 return
             }
@@ -229,6 +320,7 @@ final class DocumentManager: ObservableObject {
                 tabs[idx].name = url.lastPathComponent
                 tabs[idx].isDirty = false
                 Toaster.shared.flash("已保存 " + tabs[idx].name)
+                scheduleSessionSave()
             } catch {
                 return
             }
@@ -318,8 +410,8 @@ struct FileNode: Identifiable {
     var children: [FileNode] = []
 }
 
-struct DocumentTab: Identifiable {
-    let id = UUID()
+struct DocumentTab: Identifiable, Codable {
+    let id: UUID
     var url: URL?
     var name: String
     var text: String
@@ -328,6 +420,57 @@ struct DocumentTab: Identifiable {
     /// extension: `.md`/`.markdown` → true; untitled/new docs (url == nil) → true;
     /// everything else (e.g. .yaml/.json) → false, shown as plain source.
     var isMarkdown: Bool = true
+    /// Persisted vertical scroll offset (document-space y of the viewport top) so a
+    /// restored tab reopens where it was left. Kept in sync with the live NSTextView
+    /// only at discrete reconcile points (never per scroll frame) — see
+    /// DocumentManager.reconcileActiveText / snapshotSession.
+    var scrollY: CGFloat = 0
+
+    /// Memberwise init with a defaulted `id` (so decode can supply the persisted id
+    /// while the app's own creators — openTab/newDocument — get a fresh one).
+    init(id: UUID = UUID(), url: URL?, name: String, text: String,
+         isDirty: Bool, isMarkdown: Bool = true, scrollY: CGFloat = 0) {
+        self.id = id
+        self.url = url
+        self.name = name
+        self.text = text
+        self.isDirty = isDirty
+        self.isMarkdown = isMarkdown
+        self.scrollY = scrollY
+    }
+
+    /// Explicit keys: `id` is persisted (it is otherwise a fresh-per-instance UUID),
+    /// and `url` is stored as an optional *path string* rather than a URL container.
+    enum CodingKeys: String, CodingKey {
+        case id, url, name, text, isDirty, isMarkdown, scrollY
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        // Stored as a plain filesystem path (see encode); nil = untitled/new doc.
+        if let path = try c.decodeIfPresent(String.self, forKey: .url) {
+            url = URL(fileURLWithPath: path)
+        } else {
+            url = nil
+        }
+        name = try c.decode(String.self, forKey: .name)
+        text = try c.decode(String.self, forKey: .text)
+        isDirty = try c.decode(Bool.self, forKey: .isDirty)
+        isMarkdown = try c.decodeIfPresent(Bool.self, forKey: .isMarkdown) ?? true
+        scrollY = try c.decodeIfPresent(CGFloat.self, forKey: .scrollY) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(url?.path, forKey: .url)
+        try c.encode(name, forKey: .name)
+        try c.encode(text, forKey: .text)
+        try c.encode(isDirty, forKey: .isDirty)
+        try c.encode(isMarkdown, forKey: .isMarkdown)
+        try c.encode(scrollY, forKey: .scrollY)
+    }
 
     /// Classify a file URL as Markdown. `nil` (untitled/new) is treated as Markdown.
     static func isMarkdownExtension(of url: URL?) -> Bool {
