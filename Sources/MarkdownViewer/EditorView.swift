@@ -8,6 +8,11 @@ struct EditorView: NSViewRepresentable {
     /// the new tab's snapshot). Reconcile pulls the live text back into the snapshot
     /// at discrete points — see DocumentManager.reconcileActiveText.
     let text: String
+    /// The active tab's saved scroll offset AT MOUNT (document-space y of the
+    /// viewport top). Applied ONCE after the first layout pass in makeNSView — same
+    /// one-shot load semantics as `text`; the live position lives in the scroll view
+    /// after mount and is reconciled back at discrete points (Phase-2 per-tab scroll).
+    let scrollY: CGFloat
     /// Unobserved reference (class → no re-render subscription) used to wire the
     /// reconcile channel on mount and to mark the tab dirty on the first edit.
     let docManager: DocumentManager
@@ -120,6 +125,31 @@ struct EditorView: NSViewRepresentable {
         // DocumentManager, which pulls it into tabs[].text at discrete points. Weak
         // coordinator ref so the closure held by docManager can't retain-cycle it.
         docManager.pullActiveText = { [weak c = context.coordinator] in c?.textView?.string ?? "" }
+
+        // Parallel scroll channel: expose this tab's LIVE viewport-top offset so the
+        // session snapshot can read the current scroll without a per-frame write-back.
+        docManager.pullActiveScrollY = { [weak c = context.coordinator] in
+            c?.scrollView?.contentView.bounds.origin.y ?? 0
+        }
+
+        // Per-tab scroll restore (Phase-2): re-apply the saved offset ONCE, on the
+        // NEXT layout pass so the document has been sized and ResponsiveScrollView's
+        // initial 33vh inset pin has already run (applying now would fight it).
+        // Clamp to the valid range against the fully-laid-out document height.
+        let restoreY = scrollY
+        if restoreY > 0 {
+            DispatchQueue.main.async { [weak c = context.coordinator] in
+                guard let c, let rsv = c.scrollView, let rtv = c.textView,
+                      let lm = rtv.layoutManager, let tc = rtv.textContainer else { return }
+                lm.ensureLayout(for: tc)          // force full glyph layout → real height
+                rsv.layoutSubtreeIfNeeded()
+                let docH = rtv.frame.height + rsv.contentInsets.top + rsv.contentInsets.bottom
+                let maxY = max(0, docH - rsv.contentView.bounds.height)
+                let y = min(max(0, restoreY), maxY)
+                rsv.contentView.scroll(to: CGPoint(x: rsv.contentView.bounds.origin.x, y: y))
+                rsv.reflectScrolledClipView(rsv.contentView)
+            }
+        }
 
         // Document loaded → rebuild outline + refresh cached metrics (this moved out
         // of updateNSView's old text branch). Async to avoid mutating @Published
@@ -374,6 +404,11 @@ struct EditorView: NSViewRepresentable {
                     dm.markActiveDirty()
                 }
 
+                // Phase-2 session persistence: debounced (~1s) write of the latest
+                // state. scheduleSessionSave only cancels/reschedules a work item and
+                // mutates NO @Published, so it stays cheap and never re-renders.
+                dm.scheduleSessionSave()
+
                 // Debounced heavy work → write to the (isolated) bridge. Counts/outline
                 // read the LIVE tv.string, never the stale tabs[].text snapshot.
                 self.debounceWork?.cancel()
@@ -436,6 +471,13 @@ struct EditorView: NSViewRepresentable {
             guard abs(progress - lastPublishedProgress) >= 0.004 else { return }
             lastPublishedProgress = progress
             parent.scrollModel.value = progress
+
+            // Phase-2 session persistence: debounced save after the scroll settles, so
+            // a restored tab reopens at the last-viewed position. Placed after the
+            // perceptible-delta gate above; scheduleSessionSave mutates no @Published.
+            // Hopped through the main queue (like textDidChange) to reach the
+            // @MainActor DocumentManager from this nonisolated notification callback.
+            DispatchQueue.main.async { [weak self] in self?.parent.docManager.scheduleSessionSave() }
 
             // Spec (syncScroll, ~line 655): a scroll updates BOTH progress AND the
             // active outline heading (the amber tick in the rail). Reuse the same
