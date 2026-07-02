@@ -95,7 +95,7 @@ struct EditorView: NSViewRepresentable {
         let newFont = NSFont.systemFont(ofSize: size)
         LiveMarkdownStyler.bodyPointSize = size
 
-        let fontChanged = tv.font != newFont
+        let fontChanged = abs((tv.font?.pointSize ?? -1) - size) > 0.01
         if fontChanged {
             // DIAG (temporary): font-change whole-document restyle. Deferred to the
             // next runloop tick so writing DiagModel does not mutate observable
