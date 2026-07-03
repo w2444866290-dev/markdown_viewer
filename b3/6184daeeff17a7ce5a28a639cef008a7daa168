@@ -1,0 +1,23 @@
+Sources/MarkdownViewer/MarkdownStyling.swift
+  s_c8ce8d340d0da3::t_4487c4842dd523 28-32,1424-1428
+VERSION
+  s_c8ce8d340d0da3::t_a1732855cf5a10 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "b36184daeeff17a7ce5a28a639cef008a7daa168",
+  "prompts": {},
+  "sessions": {
+    "s_c8ce8d340d0da3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aeac6d7e-1041-41e3-a533-b884a357edfd",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
