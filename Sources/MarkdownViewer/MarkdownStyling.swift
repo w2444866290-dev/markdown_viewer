@@ -448,11 +448,15 @@ enum LiveMarkdownStyler {
         //    the scoped pass can't be trusted — full restyle.
         if region.contains("```") { return true }
 
-        // 2) A blank line in/adjacent to the edit (two newlines separated only by
-        //    spaces/tabs). Inserting one (Enter → `\n\n`) splits a block and shifts
-        //    the collapsed inter-block gaps; deleting/typing right at a blank-line
-        //    boundary is ambiguous — be conservative and full-restyle.
-        if regionContainsBlankLine(region) { return true }
+        // 2) A newline the EDIT ITSELF introduced (Enter → could split a block or
+        //    create a `\n\n` blank line). A plain-character insertion CANNOT change
+        //    block structure, so we no longer full-restyle merely because a
+        //    pre-existing blank line sits NEAR the edit — that proximity check made
+        //    every paragraph-boundary keystroke full-restyle (measured inc:1 full:110,
+        //    the fast-typing lag). Deletions (length 0, removed text unknowable) rely
+        //    on `blockScope` expanding to the neighbouring block on each side, which
+        //    re-styles a block MERGE (deleting a lone blank line) correctly.
+        if editedRange.length > 0, nsString.substring(with: editedRange).contains("\n") { return true }
 
         // 3) A table pipe `|`. Adding/removing a pipe can turn a paragraph into a
         //    table (or vice-versa) and changes the multi-row column grouping, which
@@ -464,29 +468,6 @@ enum LiveMarkdownStyler {
         //    multi-line. Conservative superset; full restyle.
         if regionHasMarkerRun(region) { return true }
 
-        return false
-    }
-
-    /// True if `region` contains a genuine BLANK line — a `\n`, optional spaces/tabs,
-    /// then another `\n`. This is the unambiguous block-separator signal. We do NOT
-    /// treat the region's leading/trailing edge newlines as blank lines: the caller
-    /// pads the examined region by ±1 char (to catch a just-removed separator), and
-    /// `paragraphRange` already includes a paragraph's own trailing terminator, so
-    /// edge newlines are normal and must not be misread as added/removed blanks
-    /// (otherwise EVERY plain-paragraph edit would needlessly full-restyle).
-    private static func regionContainsBlankLine(_ region: String) -> Bool {
-        let chars = Array(region)
-        var i = 0
-        while i < chars.count {
-            if chars[i] == "\n" {
-                var j = i + 1
-                while j < chars.count, chars[j] == " " || chars[j] == "\t" { j += 1 }
-                if j < chars.count, chars[j] == "\n" { return true }
-                i = j
-            } else {
-                i += 1
-            }
-        }
         return false
     }
 
