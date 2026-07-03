@@ -19,11 +19,16 @@ cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 # letting the user verify they relaunched the latest binary.
 PLIST="$APP_DIR/Contents/Info.plist"
 BUILD_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD)"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0.0" "$PLIST" 2>/dev/null \
-    || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0.0" "$PLIST"
+# Marketing version is a single source of truth in the repo-root VERSION file, bumped
+# per release; the build SHA stays the CFBundleVersion so the user can confirm they
+# relaunched the exact binary. Fall back to 1.0.0 if VERSION is missing/empty.
+MARKETING_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION" 2>/dev/null)"
+[[ -n "$MARKETING_VERSION" ]] || MARKETING_VERSION="1.0.0"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$PLIST" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $MARKETING_VERSION" "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_SHA" "$PLIST" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_SHA" "$PLIST"
-echo "injected version: v1.0.0 ($BUILD_SHA)"
+echo "injected version: v$MARKETING_VERSION ($BUILD_SHA)"
 
 codesign --force --deep --sign - "$APP_DIR"
 
