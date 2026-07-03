@@ -1,0 +1,23 @@
+VERSION
+  s_c8ce8d340d0da3::t_bc2c64a6eb3ed1 1
+scripts/build.sh
+  s_c8ce8d340d0da3::t_4f98e36bfca7c4 22-28,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "e00db6d5bced310fa286a4c21699af584d053541",
+  "prompts": {},
+  "sessions": {
+    "s_c8ce8d340d0da3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aeac6d7e-1041-41e3-a533-b884a357edfd",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
