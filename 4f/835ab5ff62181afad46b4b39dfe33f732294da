@@ -1,0 +1,29 @@
+Sources/MarkdownViewer/ContentView.swift
+  s_c8ce8d340d0da3::t_cdc63f74d9ccda 379-406
+Sources/MarkdownViewer/EditorBridge.swift
+  s_c8ce8d340d0da3::t_1d2476453296d4 74-76
+Sources/MarkdownViewer/EditorView.swift
+  s_c8ce8d340d0da3::t_83db781a87513b 348-349
+Sources/MarkdownViewer/FindController.swift
+  s_c8ce8d340d0da3::t_0dba2f10c283fd 14-19,91,96-113,253-267
+VERSION
+  s_c8ce8d340d0da3::t_d909a2d7dbebe9 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "4f835ab5ff62181afad46b4b39dfe33f732294da",
+  "prompts": {},
+  "sessions": {
+    "s_c8ce8d340d0da3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aeac6d7e-1041-41e3-a533-b884a357edfd",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
