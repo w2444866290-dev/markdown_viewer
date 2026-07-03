@@ -4,7 +4,11 @@ import AppKit
 /// applies/clears temporary highlights, and coordinates navigation.
 final class FindController {
     weak var textView: NSTextView?
-    var matches: [NSTextCheckingResult] = []
+    /// RAW storage ranges of the current matches. "所见即所搜": we run the regex
+    /// over the clean BODY text (see `BodyMap`), then map each body-space match
+    /// back to the raw NSRange it occupies in the live storage, so highlight /
+    /// scroll / replace all keep operating on real storage coordinates as before.
+    var matches: [NSRange] = []
     var currentIndex = 0
 
     /// True when the last search used regex mode and the pattern failed to compile.
@@ -61,9 +65,21 @@ final class FindController {
             return
         }
 
-        let ns = tv.string as NSString
-        let full = NSRange(location: 0, length: ns.length)
-        matches = regex.matches(in: tv.string, range: full).filter { $0.range.length > 0 }
+        // "所见即所搜": search the clean body/reading text only. Build the body ↔ raw
+        // map from the live storage right before matching so it always reflects the
+        // current styling (search() already re-scans on any query/option change and
+        // after a replace, so no observer is needed). Then run the SAME regex over
+        // the body string and map every body-space match back to a raw storage range.
+        guard let storage = tv.textStorage else {
+            MVLog.info("find search query=\"\(opts.query)\" matches=0 (no storage)", category: "find")
+            return
+        }
+        let bodyMap = BodyMap(storage: storage)
+        let body = bodyMap.bodyString
+        let full = NSRange(location: 0, length: (body as NSString).length)
+        matches = regex.matches(in: body, range: full)
+            .filter { $0.range.length > 0 }
+            .compactMap { bodyMap.rawRange(for: $0.range) }
         currentIndex = 0
         MVLog.info("find search query=\"\(opts.query)\" matches=\(matches.count)", category: "find")
         applyHighlights()
@@ -81,7 +97,7 @@ final class FindController {
     func replaceCurrent(with text: String, restyle: () -> Void, redo: () -> Void) {
         guard matches.indices.contains(currentIndex),
               let tv = textView, let storage = tv.textStorage else { return }
-        let range = matches[currentIndex].range
+        let range = matches[currentIndex]
         // Bounds-safety: a stale match range (e.g. document mutated out from
         // under us) would make replaceCharacters throw. Skip instead.
         guard NSMaxRange(range) <= storage.length else {
@@ -111,8 +127,8 @@ final class FindController {
         highlightedRanges = []
         // Reversed so each replacement doesn't shift the offsets of the ones still
         // to come; still bounds-guard each range against the live storage length.
-        for m in matches.reversed() where NSMaxRange(m.range) <= storage.length {
-            storage.replaceCharacters(in: m.range, with: text)
+        for m in matches.reversed() where NSMaxRange(m) <= storage.length {
+            storage.replaceCharacters(in: m, with: text)
         }
         tv.didChangeText()
         restyle()
@@ -154,7 +170,7 @@ final class FindController {
         applied.reserveCapacity(matches.count)
         for (i, m) in matches.enumerated() {
             // Bounds-safety: skip any range that doesn't fit the live storage.
-            guard let safe = clamped(m.range, max: length) else { continue }
+            guard let safe = clamped(m, max: length) else { continue }
             let c = i == currentIndex ? DesignTokens.accentStrong : DesignTokens.accentSoft
             lm.addTemporaryAttributes([.backgroundColor: c], forCharacterRange: safe)
             applied.append(safe)
@@ -166,7 +182,7 @@ final class FindController {
     private func scrollToCurrent() {
         guard matches.indices.contains(currentIndex) else { return }
         let length = textView?.textStorage?.length ?? 0
-        guard let safe = clamped(matches[currentIndex].range, max: length) else { return }
+        guard let safe = clamped(matches[currentIndex], max: length) else { return }
         textView?.scrollRangeToVisible(safe)
     }
 
@@ -177,5 +193,63 @@ final class FindController {
         let end = min(NSMaxRange(range), length)
         guard end > range.location else { return nil }
         return NSRange(location: range.location, length: end - range.location)
+    }
+}
+
+/// Body-text ↔ raw-storage map for "所见即所搜" find. Walks the live NSTextStorage
+/// once and concatenates only the characters the styler did NOT mark `.mvNonBody`
+/// (see MarkdownStyling) into `bodyString` - the clean reading text. `rawLocations`
+/// runs parallel to `bodyString`'s UTF-16 units: `rawLocations[k]` is the raw
+/// storage offset of the k-th body unit. That lets a body-space match range be
+/// mapped back to the raw NSRange it occupies, so highlight / scroll / replace keep
+/// working in real storage coordinates. Everything stays in UTF-16 / NSRange space,
+/// so surrogate pairs (2 units) map correctly - each unit carries its own location.
+private struct BodyMap {
+    let bodyString: String
+    /// Raw storage offset of each UTF-16 unit in `bodyString` (same count/order).
+    private let rawLocations: [Int]
+
+    init(storage: NSTextStorage) {
+        let ns = storage.string as NSString
+        let length = ns.length
+        guard length > 0 else {
+            bodyString = ""
+            rawLocations = []
+            return
+        }
+        // Read the whole backing store once (character(at:) in a tight loop can be
+        // O(n) per call on some string backings); then keep only body units.
+        var all = [unichar](repeating: 0, count: length)
+        ns.getCharacters(&all, range: NSRange(location: 0, length: length))
+        var chars: [unichar] = []
+        chars.reserveCapacity(length)
+        var locs: [Int] = []
+        locs.reserveCapacity(length)
+        // Non-body runs are stamped `.mvNonBody == true`; body runs carry no value.
+        storage.enumerateAttribute(.mvNonBody, in: NSRange(location: 0, length: length), options: []) { value, range, _ in
+            guard (value as? Bool) != true else { return }
+            for i in range.location..<(range.location + range.length) {
+                chars.append(all[i])
+                locs.append(i)
+            }
+        }
+        bodyString = String(utf16CodeUnits: chars, count: chars.count)
+        rawLocations = locs
+    }
+
+    /// Map a body-space NSRange (into `bodyString`) back to the raw storage NSRange
+    /// it spans. `[a, b)` → `[rawLocations[a], rawLocations[b-1] + 1)`. The mapped
+    /// span may include interleaved hidden markup (e.g. matching "hello world" in
+    /// raw `**hello** world` covers the hidden `**`) - that's intended ("replace
+    /// what you see"). Returns nil for an empty or out-of-range body range.
+    func rawRange(for bodyRange: NSRange) -> NSRange? {
+        guard bodyRange.length > 0 else { return nil }
+        let start = bodyRange.location
+        let lastUnit = NSMaxRange(bodyRange) - 1
+        guard start >= 0, lastUnit < rawLocations.count else { return nil }
+        let rawStart = rawLocations[start]
+        let rawEnd = rawLocations[lastUnit] + 1   // exclusive end just past the last unit
+        guard rawEnd > rawStart else { return nil }
+        return NSRange(location: rawStart, length: rawEnd - rawStart)
     }
 }

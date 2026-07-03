@@ -23,6 +23,19 @@ extension NSAttributedString.Key {
     /// this uses the Design System divider token, DesignTokens.divider).
     /// Boolean `true`.
     static let mvHorizontalRule = NSAttributedString.Key("mvHorizontalRule")
+    /// Marks a run that is NOT clean body/reading text - i.e. everything "所见即所搜"
+    /// (find) must EXCLUDE: truly-hidden syntax (heading `#`, emphasis `*`/`_`,
+    /// backticks, ``` fences + code-block body, link/image `[]()` syntax, `---`
+    /// rules, table pipes/separator) AND dimmed-but-non-body bits (list/quote
+    /// markers, link URLs, image alt/path, code-fence language label). Body text
+    /// (heading/paragraph/list-item/blockquote/table-cell text, bold/italic/
+    /// inline-code CONTENT, link label) carries NO `.mvNonBody`. Stamped INTO the
+    /// shared non-body attribute dictionaries so it stays in sync with both the
+    /// full `apply()` and the scoped `applyIncremental()`; the `setAttributes`
+    /// reset at the top of each pass wipes any stale value before re-stamping.
+    /// `FindController` walks this attribute to build its body-only search map.
+    /// Boolean `true`.
+    static let mvNonBody = NSAttributedString.Key("mvNonBody")
 }
 
 final class CardLayoutManager: NSLayoutManager {
@@ -861,6 +874,8 @@ enum LiveMarkdownStyler {
                     .foregroundColor: NSColor.clear,
                     .font: NSFont.systemFont(ofSize: 1),
                     .mvHorizontalRule: true,
+                    // The raw `---`/`***`/`___` is not reading text - exclude from find.
+                    .mvNonBody: true,
                     .paragraphStyle: style
                 ], range: substringRange)
                 index += 1
@@ -948,7 +963,9 @@ enum LiveMarkdownStyler {
             textStorage.addAttributes([
                 .foregroundColor: mutedColor,
                 .font: NSFontManager.shared.convert(bodyFont, toHaveTrait: .italicFontMask),
-                .obliqueness: 0.15
+                .obliqueness: 0.15,
+                // The image alt text is not body reading text - exclude from find.
+                .mvNonBody: true
             ], range: match.range(at: 1))
             hideImageMarkup(in: match, textStorage: textStorage)
         }
@@ -969,7 +986,9 @@ enum LiveMarkdownStyler {
             let urlRange = match.range(at: 2)
             textStorage.addAttributes([
                 .foregroundColor: mutedColor,
-                .font: markerFont
+                .font: markerFont,
+                // The link address (URL) is not body reading text - exclude from find.
+                .mvNonBody: true
             ], range: urlRange)
             dimMarkup(in: match, contentIndex: 1, textStorage: textStorage)
         }
@@ -1157,6 +1176,8 @@ enum LiveMarkdownStyler {
         textStorage.addAttributes([
             .font: NSFont.systemFont(ofSize: 1),
             .foregroundColor: NSColor.clear,
+            // The `---|---` separator line is not reading text - exclude from find.
+            .mvNonBody: true,
             .paragraphStyle: style
         ], range: range)
     }
@@ -1334,14 +1355,18 @@ enum LiveMarkdownStyler {
     private static func markerAttributes(font: NSFont = markerFont) -> [NSAttributedString.Key: Any] {
         [
             .font: font,
-            .foregroundColor: markerColor
+            .foregroundColor: markerColor,
+            // Dimmed list/quote markers are NOT reading text - exclude from find.
+            .mvNonBody: true
         ]
     }
 
     private static func hiddenMarkupAttributes(font: NSFont = NSFont.systemFont(ofSize: 1)) -> [NSAttributedString.Key: Any] {
         [
             .font: font,
-            .foregroundColor: NSColor.clear
+            .foregroundColor: NSColor.clear,
+            // Truly-hidden syntax is never body text - exclude from find ("所见即所搜").
+            .mvNonBody: true
         ]
     }
 
@@ -1383,6 +1408,8 @@ enum LiveMarkdownStyler {
         guard c == 0x0A || c == 0x0D else { return }
         textStorage.addAttributes([
             .mvCodeBlock: true,
+            // Fenced code (body + joining newlines) is not reading text - exclude from find.
+            .mvNonBody: true,
             .paragraphStyle: codeParagraphStyle(role: .body)
         ], range: NSRange(location: newlineIndex, length: 1))
     }
@@ -1396,6 +1423,8 @@ enum LiveMarkdownStyler {
             // Fenced `pre` color is #444 (mockup), slightly lighter than body #333336.
             .foregroundColor: NSColor(hex: 0x444444),
             .mvCodeBlock: true,
+            // Fenced code (body + fence lines) is not reading text - exclude from find.
+            .mvNonBody: true,
             .paragraphStyle: codeParagraphStyle(role: role)
         ]
     }
@@ -1436,6 +1465,8 @@ enum LiveMarkdownStyler {
             .foregroundColor: NSColor(hex: 0xB3B3B8),
             .kern: 0.6,
             .mvCodeBlock: true,
+            // Dimmed code-fence language label is not reading text - exclude from find.
+            .mvNonBody: true,
             .paragraphStyle: codeParagraphStyle(role: .open)
         ]
     }
