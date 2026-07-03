@@ -120,11 +120,12 @@ struct ContentView: View {
                     // re-renders only this leaf, never ContentView.body (性能-2).
                     HoverURLPreview(model: hoverURL)
                 }
-                // DIAG (temporary): restyle-path readout, pinned top-center of the
-                // content area. Observes only the isolated DiagModel, so it
-                // re-renders alone. Gated to developer/debug launches (AppEnv.debug)
-                // so USER mode never shows it. Rip out with the DIAG markers.
-                .overlay(alignment: .top) {
+                // DIAG (temporary): restyle-path + find readout, pinned BOTTOM-LEFT
+                // of the content area (out of the way of the top find bar) and
+                // collapsible. Observes only the isolated DiagModel, so it re-renders
+                // alone. Gated to developer/debug launches (AppEnv.debug) so USER mode
+                // never shows it. Rip out with the DIAG markers.
+                .overlay(alignment: .bottomLeading) {
                     if AppEnv.debug {
                         DiagReadout(model: diag)
                     }
@@ -374,29 +375,61 @@ private struct HoverURLPreview: View {
 // loud debug styling. Rip out with the rest of the `// DIAG (temporary)` markers.
 private struct DiagReadout: View {
     @ObservedObject var model: DiagModel
+    // Collapse to a tiny chip so it never blocks the editor / find bar. Session-only.
+    @State private var collapsed = false
 
     var body: some View {
+        Group {
+            if collapsed {
+                Text("▸ DIAG")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.yellow.opacity(0.9))
+                    .cornerRadius(5)
+                    .onTapGesture { collapsed = false }
+                    .help("展开诊断")
+            } else {
+                expanded
+            }
+        }
+        .padding(.leading, 8)
+        .padding(.bottom, 8)
+    }
+
+    private var expanded: some View {
         VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text("DIAG · 点击复制")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.black.opacity(0.5))
+                Spacer(minLength: 10)
+                Button(action: { collapsed = true }) {
+                    Text("×")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(.black.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .help("隐藏")
+            }
             Text(model.text.isEmpty ? "DIAG  (waiting for keystroke...)" : model.text)
             if !model.findText.isEmpty {
                 Text(model.findText)
             }
-            Text("↑ 点击复制诊断信息")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(.black.opacity(0.45))
         }
         .font(.system(size: 11, design: .monospaced))
         .foregroundColor(.black)
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
         .background(Color.yellow)
         .cornerRadius(6)
-        .padding(.top, 6)
+        .frame(maxWidth: 560, alignment: .leading)
         // Click-to-copy: hand the full readout to the pasteboard so the developer
         // can paste it straight into a report instead of screenshotting the HUD.
+        // (The × button consumes its own tap, so it hides rather than copies.)
         .contentShape(Rectangle())
         .onTapGesture {
-            // Prefer the full per-match find dump; fall back to the visible lines.
             let visible = [model.text, model.findText].filter { !$0.isEmpty }.joined(separator: "\n")
             let payload = model.findDetail.isEmpty ? visible : "\(model.text)\n\(model.findDetail)"
             NSPasteboard.general.clearContents()
