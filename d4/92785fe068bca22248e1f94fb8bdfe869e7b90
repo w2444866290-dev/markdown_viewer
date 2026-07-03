@@ -1,0 +1,23 @@
+Sources/MarkdownViewer/FindController.swift
+  s_7173d33622eca8::t_8c628ee9c23746 7-11,68-82,100,130-131,173,185,198-255
+Sources/MarkdownViewer/MarkdownStyling.swift
+  s_7173d33622eca8::t_f260d31934abe9 26-38,877-878,966-968,989-991,1179-1180,1358-1360,1367-1369,1411-1412,1426-1427,1468-1469
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "d492785fe068bca22248e1f94fb8bdfe869e7b90",
+  "prompts": {},
+  "sessions": {
+    "s_7173d33622eca8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a45186e32a9b73a66",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
