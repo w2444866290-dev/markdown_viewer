@@ -376,15 +376,34 @@ private struct DiagReadout: View {
     @ObservedObject var model: DiagModel
 
     var body: some View {
-        Text(model.text.isEmpty ? "DIAG  (waiting for keystroke...)" : model.text)
-            .font(.system(size: 11, design: .monospaced))
-            .foregroundColor(.black)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.yellow)
-            .cornerRadius(6)
-            .padding(.top, 6)
-            .allowsHitTesting(false)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(model.text.isEmpty ? "DIAG  (waiting for keystroke...)" : model.text)
+            if !model.findText.isEmpty {
+                Text(model.findText)
+            }
+            Text("↑ 点击复制诊断信息")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.black.opacity(0.45))
+        }
+        .font(.system(size: 11, design: .monospaced))
+        .foregroundColor(.black)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.yellow)
+        .cornerRadius(6)
+        .padding(.top, 6)
+        // Click-to-copy: hand the full readout to the pasteboard so the developer
+        // can paste it straight into a report instead of screenshotting the HUD.
+        .contentShape(Rectangle())
+        .onTapGesture {
+            let combined = [model.text, model.findText]
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(combined, forType: .string)
+            Toaster.shared.flash("已复制诊断信息")
+        }
+        .help("点击复制诊断信息到剪贴板")
     }
 }
 

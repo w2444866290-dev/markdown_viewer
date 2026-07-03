@@ -71,4 +71,7 @@ final class HoverURLModel: ObservableObject {
 /// the rest of the `// DIAG (temporary)` markers once the bug is found.
 final class DiagModel: ObservableObject {
     @Published var text: String = ""
+    /// Second HUD line: the last find-search summary (see FindController
+    /// `lastDebugDiagnostic`). Written by the editor Coordinator after each search.
+    @Published var findText: String = ""
 }

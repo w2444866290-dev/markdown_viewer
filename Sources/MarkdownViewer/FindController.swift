@@ -11,6 +11,12 @@ final class FindController {
     var matches: [NSRange] = []
     var currentIndex = 0
 
+    /// Debug-only (AppEnv.debug): compact summary of the last search for the
+    /// on-screen DIAG HUD - shown/counts of raw vs body-filtered matches and a
+    /// leak check that no shown match landed on an invisible glyph. Empty in USER
+    /// mode. Read by the editor Coordinator, which pushes it into the DiagModel.
+    private(set) var lastDebugDiagnostic = ""
+
     /// True when the last search used regex mode and the pattern failed to compile.
     private(set) var lastPatternInvalid = false
 
@@ -82,8 +88,27 @@ final class FindController {
             .compactMap { bodyMap.rawRange(for: $0.range) }
         currentIndex = 0
         MVLog.info("find search query=\"\(opts.query)\" matches=\(matches.count)", category: "find")
+        if AppEnv.debug { recordDebugDiagnostic(query: opts.query, regex: regex, storage: storage) }
         applyHighlights()
         scrollToCurrent()
+    }
+
+    /// DEBUG only: build the DIAG-HUD summary. Compares the RAW occurrence count
+    /// (regex over the whole storage string) against the body-filtered `matches`,
+    /// so `filtered` = how many raw hits were dropped as non-body (markup, URLs,
+    /// hidden glyphs). `leak` re-checks every SHOWN match and counts any that still
+    /// sit on a ~zero-width glyph (font size ≤ 1.5) - it must stay 0; a non-zero
+    /// leak means an invisible run slipped past the body map (regression signal).
+    private func recordDebugDiagnostic(query: String, regex: NSRegularExpression, storage: NSTextStorage) {
+        let raw = storage.string as NSString
+        let rawCount = regex.matches(in: storage.string, range: NSRange(location: 0, length: raw.length))
+            .filter { $0.range.length > 0 }.count
+        var leak = 0
+        for r in matches where r.location < storage.length {
+            let size = (storage.attributes(at: r.location, effectiveRange: nil)[.font] as? NSFont)?.pointSize ?? 12
+            if size <= 1.5 { leak += 1 }
+        }
+        lastDebugDiagnostic = "FIND \"\(query)\": \(matches.count) shown · \(rawCount) raw · \(rawCount - matches.count) filtered · leak \(leak)"
     }
 
     func navigate(_ delta: Int) {
@@ -225,9 +250,21 @@ private struct BodyMap {
         chars.reserveCapacity(length)
         var locs: [Int] = []
         locs.reserveCapacity(length)
-        // Non-body runs are stamped `.mvNonBody == true`; body runs carry no value.
-        storage.enumerateAttribute(.mvNonBody, in: NSRange(location: 0, length: length), options: []) { value, range, _ in
-            guard (value as? Bool) != true else { return }
+        // A character counts as searchable body text iff BOTH hold:
+        //   1. it is NOT stamped `.mvNonBody` - that marks VISIBLE-but-structural
+        //      runs (list/quote markers, link URLs, image alt, code-fence language
+        //      label) the styler wants excluded even though they render, AND
+        //   2. it is actually VISIBLE. This second guard is a robust safety net:
+        //      every truly-hidden markup run is collapsed to a ~zero-width glyph
+        //      (font size ~1) and/or painted clear, so we skip anything that tiny
+        //      or transparent EVEN IF some styling site forgot to stamp `.mvNonBody`.
+        //      Without it an invisible marker could be "matched" yet show no visible
+        //      highlight and refuse to scroll (find hit a glyph the user can't see).
+        storage.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attrs, range, _ in
+            if (attrs[.mvNonBody] as? Bool) == true { return }
+            let size = (attrs[.font] as? NSFont)?.pointSize ?? 12
+            if size <= 1.5 { return }
+            if let fg = attrs[.foregroundColor] as? NSColor, fg.alphaComponent < 0.02 { return }
             for i in range.location..<(range.location + range.length) {
                 chars.append(all[i])
                 locs.append(i)

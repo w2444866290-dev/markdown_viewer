@@ -345,6 +345,8 @@ struct EditorView: NSViewRepresentable {
                 fs.isError = self?.findController.lastPatternInvalid ?? false
                 fs.matchCount = self?.findController.matches.count ?? 0
                 fs.currentIndex = 0
+                // DIAG (temporary): surface the find summary on the HUD's 2nd line.
+                if AppEnv.debug { self?.parent.diag.findText = self?.findController.lastDebugDiagnostic ?? "" }
             }
             fs.onNavigate = { [weak self] d in
                 self?.findController.navigate(d)
