@@ -1,0 +1,21 @@
+Sources/MarkdownViewer/ContentView.swift
+  s_c8ce8d340d0da3::t_8ff4814919f1c5 123-128,378-379,382-401,403-415,424,427,430
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "90a579f07e49948ed30a5c34912ca9eecdc3175f",
+  "prompts": {},
+  "sessions": {
+    "s_c8ce8d340d0da3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aeac6d7e-1041-41e3-a533-b884a357edfd",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
