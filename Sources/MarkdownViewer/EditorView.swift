@@ -241,11 +241,18 @@ struct EditorView: NSViewRepresentable {
         /// range" → `textDidChange` falls back to a full restyle (correctness-first).
         private var pendingEditedRange: NSRange?
 
-        /// Discard any captured edited range. Called after a WHOLE-document event
-        /// (doc load/switch, font change) does a full restyle, so the char-edit that
-        /// `tv.string = …` itself fires does not leak a stale (whole-doc) scope into
-        /// the next keystroke's incremental pass.
-        func clearPendingEditedRange() { pendingEditedRange = nil }
+        /// Discard any captured edited range AND supersede any pending scheduled
+        /// (coalesced) restyle. Called after a WHOLE-document event (doc load/switch,
+        /// font change, find replace-current/replace-all) does a full restyle, so:
+        ///   1. the char-edit that `tv.string = …` itself fires does not leak a stale
+        ///      (whole-doc) scope into the next keystroke's incremental, AND
+        ///   2. a still-queued per-frame restyle can't run a now-redundant scoped pass
+        ///      over a possibly-stale range against storage the full apply just covered.
+        func clearPendingEditedRange() {
+            pendingEditedRange = nil
+            restyleWork?.cancel()
+            restyleWork = nil
+        }
 
         /// The body point size the document was LAST styled with. Seeded in
         /// makeNSView with the initial size and updated inside updateNSView's
@@ -346,7 +353,13 @@ struct EditorView: NSViewRepresentable {
             fs.onReplaceCurrent = { [weak self] in
                 self?.findController.replaceCurrent(
                     with: fs.replaceText,
-                    restyle: { if let s = self?.textView?.textStorage { LiveMarkdownStyler.apply(to: s) } },
+                    restyle: {
+                        if let s = self?.textView?.textStorage { LiveMarkdownStyler.apply(to: s) }
+                        // The replace mutated storage → didChangeText already scheduled a
+                        // per-frame incremental. This full apply supersedes it: cancel the
+                        // now-redundant pass and drop its stale unioned range.
+                        self?.clearPendingEditedRange()
+                    },
                     redo: {
                         self?.findController.search(FindController.Options(
                             query: fs.query, caseSensitive: fs.caseSensitive,
@@ -358,7 +371,12 @@ struct EditorView: NSViewRepresentable {
             fs.onReplaceAll = { [weak self] in
                 self?.findController.replaceAll(
                     with: fs.replaceText,
-                    restyle: { if let s = self?.textView?.textStorage { LiveMarkdownStyler.apply(to: s) } }
+                    restyle: {
+                        if let s = self?.textView?.textStorage { LiveMarkdownStyler.apply(to: s) }
+                        // Full apply supersedes the per-frame incremental that the
+                        // replace's didChangeText just scheduled — cancel it + its range.
+                        self?.clearPendingEditedRange()
+                    }
                 )
                 fs.matchCount = 0
                 fs.currentIndex = 0
@@ -388,8 +406,79 @@ struct EditorView: NSViewRepresentable {
             }
         }
 
-        func textDidChange(_ n: Notification) {
+        // MARK: - Coalesced live re-style (~1 per frame)
+
+        /// The in-flight coalesced-restyle timer, or `nil` when none is scheduled.
+        /// Doubles as the "already scheduled" guard (see `scheduleRestyle`) and the
+        /// cancellation handle used by every full-apply supersede point
+        /// (`clearPendingEditedRange`, the find replace closures, teardown).
+        private var restyleWork: DispatchWorkItem?
+
+        /// Schedule ONE live re-style ~1 frame (16 ms) out, coalescing every edit that
+        /// lands before it fires into a single pass over the unioned
+        /// `pendingEditedRange`. This replaces the old per-keystroke SYNCHRONOUS
+        /// restyle (the fast-typing lag): a burst of N keystrokes within one frame now
+        /// costs ONE `applyIncremental`, not N.
+        ///
+        /// NON-rescheduling on purpose: if a restyle is already queued we simply let
+        /// the edited range keep growing (unioned by `textStorage(_:didProcessEditing:)`)
+        /// and let the in-flight timer consume it. We do NOT cancel-and-reschedule per
+        /// keystroke — that would push the deadline forward on every key during
+        /// sustained fast typing and leave the text unstyled until the user paused.
+        /// Fixed cadence from the FIRST pending keystroke instead, so the just-typed
+        /// text is always styled within ~1 frame (imperceptible).
+        private func scheduleRestyle() {
+            guard restyleWork == nil else { return }
+            let work = DispatchWorkItem { [weak self] in self?.performScheduledRestyle() }
+            restyleWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0, execute: work)
+        }
+
+        /// Consume the unioned pending range and restyle ONCE, then clear the range
+        /// and the scheduled flag. Runs on the main queue (the asyncAfter target),
+        /// never during a SwiftUI view update, so the DIAG @Published write is safe.
+        /// Guards weak self / textView so a timer that outlives a torn-down tab (tab
+        /// switch recreates the view → deallocs this coordinator) is a harmless no-op.
+        private func performScheduledRestyle() {
+            restyleWork = nil
             guard let tv = textView, let s = tv.textStorage else { return }
+            // #22: non-Markdown source files are never live-styled — keep them flat.
+            guard parent.isMarkdown else {
+                parent.applyPlainSource(to: s, font: tv.font ?? NSFont.systemFont(ofSize: DesignTokens.bodyFontSizes[parent.fontIndex]))
+                diagRecord("PLAIN")  // DIAG (temporary): non-Markdown flat source
+                return
+            }
+            // INCREMENTAL re-style: scope the work to the block(s) the batched edits
+            // touched (unioned via NSTextStorageDelegate), so typing in one paragraph
+            // no longer resets/relays the WHOLE document (the white-flash + jank). The
+            // styler falls back to a full `apply` whenever the edit could change block
+            // boundaries downstream (open/close a fence, add/remove a blank line, change
+            // a table/list shape) — correctness over speed. `applyIncremental` clamps
+            // the (possibly now-stale) unioned range to the live storage bounds, so a
+            // batched range is always safe. If we somehow have no captured range, do a
+            // full restyle (also correctness-first).
+            let edited = pendingEditedRange
+            pendingEditedRange = nil
+            if let edited {
+                // DIAG (temporary): true = a block-scoped incremental ran, false = it
+                // fell back to a full-document apply.
+                let didIncremental = LiveMarkdownStyler.applyIncremental(to: s, editedCharRange: edited)
+                diagRecord(didIncremental ? "INC" : "FULL")
+            } else {
+                LiveMarkdownStyler.apply(to: s)
+                diagRecord("FULL(norange)")  // DIAG (temporary): no captured range → full restyle
+            }
+        }
+
+        deinit {
+            // No scheduled closure should fire against a dead coordinator/view. The
+            // work already captures [weak self] (a fired-after-dealloc timer is a
+            // no-op), but cancel eagerly so a pending 16 ms timer isn't held at all.
+            restyleWork?.cancel()
+            debounceWork?.cancel()
+        }
+
+        func textDidChange(_ n: Notification) {
             // The live text now lives ONLY in tv.string — NO per-keystroke write-back
             // through docManager (that re-rendered the whole ContentView every
             // keystroke, 性能-1). tabs[].text is reconciled at discrete points instead.
@@ -435,32 +524,15 @@ struct EditorView: NSViewRepresentable {
                 self.debounceWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
             }
-            // #22: non-Markdown source files are never live-styled — keep them flat.
-            if parent.isMarkdown {
-                // INCREMENTAL re-style: scope the work to the block(s) the edit
-                // touched (captured via NSTextStorageDelegate), so typing in one
-                // paragraph no longer resets/relays the WHOLE document (the
-                // white-flash + jank). The styler itself falls back to a full
-                // `apply` whenever the edit could change block boundaries
-                // downstream (open/close a fence, add/remove a blank line, change a
-                // table/list shape) — correctness over speed. If we somehow have no
-                // captured range, do a full restyle (also correctness-first).
-                let edited = pendingEditedRange
-                pendingEditedRange = nil
-                if let edited {
-                    // DIAG (temporary): capture the styler's own result - true means
-                    // an incremental (block-scoped) restyle ran, false means it fell
-                    // back to a full-document apply.
-                    let didIncremental = LiveMarkdownStyler.applyIncremental(to: s, editedCharRange: edited)
-                    diagRecord(didIncremental ? "INC" : "FULL")
-                } else {
-                    LiveMarkdownStyler.apply(to: s)
-                    diagRecord("FULL(norange)")  // DIAG (temporary): no captured range → full restyle
-                }
-            } else {
-                parent.applyPlainSource(to: s, font: tv.font ?? NSFont.systemFont(ofSize: DesignTokens.bodyFontSizes[parent.fontIndex]))
-                diagRecord("PLAIN")  // DIAG (temporary): non-Markdown flat source
-            }
+            // COALESCED re-style (fast-typing lag fix): instead of restyling
+            // synchronously on THIS keystroke, schedule a single restyle ~1 frame out
+            // and keep unioning the edited range (via NSTextStorageDelegate) until it
+            // fires. A burst of N keystrokes within one frame collapses to ONE
+            // `applyIncremental` over the unioned range. Both Markdown (incremental /
+            // full) and non-Markdown (flat) styling run inside the scheduled pass — see
+            // performScheduledRestyle. DIAG counters now climb per-FRAME, not
+            // per-keystroke (the intended verification signal).
+            scheduleRestyle()
         }
 
         @objc func scrollDidChange() {
