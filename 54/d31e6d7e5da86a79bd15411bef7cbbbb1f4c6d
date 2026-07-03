@@ -1,0 +1,21 @@
+Sources/MarkdownViewer/EditorView.swift
+  s_ffcafacfa5d09c::t_32cb2639e08269 244-255,356-362,374-379,409-443,445-481,527-535
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "54d31e6d7e5da86a79bd15411bef7cbbbb1f4c6d",
+  "prompts": {},
+  "sessions": {
+    "s_ffcafacfa5d09c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a31929e8e0fd644a5",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
