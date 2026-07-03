@@ -11,11 +11,14 @@ final class FindController {
     var matches: [NSRange] = []
     var currentIndex = 0
 
-    /// Debug-only (AppEnv.debug): compact summary of the last search for the
-    /// on-screen DIAG HUD - shown/counts of raw vs body-filtered matches and a
-    /// leak check that no shown match landed on an invisible glyph. Empty in USER
-    /// mode. Read by the editor Coordinator, which pushes it into the DiagModel.
+    /// Debug-only (AppEnv.debug): one-line summary of the last search shown on the
+    /// DIAG HUD (raw vs body-filtered counts + independent zeroRect/inCode health
+    /// counters). Empty in USER mode. The Coordinator pushes it into the DiagModel.
     private(set) var lastDebugDiagnostic = ""
+
+    /// Debug-only: the full per-match dump (summary + one line per match) copied to
+    /// the pasteboard when the HUD is clicked, so the readout can be pasted whole.
+    private(set) var lastDebugDetail = ""
 
     /// True when the last search used regex mode and the pattern failed to compile.
     private(set) var lastPatternInvalid = false
@@ -93,22 +96,53 @@ final class FindController {
         scrollToCurrent()
     }
 
-    /// DEBUG only: build the DIAG-HUD summary. Compares the RAW occurrence count
-    /// (regex over the whole storage string) against the body-filtered `matches`,
-    /// so `filtered` = how many raw hits were dropped as non-body (markup, URLs,
-    /// hidden glyphs). `leak` re-checks every SHOWN match and counts any that still
-    /// sit on a ~zero-width glyph (font size ≤ 1.5) - it must stay 0; a non-zero
-    /// leak means an invisible run slipped past the body map (regression signal).
+    /// DEBUG only: build the DIAG-HUD summary + a click-to-copy per-match dump.
+    ///
+    /// The summary compares RAW occurrences (regex over the whole storage string)
+    /// against the body-filtered `matches` (`filtered` = raw hits dropped as
+    /// non-body). The two health counters are deliberately INDEPENDENT of the body
+    /// map's own exclusion rule, so they can actually catch a problem the filter
+    /// missed (a self-referential check that reused the size rule could not):
+    ///   - `zeroRect` = shown matches whose ACTUAL rendered glyph rect (measured by
+    ///     the layout manager) is degenerate. That is ground-truth invisibility -
+    ///     it catches any hiding mechanism (size, clear color, collapsed line
+    ///     height), not just the font-size heuristic the body map uses.
+    ///   - `inCode` = shown matches sitting inside a code block / inline-code pill,
+    ///     where the find highlight is re-stamped over an opaque card fill.
+    /// The detail dump lists each match's offset, code flag, font size, foreground
+    /// alpha, measured rect height, and context - everything needed to see WHY a
+    /// match may look unhighlighted or unreachable, without more screenshots.
     private func recordDebugDiagnostic(query: String, regex: NSRegularExpression, storage: NSTextStorage) {
         let raw = storage.string as NSString
         let rawCount = regex.matches(in: storage.string, range: NSRange(location: 0, length: raw.length))
             .filter { $0.range.length > 0 }.count
-        var leak = 0
-        for r in matches where r.location < storage.length {
-            let size = (storage.attributes(at: r.location, effectiveRange: nil)[.font] as? NSFont)?.pointSize ?? 12
-            if size <= 1.5 { leak += 1 }
+        let lm = textView?.layoutManager
+        let container = textView?.textContainer
+        var zeroRect = 0, inCode = 0
+        var lines: [String] = []
+        for (i, r) in matches.enumerated() where r.location < storage.length {
+            let a = storage.attributes(at: r.location, effectiveRange: nil)
+            let size = (a[.font] as? NSFont)?.pointSize ?? -1
+            let fgA = (a[.foregroundColor] as? NSColor)?.alphaComponent ?? -1
+            let code = (a[.mvCodeBlock] as? Bool) == true || (a[.mvInlineCode] as? Bool) == true
+            var rectH: CGFloat = -1
+            if let lm, let container {
+                let g = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+                rectH = lm.boundingRect(forGlyphRange: g, in: container).height
+            }
+            if rectH >= 0, rectH < 3 { zeroRect += 1 }
+            if code { inCode += 1 }
+            if lines.count < 40 {
+                let cs = max(0, r.location - 10), ce = min(raw.length, NSMaxRange(r) + 10)
+                let ctx = raw.substring(with: NSRange(location: cs, length: ce - cs))
+                    .replacingOccurrences(of: "\n", with: "\\n")
+                lines.append("#\(i) @\(r.location) code=\(code ? "Y" : "n") sz=\(String(format: "%.1f", size)) fgA=\(String(format: "%.2f", fgA)) rectH=\(String(format: "%.1f", rectH)) '\(ctx)'")
+            }
         }
-        lastDebugDiagnostic = "FIND \"\(query)\": \(matches.count) shown · \(rawCount) raw · \(rawCount - matches.count) filtered · leak \(leak)"
+        lastDebugDiagnostic = "FIND \"\(query)\": \(matches.count) shown · \(rawCount) raw · \(rawCount - matches.count) filtered · zeroRect \(zeroRect) · inCode \(inCode)"
+        var detail = lastDebugDiagnostic + "\n" + lines.joined(separator: "\n")
+        if matches.count > 40 { detail += "\n… (\(matches.count - 40) more)" }
+        lastDebugDetail = detail
     }
 
     func navigate(_ delta: Int) {

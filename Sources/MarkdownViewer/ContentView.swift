@@ -396,11 +396,11 @@ private struct DiagReadout: View {
         // can paste it straight into a report instead of screenshotting the HUD.
         .contentShape(Rectangle())
         .onTapGesture {
-            let combined = [model.text, model.findText]
-                .filter { !$0.isEmpty }
-                .joined(separator: "\n")
+            // Prefer the full per-match find dump; fall back to the visible lines.
+            let visible = [model.text, model.findText].filter { !$0.isEmpty }.joined(separator: "\n")
+            let payload = model.findDetail.isEmpty ? visible : "\(model.text)\n\(model.findDetail)"
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(combined, forType: .string)
+            NSPasteboard.general.setString(payload, forType: .string)
             Toaster.shared.flash("已复制诊断信息")
         }
         .help("点击复制诊断信息到剪贴板")

@@ -74,4 +74,7 @@ final class DiagModel: ObservableObject {
     /// Second HUD line: the last find-search summary (see FindController
     /// `lastDebugDiagnostic`). Written by the editor Coordinator after each search.
     @Published var findText: String = ""
+    /// The full per-match dump copied when the HUD is clicked (not displayed - the
+    /// HUD only shows the summary line). Plain var: no view observes it for layout.
+    var findDetail: String = ""
 }
