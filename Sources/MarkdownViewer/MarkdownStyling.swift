@@ -940,10 +940,17 @@ enum LiveMarkdownStyler {
         // or `` `code` `` always lives within a single line, hence within scope.
         let fullRange = scope
 
-        applyDelimitedStyle(regex: strongStarRegex, trait: .boldFontMask, textStorage: textStorage, fullRange: fullRange)
-        applyDelimitedStyle(regex: strongUnderscoreRegex, trait: .boldFontMask, textStorage: textStorage, fullRange: fullRange)
-        applyDelimitedStyle(regex: italicStarRegex, trait: .italicFontMask, textStorage: textStorage, fullRange: fullRange)
-        applyStrikethrough(textStorage: textStorage, fullRange: fullRange)
+        // Emphasis (`**`/`__`/`*`/`~~`) must NOT treat a delimiter that lives inside
+        // code as a boundary: a `*` inside `` `reader__*` `` broke bold pairing for
+        // the rest of the line, and `__` in an identifier got mis-bolded. Match the
+        // emphasis regexes against a copy with every inline-code + code-block span
+        // blanked to spaces (length preserved, so ranges still map onto the storage).
+        // No code in scope → the raw string is returned, so prose pays nothing.
+        let emphasisSource = maskedEmphasisSource(textStorage, nsString: nsString, scope: fullRange)
+        applyDelimitedStyle(regex: strongStarRegex, trait: .boldFontMask, textStorage: textStorage, source: emphasisSource, fullRange: fullRange)
+        applyDelimitedStyle(regex: strongUnderscoreRegex, trait: .boldFontMask, textStorage: textStorage, source: emphasisSource, fullRange: fullRange)
+        applyDelimitedStyle(regex: italicStarRegex, trait: .italicFontMask, textStorage: textStorage, source: emphasisSource, fullRange: fullRange)
+        applyStrikethrough(textStorage: textStorage, source: emphasisSource, fullRange: fullRange)
 
         for match in inlineCodeRegex.matches(in: nsString as String, range: fullRange).reversed() {
             textStorage.addAttributes([
@@ -994,8 +1001,28 @@ enum LiveMarkdownStyler {
         }
     }
 
-    private static func applyStrikethrough(textStorage: NSTextStorage, fullRange: NSRange) {
-        let source = textStorage.string
+    /// A copy of the storage text with every inline-code and code-block span blanked
+    /// to spaces (same length, so match ranges still map 1:1 onto the storage). Used
+    /// as the source for the emphasis regexes so a `*`/`_`/`~` inside code is never
+    /// read as a delimiter. Returns the raw string unchanged when `scope` has no code
+    /// at all, so the common prose path allocates nothing.
+    private static func maskedEmphasisSource(_ textStorage: NSTextStorage, nsString: NSString, scope: NSRange) -> String {
+        var codeRanges: [NSRange] = []
+        for m in inlineCodeRegex.matches(in: nsString as String, range: scope) {
+            codeRanges.append(m.range)
+        }
+        textStorage.enumerateAttribute(.mvCodeBlock, in: scope, options: []) { value, range, _ in
+            if (value as? Bool) == true, range.length > 0 { codeRanges.append(range) }
+        }
+        guard !codeRanges.isEmpty else { return nsString as String }
+        let masked = NSMutableString(string: nsString)
+        for r in codeRanges where NSMaxRange(r) <= masked.length {
+            masked.replaceCharacters(in: r, with: String(repeating: " ", count: r.length))
+        }
+        return masked as String
+    }
+
+    private static func applyStrikethrough(textStorage: NSTextStorage, source: String, fullRange: NSRange) {
         for match in strikeRegex.matches(in: source, range: fullRange).reversed() {
             textStorage.addAttributes([
                 .strikethroughStyle: NSUnderlineStyle.single.rawValue,
@@ -1005,8 +1032,7 @@ enum LiveMarkdownStyler {
         }
     }
 
-    private static func applyDelimitedStyle(regex: NSRegularExpression, trait: NSFontTraitMask, textStorage: NSTextStorage, fullRange: NSRange) {
-        let source = textStorage.string
+    private static func applyDelimitedStyle(regex: NSRegularExpression, trait: NSFontTraitMask, textStorage: NSTextStorage, source: String, fullRange: NSRange) {
         for match in regex.matches(in: source, range: fullRange).reversed() {
             let contentRange = match.range(at: 1)
             applyFontTrait(trait, to: contentRange, in: textStorage)
