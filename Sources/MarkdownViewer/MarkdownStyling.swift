@@ -25,11 +25,11 @@ extension NSAttributedString.Key {
     static let mvHorizontalRule = NSAttributedString.Key("mvHorizontalRule")
     /// Marks a run that is NOT clean body/reading text - i.e. everything "所见即所搜"
     /// (find) must EXCLUDE: truly-hidden syntax (heading `#`, emphasis `*`/`_`,
-    /// backticks, ``` fences + code-block body, link/image `[]()` syntax, `---`
-    /// rules, table pipes/separator) AND dimmed-but-non-body bits (list/quote
-    /// markers, link URLs, image alt/path, code-fence language label). Body text
-    /// (heading/paragraph/list-item/blockquote/table-cell text, bold/italic/
-    /// inline-code CONTENT, link label) carries NO `.mvNonBody`. Stamped INTO the
+    /// backticks, ``` fence markers, link/image `[]()` syntax, `---` rules, table
+    /// pipes/separator) AND dimmed-but-non-body bits (list/quote markers, link URLs,
+    /// image alt/path, code-fence language label). Body text (heading/paragraph/
+    /// list-item/blockquote/table-cell text, bold/italic text, inline-code AND
+    /// fenced-code CONTENT, link label) carries NO `.mvNonBody`. Stamped INTO the
     /// shared non-body attribute dictionaries so it stays in sync with both the
     /// full `apply()` and the scoped `applyIncremental()`; the `setAttributes`
     /// reset at the top of each pass wipes any stale value before re-stamping.
@@ -1408,8 +1408,6 @@ enum LiveMarkdownStyler {
         guard c == 0x0A || c == 0x0D else { return }
         textStorage.addAttributes([
             .mvCodeBlock: true,
-            // Fenced code (body + joining newlines) is not reading text - exclude from find.
-            .mvNonBody: true,
             .paragraphStyle: codeParagraphStyle(role: .body)
         ], range: NSRange(location: newlineIndex, length: 1))
     }
@@ -1423,8 +1421,11 @@ enum LiveMarkdownStyler {
             // Fenced `pre` color is #444 (mockup), slightly lighter than body #333336.
             .foregroundColor: NSColor(hex: 0x444444),
             .mvCodeBlock: true,
-            // Fenced code (body + fence lines) is not reading text - exclude from find.
-            .mvNonBody: true,
+            // NOTE: no `.mvNonBody` here. Fenced code CONTENT is visible reading text,
+            // so "所见即所搜" find must MATCH it. Only the truly-hidden bits of a code
+            // block stay excluded, and they carry `.mvNonBody` via their own attrs: the
+            // ``` fence markers + tail (hiddenMarkupAttributes) and the language label
+            // (codeLanguageLabelAttributes). A bare/closing fence line is fully hidden.
             .paragraphStyle: codeParagraphStyle(role: role)
         ]
     }
