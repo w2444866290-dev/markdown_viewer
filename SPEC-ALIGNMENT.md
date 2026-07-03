@@ -1,0 +1,174 @@
+# UI 规约对齐 — 跟踪表
+
+> 设计真相源：`ui/Markdown Viewer.dc.html`
+> 主分支：`main`（已含 P0 批次，@ `bb13201`）　批次约定：`p0` / `p1` / … 各自命名
+> 最近更新：2026-06-30
+
+质检共 30 条，已逐条对源核验。状态分：✅完成 / 🔧进行中 / ⏳待办 / ❓待拍板 / ⛔不做(已拍板)。
+
+---
+
+## 分支约定
+
+- 每个批次单独成支：`p0` / `p1` / … 各自命名，验收后 fast-forward 合 `main`。
+- `wave3-C`（前序对齐 + 打磨 WIP，止于 `c51a901`）与 `p0`（P0 批次 8 提交）均已合入 **`main`**（顶 `bb13201`）。
+- `p0` 分支保留作批次记录；下一批次从 `main` 新拉。
+
+## P0 — 行为正确性 / 首屏观感（✅ 已完成并合入 main，用户已验收）
+
+分支 `p0` @ `bb13201`，已 fast-forward 合入 `main`。功能 + #18 滚动顺滑度均经用户确认。
+
+| # | 问题 | 工作量 | 执行单元 | 状态 |
+|---|---|---|---|---|
+| 9 | ⌘F 重复按会关掉查找；应永远 open+focus+select+recompute | S | Exec1 查找&面板 | ✅ |
+| 10 | 关闭查找未清 query/count/error/replace/高亮 | S | Exec1 查找&面板 | ✅ |
+| 14 | 命令面板"查找/替换"会把已开查找关掉；应 openFind | S | Exec1 查找&面板 | ✅ |
+| 15 | 命令面板看不到打开的 tab/未命名文档（最小版：union tabs） | S→M | Exec1 查找&面板 | ✅（完整 buildDefs 对齐留待数据流波次，已留 TODO 标记） |
+| 5 | 侧栏筛选无键盘导航/高亮/Enter 打开 | M | Exec2 侧栏 | ✅ |
+| 18 | 滚动时右侧目录当前项不更新（只更新进度条） | S | Exec3 目录 | ✅ |
+| 18-perf | 滚动同步卡顿 | S | Exec 性能 | ✅ 两层修复：① 计算——缓存标题偏移+二分查找（`OutlineController.swift`，`60a01c4`）；② 渲染——`activeHeadingIndex` 拆成独立 `ActiveHeadingModel`（`@State` 持有、仅目录条观察），滚动跨标题只重渲目录条不重渲整个 ContentView（`bb13201`）。待用户验证 |
+
+> 注：`hoveredURL` 等同源「整树重渲」问题已作为性能项并入下方 P1/P2 优先级（见 性能-1..5）。
+
+冲突域：Exec1=FindState/FindBarView/CommandPalette/DocumentManager/ContentView；Exec2=SidebarView；Exec3=EditorView。三者文件互不重叠，独立 worktree 开发，owner 统一核验合并。
+
+### P0 引入的技术债（需后续清理）
+- **`FindState.toggleOpen()` 已成误名**：⌘F 菜单绑定在 `App.swift`（不在 Exec1 文件范围内），为实现 #9「永远 open」，Exec1 把 `toggleOpen()` 改成调用 `openFind()`（不再 toggle）。行为正确，但命名误导。**后续应**：把 `App.swift` 的 ⌘F 绑定直接指向 `openFind()`，删除 `toggleOpen()`。归入"查找&面板补全波次"。
+
+---
+
+## p1 — P1 档批次（✅ 完成，待用户验收）
+
+分支 `p1` @ `7f42ae6`（从 main，4 个并行 worktree 合并），集成构建 + 打包通过。含 11 项；延后的 {#29, 性能-1} 不在内。
+
+| 项 | 内容 | 波 |
+|---|---|---|
+| #22 | 非 Markdown 文件源码视图 + `非 Markdown 文件 · 以源码形式查看` banner（`DocumentTab.isMarkdown`） | W1 |
+| #1/#2 | 首启 / 新建空白 untitled，不塞 demo | W1 |
+| #26 | 状态栏字体改 tabular-digit（去 monospaced 家族） | W1 |
+| #27 | 底部 padding 响应式 33vh（`ResponsiveScrollView.tile` 动态 contentInset） | W1 |
+| #28 | 拖拽仅 .md/.markdown/.txt，不支持 toast | W1 |
+| 性能-2 | hoveredURL 隔离到 `HoverURLModel`，hover 不再整树重渲 | W1 |
+| #11 | 查找 Shift+Enter 上一个 / Esc 关闭（含替换框，NSEvent 监听） | W2 |
+| #12 | 查找面板白 .97+blur、输入底 .045（本地，不动 DesignTokens） | W2 |
+| #17 | 命令面板行单行 ellipsis | W2 |
+| #6 | 侧栏筛选递归 flatten 匹配嵌套文件 | W3 |
+| #21 | 目录跳转 300ms 滚动 + 900ms wash（滚动结束后触发） | W4 |
+
+合入 `main`：待用户验收后进行。
+
+### p1 验证轮发现并修复（@ `900c63b`）
+- **日志**：`MVLog` 内存环形缓冲 200 条，崩溃（NSException + 6 信号）flush 到 `~/Library/Logs/MarkdownViewer/crash/`。搜索/缩放路径已加日志点。
+- **崩溃**：不盲修——靠日志抓真实堆栈。疑因（诊断）：find 匹配范围在文档长度变化后被使用 → 越界；#27 `tile()` 重入为协同因素。已加范围越界保护 + 修了 tile 重入，若仍复现等 crash log。
+- **#27 滚动漂移**：inset 计算移出 `tile()`，缩放时保存/恢复滚动位置。
+- **inline 代码不高亮**：绘制顺序——填完代码底色后补描 find/目录临时高亮。
+- **搜索闪白/卡顿**：debounce 120ms + 只清上次匹配范围（不再全文清/重扫）+ 范围越界保护。
+- 性能-4（查找输入整树重渲）：用户确认**不提前**，留原 todo。
+- **非 md 打开卡死**（打开 .toml 无响应）：根因——大纲未按 `isMarkdown` 关闭，TOML/YAML 的 `#` 注释被当成几百个 H1 标题 + 每个做布局查询。修复：非 md 文件四个出口（打开/文本变更/滚动/ContentView 渲染）全部不构建/不渲染大纲（`cac718a`）。这是 #22 的遗漏（当时只 gate 了样式器）。
+- **非 md 扫描同类隐患**：`refreshTextCaches()` 也按 `isMarkdown` gate 了——非 md 跳过 `fencedCodeBlocks/linkRanges` 全文扫描并清空缓存（`6537d78`）。
+- **#27 收缩漂移**：根因——`frameDidChange` 在 AppKit 已移动 `bounds.origin.y` 之后才触发，捕获的是漂移后的值。修法：`viewWillStartLiveResize` 拖拽前快照锚点、`viewDidEndLiveResize` 重钉（`13df4c8`）。
+- **删除闪白**：根因——`clearHighlights` 调 `removeTemporaryAttribute` 没配 `invalidateDisplay`，清除被推迟后一次性重绘全部旧高亮。修法：每次 remove 配 `invalidateDisplay`（`13df4c8`）。
+
+> p1 当前顶 `d74aede`（含上述全部修复 + 日志），合 main 待用户验收。
+
+### 闪白（✅ 真因确认 = 编辑正文时整篇重排，非查找）
+- 用户确认"整篇样式消失一帧" → 是 `LiveMarkdownStyler.apply` 对**整篇** textStorage 重着色+重排，**只在正文编辑（`textDidChange`，`EditorView.swift:271`，每键全文重排）时触发**，与查找高亮无关。正文打字/删除都闪，删除更明显；查找框本身不触发。
+- 教训：前两次（invalidateDisplay、视口化高亮）都盯着 find 改，方向错，视口化还引入"打字也闪"的回归已 `reset` 回退到 `d74aede`。
+- 修法：**增量重排**（✅ 已修，`f9ba385`，待用户验）——`applyIncremental` 只重排被编辑块（按 fenced 容器/段落+空行边界扩展），结构性编辑（围栏```/空行增删/表格`|`/HR、贴近围栏、无 editedRange）**回退全篇**。编辑范围经 `NSTextStorageDelegate.didProcessEditing` 捕获。load/font/replace 仍走全篇 `apply`。
+- **验证亮点**：执行者用属性逐字符 diff harness 证明 `applyIncremental` 输出与全篇 `apply` **逐字节一致**（覆盖纯编辑/标题↔正文/取消加粗/围栏内/列表/引用/行内码/空行合并/贴近围栏），即无陈旧/错误样式。仅合成验证，未跑 GUI。
+- layer-backed（#4）未用，增量重排已治本。
+
+### 搜索匹配到格式字符（调研完成，待用户定边界）
+- 语法标记（`#`/`**`/反引号/`>`/`|`/`---`/`[]()`/`![]()`）在 styler 里是**真隐藏**（字号1+透明，无专用属性标记）；但**列表符号 `-`/`*`/`1.` 与链接 URL 是可见（仅淡化）**。查找在原始 `tv.string` 上匹配，故连隐藏标记也命中。
+- 待用户定：排除范围 =（a）只排真隐藏标记（列表符号/URL 仍可搜）/（b）连可见的格式（列表符号/URL）也排除。
+- 方案：推荐**可视文本映射**（按已着色属性抽"可见文本"+偏移映射，在其上搜、匹配映射回原文）——跨标记匹配（搜 `*bold` 命中 `**bold**`）才正确；`FindController` 为主 + styler 加 helper。权宜可先**后过滤**（几小时，先解决搜 `#`/反引号）。中等工作量。
+
+### 搜索匹配到格式字符（新需求，调研中）
+- 现象：搜 `#`/`*` 等能搜到 markdown 语法标记；但格式已美观化，应只匹配正文。
+- 调研中：摸清语法字符在 styler 里的表示（可见/淡化/隐藏/属性标记）→ 定 find 排除方案（后过滤 / 可视文本映射 / 属性跳过）。
+
+### 架构演进候选（后续可选，不进当前批）
+- **⭐ 块级模型（block-based）— 用户 2026-07-03 拍板为「长期必做」，记为 TODO**：文档=独立块列表，改一块只重渲一块，计算+布局与文档大小解耦（Notion / Craft / Bear 2 方向）。是"大文档布局"的终极解，等价重写编辑器内核 + 文档模型。**后续单独立项**，不在当前性能收尾内。
+- **TextKit 2 迁移**（`NSTextLayoutManager` + viewport 渲染）：把"只渲染可视区"内建进底层，根治整篇布局/重绘类问题。成本=项目级重写（`CardLayoutManager` 等自绘逻辑全部重做）。**不为单个 bug 立项。**
+- **业界现状结论（2026-07-03 联网调研，详见 artifact 对照文档）**：想要大文档规模的原生编辑器都**绕开 TextKit 2**（实测对编辑型 UI 不成熟——STTextView/ChimeHQ/CodeEdit 均弃用）。终极解走「自研 CoreText 视口引擎」(CodeEdit) 或「块级模型 / 重写解析器」(Notion / Bear 2)，**不是 TextKit 2**。
+- **触发线（撞够再提迁移）**：① 反复出现整篇重绘/重排类闪烁卡顿；② 大文档（MB 级）整体卡（TextKit 1 全量排版固有）；③ 绕 `NSLayoutManager` 子类的 hack 持续增多。
+
+---
+
+## 已拍板的决策
+
+| # | 问题 | 决策 |
+|---|---|---|
+| 4 | 侧栏文件夹默认应展开（设计） | ⛔ **不改**，保留现状（默认折叠），用户认为现状更好。有意偏离规约。 |
+| 2 | 新建文档：空白 vs 预填 | ✅ **空白**。新建 / 首启 untitled 均为空文档。 |
+| 1 | 首屏种子 demo 文件 | ✅ **不塞**。设计稿的 SKILL.md/agents/… 仅示意（与 #3 同类）；首启开空白 untitled，侧栏靠打开文件夹填充。 |
+| 29 + 性能-1 | 会话持久化 / 打字整树重构（=「B 文本模型统一」） | **性能-1 打字隔离 ✅**(`a524823`,用户已验) · **会话持久化 #29 ✅**(并入 `303edf4` 前,用户验"没大问题":tabs含未存/active/字号/侧栏宽/每tab滚动/文件夹 → 会话文件) · **Phase3 编辑器复用·保留切tab撤销 ⏳**降级最后,未开工。<br>**打字性能收尾(新线程)**:实测每键重排过多 `inc:9 full:75` → **②节流/合并渲染 ✅**(每帧≤1次重排,`0f9efa9`,用户已验"没问题":`full` 仍高但连打已顺——频率封顶即治本) · **①局部增量去全文扫描 ⏳**(用户 07-03 定"先不做";当前文档体量下不需要,留大文档再上) · `303edf4` 已修 `requiresFullRestyle` 空行邻近误触发。业界 6 类方案对照见 artifact。 |
+| 23/24 | H2 / 代码语言标签 uppercase | ✅ **保持原状**（不转大写，实时编辑器不篡改源文本）。 |
+| 3 | 自绘红绿灯 | ⛔ **不做**，保留系统原生红绿灯。 |
+| 16 | 命令面板蒙层 0.4 vs 设计 0.6 | ✅ **改，对齐设计稿 0.6**（配套调毛玻璃材质，使 0.6 观感符合设计、非近乎不透明）。归样式波次。 |
+| 19 | 目录 hover 优先级 | ✅ **不改**，当前项始终**琥珀**（用户偏好，有意偏离设计稿 hover 胜出）。 |
+
+> **用户原则（默认）**：所有 UI 类变更都需**对齐设计稿**（#3/#16 均按此定）；个别项经用户明确拍板可偏离（如 #4 折叠、#19 琥珀）。样式/打磨波次一律以设计稿数值为准。
+
+---
+
+## P1 — 明确保真差距，中等成本（待办）
+
+| # | 问题 | 工作量 | 修复方式 |
+|---|---|---|---|
+| 22 | 非 Markdown 文件（yaml）应显示源码视图 | M–L | `DocumentTab.isMarkdown`，非 md 走纯文本 + "非 Markdown 文件"提示 |
+| 1 | 首屏应默认开 SKILL.md + 侧栏种子文件 | M | `DocumentManager.init` 注入种子 tabs/fileTree |
+| 29 | ⏸**延后** 会话持久化 tabs/active/font/sideW/scrollPos（与性能-1 统一设计） | L | `@AppStorage`/UserDefaults + 启动恢复 |
+| 6 | 侧栏筛选只搜顶层，嵌套文件搜不到 | M | 递归 flatten 文件树后过滤 |
+| 11 | 查找框缺 Shift+Enter 上一个 / Esc 关闭 | M | `.onKeyPress` 区分 Shift（与 #5 共用手法） |
+| 17 | 面板行文本无 ellipsis/单行约束 | S | `.lineLimit(1).truncationMode(.tail)` |
+| 26 | 状态栏整段用了 monospaced（应仅 tabular nums） | S | 去 `.monospaced`，改 `.monospacedDigit()` |
+| 12 | 查找面板材质/底色（白 .97+blur8 / 输入 .045） | M | 面板换自绘白+blur；fieldFill 0.04→0.045 |
+| 21 | 目录跳转动画（应 300ms 滚动 + 900ms wash） | M | 显式 0.3s animator；wash 改 0.9s |
+| 27 | 内容底部 padding 应 33vh 响应式（现固定 220） | M | GeometryReader 取窗口高×0.33（**注**：`UIScreen` 是 iOS API，不可用） |
+| 28 | 拖入校验：应仅 .md/.markdown/.txt，不支持要 toast | S | 移除 `.text`，guard 失败 `Toaster.flash` |
+| 性能-1 | ⏸**延后** [性能] 打字每键 `objectWillChange.send()` → 整树重渲（`DocumentManager.swift:62`，与 #29 统一设计） | M·**高风险** | 活动文本移出 ContentView 订阅对象；脏标记改离散事件；重点验证 |
+| 性能-2 | [性能] `EditorBridge.hoveredURL` → 鼠标划过链接每次移动整树重渲 | S | 挪到 `@State` 持有 `HoverURLModel`，仅预览叶子观察 |
+
+> 备注：#22/#1/#29/#15 共享 DocumentManager/EditorView/ContentView，属同一"数据/生命周期"工作流，应作为独立波次一起设计，且因触碰热点文件需在其他波次合并后再开发。
+
+---
+
+## P2 — 打磨 / 低影响（待办）
+
+| # | 问题 | 工作量 | 修复方式 |
+|---|---|---|---|
+| 7 | resize 拖拽缺蓝线（现只有 hover 黑线） | S | 加 `isDragging` 态，三态着色（拖拽 rgba(10,132,255,.6)） |
+| 25 | 复制按钮缺 hover 变深 | S | 鼠标进出切 `contentTintColor` |
+| 20 | coach 持久化 key 不一致 + 死变量 `pulse` | S | 统一 key，删/接 `pulse` |
+| 13 | 查找 Aa/W/.* 芯片缺 hover 态 | S | `.onHover` 加 hover 底色 |
+| 8 | 顶部 tab 区多了 8px 横向 padding | S | 删 `.padding(.horizontal, 8)` |
+| 性能-3 | [性能] `EditorBridge.charCount/lineCount` → debounce 编辑整树重渲（仅状态栏用） | S | 挪到独立指标模型，仅 `EditorStatusBar` 观察 |
+| 性能-4 | [性能] `FindState.query/replaceText` → 查找打开时每键整树重渲 | M | 拆 `FindFieldModel`，仅 `FindBarView` 观察；`isOpen` 留原对象 |
+| 性能-5 | [性能] `DocumentManager.sideFilter` → 侧栏筛选每键整树重渲（CV 没读它） | S | 挪到 `@State` 模型，仅 `SidebarView` 观察 |
+
+---
+
+## ❓ 待拍板（owner 给建议，等用户定方向）
+
+| # | 问题 | owner 建议 |
+|---|---|---|
+| 23/24 | H2 / 代码语言标签应 uppercase | **架构红线**：实时编辑的 NSTextView 富文本即用户源文本，字面转大写会篡改输入。建议 (b) 显示层小型大写字体特性，或 (a) 维持现状只加 kern；不建议字面转大写。 |
+| 3 | 自绘红绿灯 | **建议不做**：自绘原生红绿灯是 macOS 反模式，风险高、可见收益≈0，设计稿很可能只是画出系统控件。保留系统控件。 |
+| 16 | 命令面板蒙层 0.4 vs 设计 0.6 | 当前 0.4 是有意为之（0.6 叠加 blur 近乎不透明）。要命中 0.6 需配套改 NSVisualEffectView 材质。 |
+| 19 | 目录 hover 优先级（hover 时当前项是否也变黑） | 设计：hover 胜出（当前项也变黑）；现实现"当前项始终琥珀"是有意选择。翻成符合规约仅一行。 |
+| 30 | tooltip 全局 mousedown 隐藏 | 现实现合理，规约更严但收益低、成本 M。可搁置。 |
+
+---
+
+## 后续波次建议（按冲突域；性能项并入相关波次，不单列）
+
+热点共享文件 `ContentView` / `EditorView` / `DocumentManager` 被多数工作触碰，需按波次顺序派、owner 统一合并，避免并行撞车。性能项按文件归属并入下列既有波次：
+
+1. **数据/生命周期波次**（#1/#22/#29/#15 完整版 + **性能-1** 打字 + 性能-2 hover + 性能-3 字数）— 同动 DocumentManager/EditorView/EditorBridge；性能-1 高风险需重点验证。前置决策 **#2**。
+2. **查找&面板补全波次**（#11/#12/#17 + 清 `toggleOpen` 债 + 性能-4 查找输入）。
+3. **侧栏波次**（#6/#7/#8 + 性能-5 筛选输入）。
+4. **目录波次**（#19/#20/#21）。
+5. **样式&装饰波次**（#13/#23/#24/#25/#26/#27/#28/#30 + 待拍板落地）。
+
+> 低风险性能项（性能-2/3/4/5）彼此独立、不依赖 #2，需要的话可从所属波次拆出提前做。
