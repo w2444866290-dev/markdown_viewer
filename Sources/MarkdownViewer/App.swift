@@ -15,7 +15,7 @@ struct MarkdownViewerApp: App {
         WindowGroup {
             ContentView(findState: findState)
                 .environmentObject(docManager)
-                .onAppear { docManager.findStateToggle = { findState.toggleOpen() } }
+                .onAppear { docManager.findStateToggle = { findState.openFind() } }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     // Discrete reconcile point: fold the editor's live text back into
                     // the active tab's snapshot before the app goes away.
@@ -48,7 +48,7 @@ struct MarkdownViewerApp: App {
                     .keyboardShortcut("o")
             }
             CommandMenu("查找") {
-                Button("查找 / 替换") { findState.toggleOpen() }
+                Button("查找 / 替换") { findState.openFind() }
                     .keyboardShortcut("f")
             }
             CommandMenu("查看") {

@@ -589,7 +589,17 @@ struct EditorView: NSViewRepresentable {
         // MARK: - Mouse bridging
 
         func handleMouseAt(_ tvPoint: NSPoint) {
-            codeOverlay.handleMouse(at: tvPoint)
+            // Code-copy overlay is Markdown-only: a non-Markdown doc is shown as
+            // plain source, so the floating "复制" button must never surface. We
+            // can't rely on the empty `codeOverlay.blocks` cache alone — its
+            // empty-cache fallback live-parses `tv.string` for ``` fences, which
+            // would pop the button over a stray fence in a .txt file. Gate on
+            // isMarkdown here (and hide any button a prior doc left behind).
+            if parent.isMarkdown {
+                codeOverlay.handleMouse(at: tvPoint)
+            } else {
+                codeOverlay.hide()
+            }
             updateHoveredURL(at: tvPoint)
             // Pointing-hand over the outline rail or copy button; I-beam over text.
             if parent.bridge.cursorOverRail || codeOverlay.hitsButton(tvPoint) {

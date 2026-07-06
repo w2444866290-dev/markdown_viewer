@@ -11,6 +11,17 @@ final class FindController {
     var matches: [NSRange] = []
     var currentIndex = 0
 
+    /// Regex-mode replace context, kept in lockstep with `matches` (same count and
+    /// order). EMPTY in literal mode. Retained so a `$1`-style replacement TEMPLATE
+    /// can be expanded against each match's capture groups. The groups live in BODY
+    /// space (find runs over `BodyMap.bodyString`, not the raw storage), so we hold
+    /// the body string + the compiled regex alongside the per-match results and let
+    /// `NSRegularExpression.replacementString(for:in:offset:template:)` do the exact
+    /// ICU `$n` expansion. All three are refreshed on every `search()`.
+    private var matchResults: [NSTextCheckingResult] = []
+    private var searchBody = ""
+    private var searchRegex: NSRegularExpression?
+
     /// Debug-only (AppEnv.debug): one-line summary of the last search shown on the
     /// DIAG HUD (raw vs body-filtered counts + independent zeroRect/inCode health
     /// counters). Empty in USER mode. The Coordinator pushes it into the DiagModel.
@@ -51,6 +62,9 @@ final class FindController {
 
         clearHighlights()
         matches = []
+        matchResults = []
+        searchBody = ""
+        searchRegex = nil
         currentIndex = 0
         lastPatternInvalid = false
         lastSearchedOptions = opts
@@ -86,9 +100,23 @@ final class FindController {
         let bodyMap = BodyMap(storage: storage)
         let body = bodyMap.bodyString
         let full = NSRange(location: 0, length: (body as NSString).length)
-        matches = regex.matches(in: body, range: full)
-            .filter { $0.range.length > 0 }
-            .compactMap { bodyMap.rawRange(for: $0.range) }
+        // One pass, keeping raw ranges and (regex mode only) the body-space match
+        // results in lockstep: a body match whose `rawRange` maps to nil is dropped
+        // from BOTH, so `matchResults[i]` always describes `matches[i]`. The results
+        // carry the capture groups `$1` replace needs; literal mode stores none.
+        var raws: [NSRange] = []
+        var results: [NSTextCheckingResult] = []
+        for result in regex.matches(in: body, range: full) where result.range.length > 0 {
+            guard let raw = bodyMap.rawRange(for: result.range) else { continue }
+            raws.append(raw)
+            if opts.useRegex { results.append(result) }
+        }
+        matches = raws
+        if opts.useRegex {
+            matchResults = results
+            searchBody = body
+            searchRegex = regex
+        }
         currentIndex = 0
         MVLog.info("find search query=\"\(opts.query)\" matches=\(matches.count)", category: "find")
         if AppEnv.debug { recordDebugDiagnostic(query: opts.query, regex: regex, storage: storage) }
@@ -154,8 +182,11 @@ final class FindController {
     }
 
     func replaceCurrent(with text: String, restyle: () -> Void, redo: () -> Void) {
-        guard matches.indices.contains(currentIndex),
-              let tv = textView, let storage = tv.textStorage else { return }
+        guard matches.indices.contains(currentIndex) else {
+            Task { @MainActor in Toaster.shared.flash("没有可替换的匹配") }
+            return
+        }
+        guard let tv = textView, let storage = tv.textStorage else { return }
         let range = matches[currentIndex]
         // Bounds-safety: a stale match range (e.g. document mutated out from
         // under us) would make replaceCharacters throw. Skip instead.
@@ -163,11 +194,15 @@ final class FindController {
             MVLog.warn("find replace skipped stale range \(NSStringFromRange(range)) len=\(storage.length)", category: "find")
             return
         }
-        guard tv.shouldChangeText(in: range, replacementString: text) else { return }
+        // Expand `$1`/`$0`/… against this match's groups in regex mode (verbatim in
+        // literal mode). Computed BEFORE the edit, while the stored body-space
+        // groups still correspond to `currentIndex`.
+        let replacement = expandedReplacement(at: currentIndex, template: text)
+        guard tv.shouldChangeText(in: range, replacementString: replacement) else { return }
         MVLog.info("find replace 1 at index=\(currentIndex) range=\(NSStringFromRange(range))", category: "find")
         // The document is about to change; force the upcoming re-search to re-scan.
         lastSearchedOptions = nil
-        storage.replaceCharacters(in: range, with: text)
+        storage.replaceCharacters(in: range, with: replacement)
         tv.didChangeText()
         restyle()
         redo()  // re-search after mutation
@@ -175,7 +210,11 @@ final class FindController {
     }
 
     func replaceAll(with text: String, restyle: () -> Void) {
-        guard !matches.isEmpty, let tv = textView, let storage = tv.textStorage else { return }
+        guard !matches.isEmpty else {
+            Task { @MainActor in Toaster.shared.flash("没有可替换的匹配") }
+            return
+        }
+        guard let tv = textView, let storage = tv.textStorage else { return }
         let full = NSRange(location: 0, length: storage.length)
         guard tv.shouldChangeText(in: full, replacementString: nil) else { return }
         let count = matches.count
@@ -186,14 +225,30 @@ final class FindController {
         highlightedRanges = []
         // Reversed so each replacement doesn't shift the offsets of the ones still
         // to come; still bounds-guard each range against the live storage length.
-        for m in matches.reversed() where NSMaxRange(m) <= storage.length {
-            storage.replaceCharacters(in: m, with: text)
+        // Iterate by index so each match can expand its own `$1` groups (regex
+        // mode); literal mode inserts the template verbatim.
+        for i in matches.indices.reversed() {
+            let m = matches[i]
+            guard NSMaxRange(m) <= storage.length else { continue }
+            storage.replaceCharacters(in: m, with: expandedReplacement(at: i, template: text))
         }
         tv.didChangeText()
         restyle()
         matches = []
+        matchResults = []
         currentIndex = 0
         Task { @MainActor in Toaster.shared.flash("已替换 " + String(count) + " 处") }
+    }
+
+    /// Concrete replacement for the match at `index`, given the user's replace-field
+    /// `template`. LITERAL mode returns the template verbatim (a `$` there is a
+    /// literal `$`). REGEX mode expands `$0`/`$1`/… against that match's captured
+    /// groups via ICU's own template engine (so `(\w+) (\w+)` → `$2 $1` swaps the
+    /// words). The regex context is set only in regex mode, so the guard doubles as
+    /// the mode check and falls back to verbatim if it is ever missing.
+    private func expandedReplacement(at index: Int, template: String) -> String {
+        guard let regex = searchRegex, matchResults.indices.contains(index) else { return template }
+        return regex.replacementString(for: matchResults[index], in: searchBody, offset: 0, template: template)
     }
 
     /// Incremental clear: drop the temporary `.backgroundColor` ONLY over the

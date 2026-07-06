@@ -54,9 +54,4 @@ final class FindState: ObservableObject {
         isError = false
         showReplace = false
     }
-
-    /// Retained for the App.swift ⌘F menu binding and the findStateToggle
-    /// closure. Per spec #9 ⌘F must ALWAYS open (never toggle closed), so this
-    /// now routes to `openFind()` rather than flipping `isOpen`.
-    func toggleOpen() { openFind() }
 }
