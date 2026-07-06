@@ -4,7 +4,32 @@ import AppKit
 /// PaperTextView has empty cursor rects + no-op cursorUpdate, so this button's own
 /// cursor rect wins cleanly (no I-beam fight).
 private final class HandButton: NSButton {
+    private var hoverTracking: NSTrackingArea?
+
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+
+    // Hover darkening - spec (design L16/17): [data-copy] color #aeaeb2, hover
+    // #1d1d1f. Switch contentTintColor on enter/exit so the "复制" label darkens
+    // under the cursor, then reverts when the mouse leaves.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let ta = hoverTracking { removeTrackingArea(ta) }
+        let ta = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(ta)
+        hoverTracking = ta
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        contentTintColor = DesignTokens.titleText
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        contentTintColor = DesignTokens.placeholderText
+    }
 }
 
 /// Manages a floating "复制" button that appears over fenced code blocks
@@ -76,6 +101,9 @@ final class CodeOverlayController {
 
     func hide() {
         bodyRange = nil
+        // Reset to the rest tint so the next appearance never starts stuck in the
+        // hover color (a mouseExited can be missed if we hide while hovered).
+        button?.contentTintColor = DesignTokens.placeholderText
         button?.alphaValue = 0
         button?.isHidden = true
     }

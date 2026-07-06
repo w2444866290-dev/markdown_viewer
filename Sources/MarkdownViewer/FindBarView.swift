@@ -341,6 +341,10 @@ struct FindBarView: View {
 private struct ToggleChip: View {
     let label: String
     @Binding var isOn: Bool
+    /// Hover is an ADDITIONAL cue on top of the ON/OFF states - spec (design
+    /// L143-145) hover = background rgba(0,0,0,0.05). Shown only for an OFF chip;
+    /// an ON chip already reads via its stronger 0.10 fill + ring, left intact.
+    @State private var hovered = false
 
     init(_ label: String, isOn: Binding<Bool>) {
         self.label = label
@@ -357,7 +361,9 @@ private struct ToggleChip: View {
                 .frame(width: 22, height: 22)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(isOn ? Color.black.opacity(0.10) : Color.clear)
+                        .fill(isOn
+                            ? Color.black.opacity(0.10)
+                            : (hovered ? Color.black.opacity(0.05) : Color.clear))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
@@ -368,5 +374,6 @@ private struct ToggleChip: View {
                 )
         }
         .buttonStyle(.plain)
+        .onHover { hovered = $0 }
     }
 }

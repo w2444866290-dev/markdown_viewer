@@ -7,8 +7,15 @@ struct SidebarView: View {
     @EnvironmentObject var docManager: DocumentManager
     @State private var hoveredNodeID: UUID?
     @State private var resizeHover = false
+    @State private var resizeDragging = false
     @State private var paletteHover = false
     @GestureState private var dragOffset: CGFloat = 0
+
+    /// Spec (design L1250): while a drag is IN PROGRESS the resize line turns the
+    /// macOS accent-drag blue rgba(10,132,255,0.6). LOCAL to this view - it's the
+    /// only place this drag-accent appears, so it stays out of the shared tokens
+    /// (mirrors FindBarView's local spec colors).
+    private static let dragLine = Color(red: 10 / 255, green: 132 / 255, blue: 255 / 255).opacity(0.6)
 
     // Filter keyboard navigation (spec JS `onSideFilterKey` / `kbName`).
     @FocusState private var filterFocused: Bool
@@ -103,6 +110,7 @@ struct SidebarView: View {
                 .gesture(
                     DragGesture(minimumDistance: 1)
                         .onChanged { value in
+                            resizeDragging = true
                             let newWidth = max(
                                 DesignTokens.sidebarMinWidth,
                                 min(DesignTokens.sidebarMaxWidth,
@@ -114,10 +122,17 @@ struct SidebarView: View {
                             // ~1s after the drag settles).
                             docManager.scheduleSessionSave()
                         }
+                        .onEnded { _ in resizeDragging = false }
                 )
                 .overlay(
                     Rectangle()
-                        .fill(resizeHover ? Color.black.opacity(0.18) : Color.clear)
+                        // Three-state (spec L1250): dragging -> accent blue, hover ->
+                        // subtle black line, rest -> transparent. Stays blue for the
+                        // whole drag (resizeDragging) even as the cursor leaves the 9px
+                        // strip, and reverts to hover/rest on release.
+                        .fill(resizeDragging
+                            ? Self.dragLine
+                            : (resizeHover ? Color.black.opacity(0.18) : Color.clear))
                         .frame(width: 1)
                 )
                 .offset(x: 4)

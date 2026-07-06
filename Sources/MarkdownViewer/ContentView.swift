@@ -473,7 +473,6 @@ private struct EditorHeader: View {
                             .foregroundColor(color)
                     }
                 }
-                .padding(.horizontal, 8)
             }
 
             // Find + Open buttons — spec: gap 2px, 28×26, hover bg rgba(0,0,0,0.05) + #6e6e73

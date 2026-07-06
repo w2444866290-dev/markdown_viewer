@@ -1,6 +1,12 @@
 import SwiftUI
 import AppKit
 
+/// Single source of truth for the rail coach-mark "already shown" flag, so its
+/// read and write always use the same key (spec #20). Matches the design's
+/// persistence key `mdviewer.railCoach`; the app has its own UserDefaults domain,
+/// so the web's `mdviewer.` namespace prefix isn't needed.
+private let railCoachDefaultsKey = "railCoach"
+
 /// Outline rail — spec: right 0, top 46%, translateY(-50%), tick→text melt animation.
 struct OutlineRailView: View {
     let headings: [OutlineController.Heading]
@@ -18,9 +24,8 @@ struct OutlineRailView: View {
     @State private var hovered = false
     @State private var hoveredIndex: Int?
     @State private var showCoach = false
-    @State private var pulse = false
     @State private var pulseActive = false
-    @AppStorage("railCoachShown") private var coachShown = false
+    @AppStorage(railCoachDefaultsKey) private var coachShown = false
 
     var body: some View {
         if headings.isEmpty {
@@ -173,10 +178,6 @@ struct OutlineRailView: View {
         coachShown = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
             showCoach = true
-            pulse = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.1) {
-            pulse = false
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 7.2) {
             showCoach = false
