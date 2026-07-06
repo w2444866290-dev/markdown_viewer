@@ -1,0 +1,21 @@
+Sources/MarkdownViewer/FindController.swift
+  s_c8ce8d340d0da3::t_df00b7caed5e17 208-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "fae5aa157a8288dd61ce3ad71f1f6765d868e89f",
+  "prompts": {},
+  "sessions": {
+    "s_c8ce8d340d0da3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aeac6d7e-1041-41e3-a533-b884a357edfd",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
