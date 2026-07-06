@@ -121,7 +121,7 @@
 
 | # | 问题 | 工作量 | 修复方式 |
 |---|---|---|---|
-| 6 | 侧栏筛选只 filter 顶层 `fileTree`（`DocumentManager:52`，`!isDirectory`），嵌套文件搜不到 | M | 递归 flatten 文件树后过滤；命中**拍平成一条列表，名称旁标相对路径**（用户 2026-07-06 定） |
+| 6 | 侧栏筛选命中行**不显示相对路径**（`SidebarNodeRow` depth:0 只显文件名，同名不同目录无法区分）。〔更正:递归搜嵌套**已做** —— `SidebarView.filteredNodes` 用 `flattenFiles`;之前对账误看已删的死属性 `visibleFiles`〕 | S | 筛选时名称旁显示相对路径（由 `FileNode.url` 相对 `directoryURL` 算）。用户 2026-07-06 定:拍平单列 + 相对路径（拍平已具备） |
 | 15 | 命令面板完整 tab/文档视图 parity（最小 union 已做） | S→M | 完整 `buildDefs` 对齐，随「数据流波次」 |
 
 ---
