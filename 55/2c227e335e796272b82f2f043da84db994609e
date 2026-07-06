@@ -1,0 +1,25 @@
+Sources/MarkdownViewer/App.swift
+  s_3071a01ad6805d::t_72c6f334f2638d 18,51
+Sources/MarkdownViewer/EditorView.swift
+  s_3071a01ad6805d::t_09514447c35860 592-602
+Sources/MarkdownViewer/FindController.swift
+  s_3071a01ad6805d::t_55ec2d4ab35e8a 14-24,65-67,103-119,185-189,197-201,205,213-217,228-233,238,243-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "552c227e335e796272b82f2f043da84db994609e",
+  "prompts": {},
+  "sessions": {
+    "s_3071a01ad6805d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5ad3e23839a0d217",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
