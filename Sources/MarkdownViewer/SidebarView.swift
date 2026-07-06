@@ -17,6 +17,13 @@ struct SidebarView: View {
     /// (mirrors FindBarView's local spec colors).
     private static let dragLine = Color(red: 10 / 255, green: 132 / 255, blue: 255 / 255).opacity(0.6)
 
+    // Sidebar filter query. LOCAL @State (not on the DocumentManager EnvironmentObject)
+    // on purpose: only SidebarView reads it, so keeping it here means each keystroke
+    // re-renders ONLY the sidebar instead of the whole ContentView tree (性能-5). The
+    // filter is session-only (never persisted), so a local reset on relaunch matches
+    // the previous behaviour. `filteredNodes` derives from docManager.fileTree + this.
+    @State private var sideFilter: String = ""
+
     // Filter keyboard navigation (spec JS `onSideFilterKey` / `kbName`).
     @FocusState private var filterFocused: Bool
     @State private var kbSel = 0
@@ -29,7 +36,7 @@ struct SidebarView: View {
                 Color.clear.frame(height: 44)
 
                 // Filter — spec: plain input, no icon, padding 0 10px
-                TextField("筛选文档", text: $docManager.sideFilter)
+                TextField("筛选文档", text: $sideFilter)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5))
                     .foregroundColor(DesignTokens.swiftUI.titleText)
@@ -42,7 +49,7 @@ struct SidebarView: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
                     // Reset keyboard selection whenever the filter query changes.
-                    .onChange(of: docManager.sideFilter) { _ in kbSel = 0 }
+                    .onChange(of: sideFilter) { _ in kbSel = 0 }
                     .onChange(of: filterFocused) { focused in
                         if focused { installKeyMonitor() } else { removeKeyMonitor() }
                     }
@@ -143,10 +150,10 @@ struct SidebarView: View {
     // list of every file (any depth) — spec `sideVisibleFiles()` filters the
     // flat `buildDefs()` list regardless of folder nesting.
     private var filteredNodes: [FileNode] {
-        if docManager.sideFilter.isEmpty {
+        if sideFilter.isEmpty {
             return docManager.fileTree
         }
-        let q = docManager.sideFilter.lowercased()
+        let q = sideFilter.lowercased()
         return flattenFiles(docManager.fileTree).filter {
             $0.name.lowercased().contains(q)
         }
@@ -171,7 +178,7 @@ struct SidebarView: View {
     // `filteredNodes` is already the flattened, all-files-only match list, so
     // keyboard nav traverses the same nested matches the rows display.
     private var kbVisibleFiles: [FileNode] {
-        docManager.sideFilter.isEmpty
+        sideFilter.isEmpty
             ? []
             : filteredNodes.filter { !$0.isDirectory }
     }

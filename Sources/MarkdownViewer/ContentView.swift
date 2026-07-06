@@ -24,6 +24,11 @@ struct ContentView: View {
     // every mouse move over a link. Held via @State (NOT observed here) so only the
     // bottom-left hover-preview leaf re-renders. ContentView.body must never read it.
     @State private var hoverURL = HoverURLModel()
+    // Same isolation as scrollModel/activeHeading/hoverURL: the document char/line
+    // counts change on every edit. Held via @State (NOT observed here) so only the
+    // bottom-right EditorStatusBar re-renders. ContentView.body must never read it,
+    // or editing would re-render the whole tree again (性能-3).
+    @State private var docMetrics = DocMetricsModel()
     // DIAG (temporary): restyle-path readout sink. Held via @State (NOT observed
     // here) for the SAME isolation reason as scrollModel/hoverURL - writing it on
     // every keystroke must NOT re-render ContentView, or the instrumentation would
@@ -72,6 +77,7 @@ struct ContentView: View {
                                 scrollModel: scrollModel,
                                 activeHeadingModel: activeHeading,
                                 hoverURL: hoverURL,
+                                docMetrics: docMetrics,
                                 diag: diag  // DIAG (temporary)
                             )
                             .id(docManager.activeTabID)
@@ -113,7 +119,7 @@ struct ContentView: View {
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    EditorStatusBar(scrollModel: scrollModel, bridge: bridge)
+                    EditorStatusBar(scrollModel: scrollModel, metrics: docMetrics)
                 }
                 .overlay(alignment: .bottomLeading) {
                     // Observes the isolated HoverURLModel — a mouse move over a link
@@ -295,12 +301,12 @@ struct ContentView: View {
 // spec: bottom 14px, right 20px, "{千分位字数} 字 · {行数} 行 · {pct}%",
 // font 11.5 monospaced, statusText color, fade out 0.8s after scrolling stops.
 //
-// Observes ScrollProgressModel (the per-frame scroll sink) and EditorBridge
-// (char/line counts, changed only on edit). Because ContentView holds the model
-// via @State and does NOT observe it, scrolling re-evaluates only this view.
+// Observes ScrollProgressModel (the per-frame scroll sink) and DocMetricsModel
+// (char/line counts, changed only on edit). Both are held by ContentView via
+// @State and NOT observed there, so scrolling / editing re-evaluate only this view.
 private struct EditorStatusBar: View {
     @ObservedObject var scrollModel: ScrollProgressModel
-    @ObservedObject var bridge: EditorBridge
+    @ObservedObject var metrics: DocMetricsModel
     @State private var faded = false
 
     // Shared formatter avoids a fresh allocation on every render.
@@ -311,14 +317,14 @@ private struct EditorStatusBar: View {
     }()
 
     private var wordCount: String {
-        Self.numberFormatter.string(from: NSNumber(value: bridge.charCount))
-            ?? "\(bridge.charCount)"
+        Self.numberFormatter.string(from: NSNumber(value: metrics.charCount))
+            ?? "\(metrics.charCount)"
     }
 
     var body: some View {
         // spec L208: 11.5px with tabular numerals (font-variant-numeric: tabular-nums),
         // NOT a monospaced family.
-        Text("\(wordCount) 字 · \(bridge.lineCount) 行 · \(Int(scrollModel.value * 100))%")
+        Text("\(wordCount) 字 · \(metrics.lineCount) 行 · \(Int(scrollModel.value * 100))%")
             .font(.system(size: 11.5))
             .monospacedDigit()
             .foregroundColor(DesignTokens.swiftUI.statusText)

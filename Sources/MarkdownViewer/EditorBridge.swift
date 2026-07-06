@@ -3,10 +3,6 @@ import SwiftUI
 /// Single AppKit → SwiftUI observable bridge and command channel.
 final class EditorBridge: ObservableObject {
     @Published var headings: [OutlineController.Heading] = []
-    /// Cached document metrics — recomputed only on text change (not per scroll
-    /// frame) so the status bar never does O(n) work while scrolling.
-    @Published var charCount: Int = 0
-    @Published var lineCount: Int = 0
 
     /// Set by EditorView.Coordinator — when called, scrolls to heading.
     var onJumpToHeading: ((Int) -> Void)?
@@ -56,6 +52,22 @@ final class ActiveHeadingModel: ObservableObject {
 /// Empty string = nothing hovered.
 final class HoverURLModel: ObservableObject {
     @Published var url: String = ""
+}
+
+/// Isolated observable for the document's character / line counts.
+///
+/// The counts change on every edit (recomputed only on text change, not per
+/// scroll frame, so the status bar never does O(n) work while scrolling). They
+/// are shown ONLY by the bottom-right `EditorStatusBar`. If they lived on
+/// `EditorBridge` (which `ContentView` observes via `@StateObject`), each
+/// `@Published` change would re-evaluate the whole `ContentView` body because
+/// SwiftUI invalidation is object-level. Keeping them on their own tiny object —
+/// held by `ContentView` via `@State` (which does NOT subscribe to
+/// `objectWillChange`) and observed only by the isolated `EditorStatusBar` —
+/// means an edit re-renders just that one small view (性能-3).
+final class DocMetricsModel: ObservableObject {
+    @Published var charCount: Int = 0
+    @Published var lineCount: Int = 0
 }
 
 // DIAG (temporary) -----------------------------------------------------------

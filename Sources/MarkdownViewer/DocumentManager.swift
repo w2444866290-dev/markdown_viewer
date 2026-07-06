@@ -11,7 +11,6 @@ final class DocumentManager: ObservableObject {
     // MARK: - Sidebar
     @Published var sidebarWidth: CGFloat = DesignTokens.sidebarWidth
     @Published var sidebarOpen: Bool = true
-    @Published var sideFilter: String = ""
     @Published var directoryURL: URL?
     @Published var fileTree: [FileNode] = []
     @Published var expandedFolders: Set<UUID> = []
@@ -45,12 +44,6 @@ final class DocumentManager: ObservableObject {
     /// Non-optional convenience
     var currentText: String { activeTab?.text ?? "" }
     var isDirty: Bool { activeTab?.isDirty ?? false }
-
-    var visibleFiles: [FileNode] {
-        guard !sideFilter.isEmpty else { return fileTree }
-        let q = sideFilter.lowercased()
-        return fileTree.filter { $0.name.lowercased().contains(q) && !$0.isDirectory }
-    }
 
     /// Index of the active tab in `tabs`, or nil if none.
     var activeIdx: Int? { tabs.firstIndex { $0.id == activeTabID } }

@@ -29,6 +29,9 @@ struct EditorView: NSViewRepresentable {
     /// Isolated hovered-link-URL sink, same rationale as `scrollModel`: written on
     /// every mouse move over a link, observed only by the bottom-left preview leaf.
     var hoverURL: HoverURLModel
+    /// Isolated document char/line-count sink, same rationale as `scrollModel`:
+    /// written on load + every (debounced) edit, observed only by EditorStatusBar.
+    var docMetrics: DocMetricsModel
     /// DIAG (temporary): isolated restyle-path readout sink. Written on every
     /// keystroke by the Coordinator, observed only by the top-center `DiagReadout`
     /// leaf - never by ContentView. Rip out with the other `// DIAG (temporary)`.
@@ -166,8 +169,9 @@ struct EditorView: NSViewRepresentable {
                 MVLog.info("non-Markdown document opened — outline skipped (\(loadedText.count) chars)", category: "editor")
             }
             context.coordinator.parent.activeHeadingModel.index = 0
-            bridge.charCount = loadedText.count
-            bridge.lineCount = loadedText.isEmpty ? 0 : loadedText.components(separatedBy: "\n").count
+            let metrics = context.coordinator.parent.docMetrics
+            metrics.charCount = loadedText.count
+            metrics.lineCount = loadedText.isEmpty ? 0 : loadedText.components(separatedBy: "\n").count
         }
         return sv
     }
@@ -532,8 +536,8 @@ struct EditorView: NSViewRepresentable {
                         self.parent.activeHeadingModel.index = 0
                     }
                     // Status bar needs char/line counts for ALL files.
-                    self.parent.bridge.charCount = text.count
-                    self.parent.bridge.lineCount = text.isEmpty ? 0 : text.components(separatedBy: "\n").count
+                    self.parent.docMetrics.charCount = text.count
+                    self.parent.docMetrics.lineCount = text.isEmpty ? 0 : text.components(separatedBy: "\n").count
                 }
                 self.debounceWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
