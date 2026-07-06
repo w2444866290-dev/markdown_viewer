@@ -346,15 +346,23 @@ struct EditorView: NSViewRepresentable {
                 fs.matchCount = self?.findController.matches.count ?? 0
                 fs.currentIndex = 0
                 // DIAG (temporary): surface the find summary on the HUD's 2nd line;
-                // stash the full per-match dump for click-to-copy.
+                // stash the full per-match dump (+ scroll math) for click-to-copy.
                 if AppEnv.debug {
                     self?.parent.diag.findText = self?.findController.lastDebugDiagnostic ?? ""
-                    self?.parent.diag.findDetail = self?.findController.lastDebugDetail ?? ""
+                    self?.parent.diag.findDetail = ((self?.findController.lastDebugDetail ?? "")
+                        + "\n" + (self?.findController.lastScrollDiagnostic ?? ""))
                 }
             }
             fs.onNavigate = { [weak self] d in
                 self?.findController.navigate(d)
                 fs.currentIndex = self?.findController.currentIndex ?? 0
+                // DIAG (temporary): show the live scroll math on the HUD as you
+                // step through matches, and make it the click-to-copy payload.
+                if AppEnv.debug {
+                    let s = self?.findController.lastScrollDiagnostic ?? ""
+                    self?.parent.diag.findText = s
+                    self?.parent.diag.findDetail = s
+                }
             }
             fs.onReplaceCurrent = { [weak self] in
                 self?.findController.replaceCurrent(

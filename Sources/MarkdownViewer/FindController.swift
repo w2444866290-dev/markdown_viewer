@@ -238,11 +238,41 @@ final class FindController {
         highlightedRanges = applied
     }
 
+    /// Debug-only (AppEnv.debug): the scroll math for the last navigation, so a
+    /// "it didn't scroll" report can be diagnosed from actual before/after numbers.
+    private(set) var lastScrollDiagnostic = ""
+
     private func scrollToCurrent() {
-        guard matches.indices.contains(currentIndex) else { return }
-        let length = textView?.textStorage?.length ?? 0
+        guard matches.indices.contains(currentIndex), let tv = textView else { return }
+        let length = tv.textStorage?.length ?? 0
         guard let safe = clamped(matches[currentIndex], max: length) else { return }
-        textView?.scrollRangeToVisible(safe)
+        // `NSTextView.scrollRangeToVisible` was a no-op for matches deep in this
+        // custom ResponsiveScrollView, so scroll the clip view directly - the SAME
+        // reliable mechanism the per-tab scroll-restore uses (EditorView makeNSView).
+        // Center the match in the viewport so every navigation visibly moves, even
+        // when the match was already partly on-screen.
+        guard let lm = tv.layoutManager, let container = tv.textContainer,
+              let sv = tv.enclosingScrollView else {
+            tv.scrollRangeToVisible(safe)
+            return
+        }
+        lm.ensureLayout(for: container)
+        let glyphRange = lm.glyphRange(forCharacterRange: safe, actualCharacterRange: nil)
+        let rect = lm.boundingRect(forGlyphRange: glyphRange, in: container)
+        let clip = sv.contentView
+        let viewportH = clip.bounds.height
+        let beforeY = clip.bounds.origin.y
+        // boundingRect is in text-container coords; the container sits at the text
+        // view's inset, so the glyph's document-space mid-Y adds the top inset.
+        let glyphMidDocY = rect.midY + tv.textContainerInset.height
+        let docH = tv.frame.height + sv.contentInsets.top + sv.contentInsets.bottom
+        let maxY = max(0, docH - viewportH)
+        let targetY = min(max(0, glyphMidDocY - viewportH / 2), maxY)
+        clip.scroll(to: CGPoint(x: clip.bounds.origin.x, y: targetY))
+        sv.reflectScrolledClipView(clip)
+        if AppEnv.debug {
+            lastScrollDiagnostic = "SCROLL idx=\(currentIndex) midY=\(Int(glyphMidDocY)) target=\(Int(targetY)) before=\(Int(beforeY)) after=\(Int(clip.bounds.origin.y)) vH=\(Int(viewportH)) docH=\(Int(docH)) maxY=\(Int(maxY))"
+        }
     }
 
     /// Clamp a range into `0..<max` (its tail trimmed to fit). Returns nil if the
