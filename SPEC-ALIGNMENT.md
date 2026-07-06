@@ -111,40 +111,32 @@
 
 ---
 
-## P1 — 明确保真差距，中等成本（待办）
+## P1 — 明确保真差距（✅ 已对账 2026-07-06，逐项到代码核实）
+
+**✅ 已完成**（对账时逐一验过代码位置）：
+- **#22** 非 md 走源码视图（`EditorView.isMarkdown` gate）· **#29** 会话持久化（本会话 B，`SessionStore`）· **#11** 查找 Shift+Enter/Esc（`FindBarView:11`）· **#12** 查找面板 白.97+blur（`FindBarView:211`）· **#17** 面板行 `lineLimit(1)`+truncation（`CommandPalette:287`）· **#26** 状态栏 `.monospacedDigit()` tabular 非 monospaced（`ContentView:323`）· **#21** 目录跳转 0.3s ease 滚动 + 0.9s amber wash（`OutlineController.jumpTo`/`washHeading`）· **#27** 底部 33vh 响应式（`ResponsiveScrollView`）· **#28** 拖入只 `.md/.markdown/.txt` + toast「仅支持 Markdown / 文本文件」（`ContentView.handleDrop`）· **性能-1** 打字隔离（本会话，`a524823`）· **性能-2** `HoverURLModel` 隔离
+- **#1** 首屏种子 → ⛔ 已决策为**不塞**（空白首启，见下「已拍板 #1/#2」），非待办
+
+**⬜ 仍待办**：
 
 | # | 问题 | 工作量 | 修复方式 |
 |---|---|---|---|
-| 22 | 非 Markdown 文件（yaml）应显示源码视图 | M–L | `DocumentTab.isMarkdown`，非 md 走纯文本 + "非 Markdown 文件"提示 |
-| 1 | 首屏应默认开 SKILL.md + 侧栏种子文件 | M | `DocumentManager.init` 注入种子 tabs/fileTree |
-| 29 | ⏸**延后** 会话持久化 tabs/active/font/sideW/scrollPos（与性能-1 统一设计） | L | `@AppStorage`/UserDefaults + 启动恢复 |
-| 6 | 侧栏筛选只搜顶层，嵌套文件搜不到 | M | 递归 flatten 文件树后过滤 |
-| 11 | 查找框缺 Shift+Enter 上一个 / Esc 关闭 | M | `.onKeyPress` 区分 Shift（与 #5 共用手法） |
-| 17 | 面板行文本无 ellipsis/单行约束 | S | `.lineLimit(1).truncationMode(.tail)` |
-| 26 | 状态栏整段用了 monospaced（应仅 tabular nums） | S | 去 `.monospaced`，改 `.monospacedDigit()` |
-| 12 | 查找面板材质/底色（白 .97+blur8 / 输入 .045） | M | 面板换自绘白+blur；fieldFill 0.04→0.045 |
-| 21 | 目录跳转动画（应 300ms 滚动 + 900ms wash） | M | 显式 0.3s animator；wash 改 0.9s |
-| 27 | 内容底部 padding 应 33vh 响应式（现固定 220） | M | GeometryReader 取窗口高×0.33（**注**：`UIScreen` 是 iOS API，不可用） |
-| 28 | 拖入校验：应仅 .md/.markdown/.txt，不支持要 toast | S | 移除 `.text`，guard 失败 `Toaster.flash` |
-| 性能-1 | ⏸**延后** [性能] 打字每键 `objectWillChange.send()` → 整树重渲（`DocumentManager.swift:62`，与 #29 统一设计） | M·**高风险** | 活动文本移出 ContentView 订阅对象；脏标记改离散事件；重点验证 |
-| 性能-2 | [性能] `EditorBridge.hoveredURL` → 鼠标划过链接每次移动整树重渲 | S | 挪到 `@State` 持有 `HoverURLModel`，仅预览叶子观察 |
-
-> 备注：#22/#1/#29/#15 共享 DocumentManager/EditorView/ContentView，属同一"数据/生命周期"工作流，应作为独立波次一起设计，且因触碰热点文件需在其他波次合并后再开发。
+| 6 | 侧栏筛选只 filter 顶层 `fileTree`（`DocumentManager:52`，`!isDirectory`），嵌套文件搜不到 | M | 递归 flatten 文件树后过滤 |
+| 15 | 命令面板完整 tab/文档视图 parity（最小 union 已做） | S→M | 完整 `buildDefs` 对齐，随「数据流波次」 |
 
 ---
 
-## P2 — 打磨 / 低影响（待办）
+## P2 — 打磨 / 低影响（= 批 C，已对账 2026-07-06）
+
+**✅ v1.0.7 已交（UI 打磨 5 项，`de808a6`）**：**#7** resize 三态蓝线（拖=rgba(10,132,255,.6)）· **#25** 复制按钮 hover 变深（`contentTintColor`）· **#13** 查找芯片 OFF 态 hover 底 · **#8** 删 tab 条多余 8px padding · **#20** coach key 统一常量 + 删死变量 `pulse`
+
+**⬜ 仍待办（C 剩余 = perf 隔离，下一步）**：
 
 | # | 问题 | 工作量 | 修复方式 |
 |---|---|---|---|
-| 7 | resize 拖拽缺蓝线（现只有 hover 黑线） | S | 加 `isDragging` 态，三态着色（拖拽 rgba(10,132,255,.6)） |
-| 25 | 复制按钮缺 hover 变深 | S | 鼠标进出切 `contentTintColor` |
-| 20 | coach 持久化 key 不一致 + 死变量 `pulse` | S | 统一 key，删/接 `pulse` |
-| 13 | 查找 Aa/W/.* 芯片缺 hover 态 | S | `.onHover` 加 hover 底色 |
-| 8 | 顶部 tab 区多了 8px 横向 padding | S | 删 `.padding(.horizontal, 8)` |
-| 性能-3 | [性能] `EditorBridge.charCount/lineCount` → debounce 编辑整树重渲（仅状态栏用） | S | 挪到独立指标模型，仅 `EditorStatusBar` 观察 |
-| 性能-4 | [性能] `FindState.query/replaceText` → 查找打开时每键整树重渲 | M | 拆 `FindFieldModel`，仅 `FindBarView` 观察；`isOpen` 留原对象 |
-| 性能-5 | [性能] `DocumentManager.sideFilter` → 侧栏筛选每键整树重渲（CV 没读它） | S | 挪到 `@State` 模型，仅 `SidebarView` 观察 |
+| 性能-3 | `EditorBridge.charCount/lineCount` → 编辑整树重渲（仅状态栏用） | S | 挪到独立指标模型，仅 `EditorStatusBar` 观察 |
+| 性能-5 | `DocumentManager.sideFilter` → 侧栏筛选每键整树重渲（CV 没读它） | S | 挪到 `@State` 模型，仅 `SidebarView` 观察 |
+| 性能-4 | `FindState.query/replaceText` → 查找每键整树重渲 | M | ⏸ 用户 2026-07-03 定「**不提前**」，按住；将来拆 `FindFieldModel` 仅 `FindBarView` 观察 |
 
 ---
 
@@ -160,14 +152,14 @@
 
 ---
 
-## 后续波次建议（按冲突域；性能项并入相关波次，不单列）
+## 剩余路线（✅ 已对账 2026-07-06，仅列真正未做的）
 
-热点共享文件 `ContentView` / `EditorView` / `DocumentManager` 被多数工作触碰，需按波次顺序派、owner 统一合并，避免并行撞车。性能项按文件归属并入下列既有波次：
+> 计划序 **BACDEF**：B（文本模型+打字性能）✅ 除 Phase3 · A（查找）✅ v1.0.6 · C（打磨）进行中。
 
-1. **数据/生命周期波次**（#1/#22/#29/#15 完整版 + **性能-1** 打字 + 性能-2 hover + 性能-3 字数）— 同动 DocumentManager/EditorView/EditorBridge；性能-1 高风险需重点验证。前置决策 **#2**。
-2. **查找&面板补全波次**（#11/#12/#17 + 清 `toggleOpen` 债 + 性能-4 查找输入）。
-3. **侧栏波次**（#6/#7/#8 + 性能-5 筛选输入）。
-4. **目录波次**（#19/#20/#21）。
-5. **样式&装饰波次**（#13/#23/#24/#25/#26/#27/#28/#30 + 待拍板落地）。
+1. **C 剩余 · perf 隔离**（下一步，同款 @Published 拆隔离手法）：性能-3 字数 · 性能-5 侧栏筛选。（性能-4 用户「不提前」按住。）
+2. **D · 技术债**：`toggleOpen` 清理（`App.swift` ⌘F 直指 `openFind()` 后删）· 正则替换 `$1` 反向引用 + 「没有可替换的匹配」空态 toast · 非 md 源码视图的卡片/复制 chrome 收敛。
+3. **保真补全**：#6 侧栏嵌套递归筛选 · #15 命令面板完整 tab/文档 parity。
+4. **E · 待拍板落地**（见上「待拍板」表）：#16 蒙层 0.6 + 材质 · #30 tooltip（建议搁置）· #23/24 大写 · #19 目录 hover · #3 红绿灯（建议不做）。
+5. **降级 / 长期**：B Phase 3 编辑器复用（切 tab 保留每 tab 撤销历史）· ⑤ 块级模型（大文档终极解，单独立项）。
 
 > 低风险性能项（性能-2/3/4/5）彼此独立、不依赖 #2，需要的话可从所属波次拆出提前做。
