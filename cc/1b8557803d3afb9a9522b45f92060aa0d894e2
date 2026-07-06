@@ -1,0 +1,21 @@
+Sources/MarkdownViewer/DesignTokens.swift
+  s_c8ce8d340d0da3::t_d74e046d30e17c 57-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "cc1b8557803d3afb9a9522b45f92060aa0d894e2",
+  "prompts": {},
+  "sessions": {
+    "s_c8ce8d340d0da3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aeac6d7e-1041-41e3-a533-b884a357edfd",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
