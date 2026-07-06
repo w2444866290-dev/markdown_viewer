@@ -1,0 +1,21 @@
+SPEC-ALIGNMENT.md
+  s_c8ce8d340d0da3::t_71ce78f14d64c8 114-120,124-125,129-133,137-139,155,157,159-163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "824a09ac4afd4a3d34ff33d82a6ea1a1f9240a5c",
+  "prompts": {},
+  "sessions": {
+    "s_c8ce8d340d0da3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aeac6d7e-1041-41e3-a533-b884a357edfd",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
