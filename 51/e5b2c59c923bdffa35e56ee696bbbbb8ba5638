@@ -1,0 +1,51 @@
+AGENTS.md
+  s_76947f5cb88bae::t_100b3b890d12ce 1-32
+CLAUDE.md
+  s_76947f5cb88bae::t_38de8af6744a31 1
+README.md
+  s_76947f5cb88bae::t_36faeddcc16cb5 43,46,49,51,53-64
+Sources/MarkdownViewer/Documents/DocumentModels.swift
+  s_76947f5cb88bae::t_60dded985af667 1-81
+Sources/MarkdownViewer/Editor/EditorCoordinator.swift
+  s_76947f5cb88bae::t_8f4471d265276a 4
+Sources/MarkdownViewer/Editor/EditorTextView.swift
+  s_76947f5cb88bae::t_44ca5f56124d48 1-160
+Sources/MarkdownViewer/Editor/EditorView.swift
+  s_76947f5cb88bae::t_2478cedf965668 1-234
+Sources/MarkdownViewer/Shell/EditorHeader.swift
+  s_76947f5cb88bae::t_3c195a4520f5e9 1-194
+Sources/MarkdownViewer/Shell/EditorStatusBar.swift
+  s_76947f5cb88bae::t_b94d2862935b82 1-153
+Sources/MarkdownViewer/Styling/CardLayoutManager.swift
+  s_76947f5cb88bae::t_dbf6c7ba05f2c7 1-206
+Sources/MarkdownViewer/Styling/StylingAttributes.swift
+  s_76947f5cb88bae::t_26ef691cdf4424 1-39
+VERSION
+  s_476ef982c21464::t_b6bc8f552754c6 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "51e5b2c59c923bdffa35e56ee696bbbbb8ba5638",
+  "prompts": {},
+  "sessions": {
+    "s_476ef982c21464": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48603e92-196e-41ed-92ea-5c8dd5647043",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    },
+    "s_76947f5cb88bae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0165240fdd91b81c",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
