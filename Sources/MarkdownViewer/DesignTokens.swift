@@ -54,8 +54,14 @@ enum DesignTokens {
 
     // MARK: - Accent
     static let accent = color(Palette.accent)
-    static let accentStrong = color(Palette.accent, alpha: 0.55)
-    static let accentSoft = color(Palette.accent, alpha: 0.22)
+    // Find highlights (used ONLY by FindController). The CURRENT match must be
+    // unmistakable - it doubles as the "you jumped here" cue even when the match was
+    // already on-screen and no scroll happened - so it is a strong amber; other
+    // matches are a lighter tint. Both must read over the #FAFAFA code card, where
+    // CardLayoutManager re-stamps them on top of the fill (refillTemporaryBackgrounds);
+    // the old 0.55/0.22 was nearly invisible on that gray.
+    static let accentStrong = color(Palette.accent, alpha: 0.85)
+    static let accentSoft = color(Palette.accent, alpha: 0.34)
     static let danger = color(Palette.danger)
     static let systemBlue = color(Palette.systemBlue)
 
