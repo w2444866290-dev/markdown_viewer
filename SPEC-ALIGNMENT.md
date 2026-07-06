@@ -117,12 +117,11 @@
 - **#22** 非 md 走源码视图（`EditorView.isMarkdown` gate）· **#29** 会话持久化（本会话 B，`SessionStore`）· **#11** 查找 Shift+Enter/Esc（`FindBarView:11`）· **#12** 查找面板 白.97+blur（`FindBarView:211`）· **#17** 面板行 `lineLimit(1)`+truncation（`CommandPalette:287`）· **#26** 状态栏 `.monospacedDigit()` tabular 非 monospaced（`ContentView:323`）· **#21** 目录跳转 0.3s ease 滚动 + 0.9s amber wash（`OutlineController.jumpTo`/`washHeading`）· **#27** 底部 33vh 响应式（`ResponsiveScrollView`）· **#28** 拖入只 `.md/.markdown/.txt` + toast「仅支持 Markdown / 文本文件」（`ContentView.handleDrop`）· **性能-1** 打字隔离（本会话，`a524823`）· **性能-2** `HoverURLModel` 隔离
 - **#1** 首屏种子 → ⛔ 已决策为**不塞**（空白首启，见下「已拍板 #1/#2」），非待办
 
-**⬜ 仍待办**：
+**✅ 完成（对账后）**：
+- **#6**（v1.0.9 `84d57e0`）：侧栏筛选命中行名称旁显示暗淡相对路径（`SidebarView.relativeFolderPath` + `SidebarNodeRow.relativePath`）。搜嵌套本就具备（`flattenFiles`）。
 
-| # | 问题 | 工作量 | 修复方式 |
-|---|---|---|---|
-| 6 | 侧栏筛选命中行**不显示相对路径**（`SidebarNodeRow` depth:0 只显文件名，同名不同目录无法区分）。〔更正:递归搜嵌套**已做** —— `SidebarView.filteredNodes` 用 `flattenFiles`;之前对账误看已删的死属性 `visibleFiles`〕 | S | 筛选时名称旁显示相对路径（由 `FileNode.url` 相对 `directoryURL` 算）。用户 2026-07-06 定:拍平单列 + 相对路径（拍平已具备） |
-| 15 | 命令面板完整 tab/文档视图 parity（最小 union 已做） | S→M | 完整 `buildDefs` 对齐，随「数据流波次」 |
+**🟡 基本已达成（可视为完成）**：
+- **#15 命令面板文档列表** — 核心已做：`allDocs`（`CommandPalette.swift:61`）= 开着的 tab + 未命名 + 打开文件夹的**全部磁盘文件**（去重），⌘K 可跳任意已知文档。残留的"full buildDefs parity（`extraOrder`）"是**设计稿无文件系统的模拟产物**（mockup 硬编码 demo 列表 + `extraOrder` 假装文件列表），真机有真实文件、不需要。唯一 cosmetic 差异：mockup 按文件夹分组+缩进，真机扁平列表。**建议视为已达成**，除非要给面板加"文件夹分组/缩进"或路径显示。
 
 ---
 
