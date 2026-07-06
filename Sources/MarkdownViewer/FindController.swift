@@ -205,7 +205,18 @@ final class FindController {
         storage.replaceCharacters(in: range, with: replacement)
         tv.didChangeText()
         restyle()
-        redo()  // re-search after mutation
+        redo()  // re-search after mutation (this resets currentIndex to 0)
+        // Advance the cursor PAST the text we just inserted, so the next "替换" lands
+        // on the following real occurrence - NOT on a match the replacement itself
+        // introduced. Without this, searching e.g. `\d+` and replacing with text that
+        // also contains a digit would re-match the just-inserted digit and keep
+        // replacing the same spot forever (reported bug). Pick the first match at/after
+        // the end of the replacement; wrap to 0 (cycle through any earlier remaining
+        // matches) when nothing follows.
+        let afterEnd = range.location + (replacement as NSString).length
+        currentIndex = matches.firstIndex { $0.location >= afterEnd } ?? 0
+        applyHighlights()
+        scrollToCurrent()
         Task { @MainActor in Toaster.shared.flash("已替换 1 处") }
     }
 
