@@ -10,7 +10,6 @@ A lightweight native macOS Markdown editor built with Swift and AppKit.
 - Markdown rendering for headings, emphasis, links, images, quotes, lists, tasks, code, rules, and aligned tables.
 - Plain-text editing for common config/source files such as YAML, JSON, TOML, Swift, shell scripts, and text files.
 - Save and Save As support.
-- Built-in self-test mode for layout, Markdown styling, table alignment, directory tree behavior, plain-text editing, and save persistence.
 
 ## Requirements
 
@@ -41,28 +40,29 @@ To also create a zip:
 open dist/MarkdownViewer.app
 ```
 
-Open a specific file or directory:
+Launch with the debug HUD enabled (the only recognized flag; no positional arguments):
 
 ```bash
-dist/MarkdownViewer.app/Contents/MacOS/MarkdownViewer /path/to/notes
+dist/MarkdownViewer.app/Contents/MacOS/MarkdownViewer --debug
 ```
 
-## Self-Test
+## Project Structure
 
-The app has a hidden self-test mode:
+Source lives under `Sources/MarkdownViewer/`, a single SwiftPM executable target (one module) grouped into shallow feature folders:
 
-```bash
-dist/MarkdownViewer.app/Contents/MacOS/MarkdownViewer --self-test build/selftest
+```text
+Sources/MarkdownViewer/
+  App/        # 应用生命周期与启动：入口、--debug 开关、版本标签、窗口配置、崩溃日志
+  Shell/      # 顶层三栏布局与外壳组件：主视图、头部（标签/按钮）、状态栏（hover URL / 调试读数）
+  Editor/     # TextKit 编辑面：NSViewRepresentable、Coordinator、文本视图子类、AppKit↔SwiftUI 观察桥、代码块复制浮层
+  Styling/    # Markdown 实时排版引擎：自定义属性键、卡片绘制、解析与样式规则
+  Documents/  # 文档与文件模型：tab/目录状态中枢、模型 struct、会话持久化
+  Find/       # 查找替换：共享状态、查找引擎、查找条 UI
+  Outline/    # 右侧大纲：标题解析、大纲 rail 视图
+  Sidebar/    # 左侧文件侧栏
+  Palette/    # 命令面板：⌘K 视图、无边框面板宿主
+  UI/         # 共享设计系统与基础组件：设计 token、图标、tooltip、toast
 ```
-
-The self-test generates screenshots and validates:
-
-- directory tree rendering, including nested folders and YAML files
-- opening Markdown and plain-text files
-- editing and saving plain-text files
-- visual Markdown styling
-- aligned multi-row Markdown tables using AppKit layout coordinates
-- three distinct Markdown samples covering the main supported syntax
 
 ## UI Reference
 
