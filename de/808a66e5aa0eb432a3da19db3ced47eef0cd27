@@ -1,0 +1,27 @@
+Sources/MarkdownViewer/CodeOverlayController.swift
+  s_e1f9ac2036020b::t_86ede93f70f16e 7-8,10-32,104-106
+Sources/MarkdownViewer/FindBarView.swift
+  s_e1f9ac2036020b::t_bd539a62ee09d3 344-347,364-366,377
+Sources/MarkdownViewer/OutlineRailView.swift
+  s_e1f9ac2036020b::t_466b178a81d4a7 4-9,28
+Sources/MarkdownViewer/SidebarView.swift
+  s_e1f9ac2036020b::t_1d7a4d1e6e8639 10,14-19,113,125,129-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "de808a66e5aa0eb432a3da19db3ced47eef0cd27",
+  "prompts": {},
+  "sessions": {
+    "s_e1f9ac2036020b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a033b4af6267a589d",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
