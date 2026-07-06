@@ -58,12 +58,19 @@ struct SidebarView: View {
                 // File tree — spec: padding 4px 10px 12px, gap 1px
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
+                        // While filtering, the flat match list can contain same-named
+                        // files from different folders — pass each match its parent
+                        // folder path (relative to the opened root) so the row can
+                        // disambiguate them. Browse mode conveys folders by
+                        // indentation, so no path is passed there (`nil`).
+                        let filtering = !sideFilter.isEmpty
                         ForEach(filteredNodes) { node in
                             SidebarNodeRow(
                                 node: node,
                                 depth: 0,
                                 hoveredNodeID: $hoveredNodeID,
-                                kbSelectedID: kbSelectedNodeID
+                                kbSelectedID: kbSelectedNodeID,
+                                relativePath: filtering ? relativeFolderPath(for: node) : nil
                             )
                         }
                     }
@@ -159,6 +166,21 @@ struct SidebarView: View {
         }
     }
 
+    // The file's containing-folder path relative to the opened root — shown
+    // dimmed next to filter matches so same-named files in different folders are
+    // distinguishable (user addition, not in the mockup). Returns nil when there
+    // is no open root, when the file sits directly in the root (no subfolder),
+    // or when the file is not under the root. Uses `pathComponents` on the
+    // standardized URLs so it's robust to trailing slashes and `.`/`..` bits.
+    private func relativeFolderPath(for node: FileNode) -> String? {
+        guard let root = docManager.directoryURL else { return nil }
+        let rootComps = root.standardizedFileURL.pathComponents
+        let parentComps = node.url.standardizedFileURL.deletingLastPathComponent().pathComponents
+        guard parentComps.count > rootComps.count,
+              Array(parentComps.prefix(rootComps.count)) == rootComps else { return nil }
+        return parentComps.suffix(from: rootComps.count).joined(separator: "/")
+    }
+
     // Depth-first flatten to all non-directory nodes (spec's flat file list).
     private func flattenFiles(_ nodes: [FileNode]) -> [FileNode] {
         var out: [FileNode] = []
@@ -232,6 +254,10 @@ private struct SidebarNodeRow: View {
     @Binding var hoveredNodeID: UUID?
     /// Node currently selected via filter keyboard navigation (spec `kbName`).
     let kbSelectedID: UUID?
+    /// While filtering, the file's parent-folder path relative to the opened
+    /// root, shown dimmed beside the name to tell same-named matches apart.
+    /// `nil` in browse mode and for files sitting directly in the root.
+    let relativePath: String?
     @EnvironmentObject var docManager: DocumentManager
 
     private var isExpanded: Bool { docManager.expandedFolders.contains(node.id) }
@@ -270,6 +296,19 @@ private struct SidebarNodeRow: View {
                         .font(.system(size: 13, weight: isActive ? .semibold : .regular))
                         .foregroundColor(rowTextColor)
                         .lineLimit(1)
+                        // Keep the name whole; the path hint truncates first.
+                        .layoutPriority(1)
+                    // Filter-only: dimmed parent-folder path so same-named matches
+                    // are distinguishable. Same single line, smaller + tertiary so
+                    // it reads as secondary; middle-truncates to keep both ends of
+                    // a deep path. Absent in browse mode (`relativePath == nil`).
+                    if let relativePath, !relativePath.isEmpty {
+                        Text(relativePath)
+                            .font(.system(size: 11))
+                            .foregroundColor(DesignTokens.swiftUI.tertiaryText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                     Spacer()
                     if nodeHasDirtyTab {
                         Circle()
@@ -293,7 +332,9 @@ private struct SidebarNodeRow: View {
 
             if node.isDirectory && isExpanded {
                 ForEach(node.children) { child in
-                    SidebarNodeRow(node: child, depth: depth + 1, hoveredNodeID: $hoveredNodeID, kbSelectedID: kbSelectedID)
+                    // Browse-mode nesting: hierarchy is shown by indentation, so
+                    // nested rows never carry a path hint.
+                    SidebarNodeRow(node: child, depth: depth + 1, hoveredNodeID: $hoveredNodeID, kbSelectedID: kbSelectedID, relativePath: nil)
                 }
             }
         }
