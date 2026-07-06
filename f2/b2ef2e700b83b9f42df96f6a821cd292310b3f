@@ -1,0 +1,21 @@
+Sources/MarkdownViewer/SidebarView.swift
+  s_aebe907935fdb8::t_5dc869fdebe741 61-66,72-73,169-183,257-260,299-311,335-337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "f2b2ef2e700b83b9f42df96f6a821cd292310b3f",
+  "prompts": {},
+  "sessions": {
+    "s_aebe907935fdb8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7695f2dfb218496d",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
