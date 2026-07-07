@@ -1,0 +1,21 @@
+Package.swift
+  s_4f2f5f9d0ccbad::t_ba4191ddb4c7ae 12-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "36bcc788e7149a8b9a404f5c8a3d32707ded0058",
+  "prompts": {},
+  "sessions": {
+    "s_4f2f5f9d0ccbad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ae6b20ff55228b180",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
