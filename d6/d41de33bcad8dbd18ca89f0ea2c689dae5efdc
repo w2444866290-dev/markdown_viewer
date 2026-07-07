@@ -1,0 +1,37 @@
+README.md
+  s_77b3a6069d0518::t_3cf4af70a2c90b 58-59,65
+Tests/MarkdownViewerTests/CodeFenceTests.swift
+  s_77b3a6069d0518::t_af260e6507e51a 39
+Tests/MarkdownViewerTests/FindBodySearchTests.swift
+  s_77b3a6069d0518::t_a9aa9c97f0ddd4 51,107,127
+Tests/MarkdownViewerTests/FontSizeIsolationTests.swift
+  s_77b3a6069d0518::t_ebc770893c0f76 26
+Tests/MarkdownViewerTests/IncrementalTests.swift
+  s_77b3a6069d0518::t_3cf92981d0c9b8 108,256
+Tests/MarkdownViewerTests/InlineTests.swift
+  s_77b3a6069d0518::t_1e04632450b34f 66,90
+Tests/MarkdownViewerTests/MvNonBodyMapTests.swift
+  s_77b3a6069d0518::t_331d160bfc11ab 117
+Tests/MarkdownViewerTests/StylerTestSupport.swift
+  s_77b3a6069d0518::t_6f2d874b9a53cc 27,171,185
+scripts/test.sh
+  s_77b3a6069d0518::t_d150386ecec2e1 16-17,32,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "d6d41de33bcad8dbd18ca89f0ea2c689dae5efdc",
+  "prompts": {},
+  "sessions": {
+    "s_77b3a6069d0518": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3c91-6628-7812-b43a-04dbf9961971",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
