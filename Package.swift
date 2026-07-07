@@ -9,6 +9,11 @@ let package = Package(
             name: "MarkdownViewer",
             path: "Sources/MarkdownViewer",
             resources: [.process("../../Resources")]
+        ),
+        .testTarget(
+            name: "MarkdownViewerTests",
+            dependencies: ["MarkdownViewer"],
+            path: "Tests/MarkdownViewerTests"
         )
     ]
 )
