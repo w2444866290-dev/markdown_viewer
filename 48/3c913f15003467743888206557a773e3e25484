@@ -1,0 +1,25 @@
+AGENTS.md
+  s_589bc467a6ed35::t_d2234a1c80eea2 20
+SPEC-ALIGNMENT.md
+  s_589bc467a6ed35::t_8b99864bb16e23 4,12,30
+ui/README.md
+  s_589bc467a6ed35::t_e6a628440570e5 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "483c913f15003467743888206557a773e3e25484",
+  "prompts": {},
+  "sessions": {
+    "s_589bc467a6ed35": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac2b7a23d8b6e19ac",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
