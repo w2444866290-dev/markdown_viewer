@@ -46,6 +46,33 @@ Launch with the debug HUD enabled (the only recognized flag; no positional argum
 dist/MarkdownViewer.app/Contents/MacOS/MarkdownViewer --debug
 ```
 
+## Testing
+
+Run the whole test suite with one command:
+
+```bash
+./scripts/test.sh
+```
+
+The tests are written against Apple's **Swift Testing** framework (`import Testing`), not XCTest.
+This project is developed on a machine that has only the **Command Line Tools** installed (no full Xcode), so `XCTest.framework` is not available to build or run against, whereas Swift Testing ships with the toolchain and runs green under `swift test`.
+
+`scripts/test.sh` makes the suite runnable on both setups without hardcoding any absolute path.
+It derives everything from `xcode-select -p` at run time:
+
+- On a **Command Line Tools** machine, `Testing.framework` exists under the CLT developer directory but off the default search paths, so the script adds the compiler (`-F`) and loader (`rpath`) flags that point at it.
+- On a **full Xcode** machine, the framework is already on the default search paths, so the script just runs `swift test`.
+
+Extra arguments pass straight through, e.g. filter to one suite:
+
+```bash
+./scripts/test.sh --filter IncrementalTests
+```
+
+The tests are **characterization tests** over the live Markdown styling engine (`LiveMarkdownStyler`): they read back the attributes actually written into an `NSTextStorage` and pin the current behaviour, including a differential-oracle edit matrix (incremental restyle must equal a full restyle) and the "所见即所搜" body-only search invariant.
+
+`LiveMarkdownStyler.bodyPointSize` is a process-wide value, so all styler suites are collected under a single `.serialized` parent suite (`StylerSuites`) and any test that needs a non-default body size must go through the `withBodyPointSize(_:_:)` scoped helper (set + restore), which keeps the global from leaking across tests.
+
 ## Project Structure
 
 Source lives under `Sources/MarkdownViewer/`, a single SwiftPM executable target (one module) grouped into shallow feature folders:
