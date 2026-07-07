@@ -36,7 +36,7 @@ extension StylerSuites {
             #expect(StylerProbe.isHidden(ts, 0))
         }
 
-        // Case 8: card continuity across a blank line — mvCodeBlock is one contiguous run.
+        // Case 8: card continuity across a blank line - mvCodeBlock is one contiguous run.
         @Test func cardContinuityAcrossBlankLine() {
             let ts = StylerProbe.styled("\(fence)py\na\n\nb\n\(fence)")
             let n = (ts.string as NSString).length

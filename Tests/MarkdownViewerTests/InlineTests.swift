@@ -63,7 +63,7 @@ extension StylerSuites {
             #expect(StylerProbe.isNonBody(ts, 7))
         }
 
-        // Case 14: Link — label styled + searchable; URL treated as markup.
+        // Case 14: Link - label styled + searchable; URL treated as markup.
         @Test func link() {
             let ts = StylerProbe.styled("[label](http://x)")
             guard let label = requireRange(ts, of: "label") else { return }   // idx 1..5
@@ -87,7 +87,7 @@ extension StylerSuites {
             #expect(StylerProbe.isHidden(ts, 0))
         }
 
-        // Case 14: Image — alt is non-body italic; `!` prevents link treatment.
+        // Case 14: Image - alt is non-body italic; `!` prevents link treatment.
         @Test func image() {
             let ts = StylerProbe.styled("![alt](p.png)")
             guard let alt = requireRange(ts, of: "alt") else { return }

@@ -23,7 +23,7 @@ extension StylerSuites {
                 guard let i = requireIndex(ts, of: "plain") else { return }
                 #expect(StylerProbe.pointSize(ts, i) == 22)
             }
-            // Restored on exit — the global did not leak past the scope.
+            // Restored on exit - the global did not leak past the scope.
             #expect(LiveMarkdownStyler.bodyPointSize == before)
         }
 

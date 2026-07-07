@@ -24,7 +24,7 @@ import Testing
 ///
 /// WHY: `LiveMarkdownStyler.bodyPointSize` is a PROCESS-WIDE mutable global. Swift
 /// Testing runs suites in parallel by default, so a future test that changes the body
-/// size could be observed mid-change by a DIFFERENT suite reading the font — a silent
+/// size could be observed mid-change by a DIFFERENT suite reading the font - a silent
 /// cross-suite pollution. `.serialized` is inherited by all descendant suites, so
 /// collecting every styler suite under this one parent makes it IMPOSSIBLE for two
 /// styler tests to run concurrently. Combined with `withBodyPointSize` (scoped
@@ -168,7 +168,7 @@ func fail(_ message: String, sourceLocation: SourceLocation = #_sourceLocation) 
 func expectNonBody(_ ts: NSTextStorage, _ range: NSRange, _ expected: Bool, _ what: String,
                    sourceLocation: SourceLocation = #_sourceLocation) {
     guard range.location != NSNotFound, range.length > 0 else {
-        fail("\(what): substring not found (empty range) — cannot check mvNonBody", sourceLocation: sourceLocation)
+        fail("\(what): substring not found (empty range) - cannot check mvNonBody", sourceLocation: sourceLocation)
         return
     }
     for i in range.location..<(range.location + range.length) where StylerProbe.isNonBody(ts, i) != expected {
@@ -182,7 +182,7 @@ func expectNonBody(_ ts: NSTextStorage, substring sub: String, _ expected: Bool,
                    sourceLocation: SourceLocation = #_sourceLocation) {
     let r = StylerProbe.range(of: sub, in: ts)
     guard r.location != NSNotFound, r.length > 0 else {
-        fail("substring '\(sub)' not found in styled text — cannot check mvNonBody", sourceLocation: sourceLocation)
+        fail("substring '\(sub)' not found in styled text - cannot check mvNonBody", sourceLocation: sourceLocation)
         return
     }
     expectNonBody(ts, r, expected, "\"\(sub)\"", sourceLocation: sourceLocation)

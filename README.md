@@ -55,13 +55,14 @@ Run the whole test suite with one command:
 ```
 
 The tests are written against Apple's **Swift Testing** framework (`import Testing`), not XCTest.
-This project is developed on a machine that has only the **Command Line Tools** installed (no full Xcode), so `XCTest.framework` is not available to build or run against, whereas Swift Testing ships with the toolchain and runs green under `swift test`.
+Use `./scripts/test.sh` as the recommended and shared entry point; the full suite runs green through that script.
+On the current **Command Line Tools**-only environment, bare `swift test` fails with `no such module 'Testing'` because SwiftPM does not add the CLT `Testing.framework` search path by default.
 
 `scripts/test.sh` makes the suite runnable on both setups without hardcoding any absolute path.
 It derives everything from `xcode-select -p` at run time:
 
 - On a **Command Line Tools** machine, `Testing.framework` exists under the CLT developer directory but off the default search paths, so the script adds the compiler (`-F`) and loader (`rpath`) flags that point at it.
-- On a **full Xcode** machine, the framework is already on the default search paths, so the script just runs `swift test`.
+- On a **full Xcode** machine, the framework is already on the default search paths, so the script may just run `swift test` internally.
 
 Extra arguments pass straight through, e.g. filter to one suite:
 

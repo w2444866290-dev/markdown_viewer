@@ -114,7 +114,7 @@ extension StylerSuites {
         private func expectChar(_ ts: NSTextStorage, _ i: Int, _ what: String,
                                 sourceLocation: SourceLocation = #_sourceLocation) {
             guard i >= 0, i < ts.length else {
-                fail("\(what): index \(i) out of bounds (len \(ts.length)) — substring likely not found",
+                fail("\(what): index \(i) out of bounds (len \(ts.length)) - substring likely not found",
                      sourceLocation: sourceLocation)
                 return
             }

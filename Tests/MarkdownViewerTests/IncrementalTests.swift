@@ -105,7 +105,7 @@ extension StylerSuites {
     struct IncrementalTests {
         init() { pinBodyPointSize() }
 
-        // MARK: #2 — differential-oracle edit matrix
+        // MARK: #2 - differential-oracle edit matrix
 
         /// {insert, delete, replace} × {paragraph, heading, list item, list first/last
         /// boundary, quote, table header cell, table body cell, structure-break pipe,
@@ -253,7 +253,7 @@ extension StylerSuites {
             expectSameAttributes(a, b, note: "plain paragraph insert stays incremental")
         }
 
-        // MARK: #3 — fallback contract: return value AND resulting attributes
+        // MARK: #3 - fallback contract: return value AND resulting attributes
 
         // Structural edits fall back to a full restyle (return false) AND the storage
         // must equal a full apply of the final text (proved inside `expectFallback`).

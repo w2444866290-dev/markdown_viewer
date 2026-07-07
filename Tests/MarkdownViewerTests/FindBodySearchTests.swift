@@ -48,7 +48,7 @@ extension StylerSuites {
             var units: [unichar] = []
             units.reserveCapacity(length)
             ts.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attrs, range, _ in
-                // ---- MIRRORS FindController.swift:394-397 — keep in lockstep. ----
+                // ---- MIRRORS FindController.swift:394-397 - keep in lockstep. ----
                 if (attrs[.mvNonBody] as? Bool) == true { return }                        // :394
                 let size = (attrs[.font] as? NSFont)?.pointSize ?? Self.defaultSize        // :395
                 if size <= Self.sizeFloor { return }                                       // :396
@@ -104,7 +104,7 @@ extension StylerSuites {
                 "label",                 // link label
                 "end.",                  // trailing paragraph text
             ] where !body.contains(word) {
-                fail("find would MISS body word '\(word)' — not present in the searchable body string")
+                fail("find would MISS body word '\(word)' - not present in the searchable body string")
             }
 
             // ---- Every SYNTAX / DECORATION token that must NOT be searchable. ----
@@ -124,7 +124,7 @@ extension StylerSuites {
                 "-",                 // list dash marker + hr + table separator dashes
                 "1.",                // ordered-list marker
             ] where body.contains(token) {
-                fail("find would WRONGLY match syntax token '\(token)' — it leaked into the searchable body string")
+                fail("find would WRONGLY match syntax token '\(token)' - it leaked into the searchable body string")
             }
         }
     }

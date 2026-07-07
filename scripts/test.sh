@@ -13,8 +13,8 @@ set -euo pipefail
 # NOT on the default search paths, so `swift test` cannot locate it unless we point
 # the compiler (-F) and the runtime loader (rpath) at it explicitly.
 #
-# We derive every path from `xcode-select -p` at run time — nothing absolute is
-# hard-coded here or in Package.swift — so the same script works on both setups and
+# We derive every path from `xcode-select -p` at run time - nothing absolute is
+# hard-coded here or in Package.swift - so the same script works on both setups and
 # survives an Xcode/CLT move or version bump.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -29,7 +29,7 @@ if [[ -d "$FRAMEWORKS/Testing.framework" ]]; then
     # dir, off the default search paths. Add it for the compiler (-F) and both the
     # framework dir and the Swift runtime lib dir to the loader's rpath so the test
     # bundle can find and load it at run time.
-    echo "test.sh: CLT layout — adding Testing.framework search paths under $DEV" >&2
+    echo "test.sh: CLT layout - adding Testing.framework search paths under $DEV" >&2
     exec swift test \
         -Xswiftc -F -Xswiftc "$FRAMEWORKS" \
         -Xlinker -rpath -Xlinker "$FRAMEWORKS" \
@@ -37,6 +37,6 @@ if [[ -d "$FRAMEWORKS/Testing.framework" ]]; then
         "$@"
 else
     # Full Xcode: Testing.framework is on the default toolchain search paths.
-    echo "test.sh: Xcode layout — using default Testing.framework search paths" >&2
+    echo "test.sh: Xcode layout - using default Testing.framework search paths" >&2
     exec swift test "$@"
 fi
