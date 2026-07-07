@@ -1,7 +1,7 @@
 # UI 规约对齐 — 跟踪表
 
 > 设计真相源：`ui/Markdown Viewer.dc.html`
-> 主分支：`main` @ `fae5aa1`（已 push origin，本地=远程）　当前发布 **v1.1.1**
+> 主分支：`main` @ `51e5b2c`（已 push origin，本地=远程）　当前发布 **v1.1.2**
 > 版本从仓库根 `VERSION` 单一来源，`scripts/build.sh` 注入 `CFBundleShortVersionString`；`CFBundleVersion` = git 短 SHA（build 号）。
 > 最近更新：2026-07-06（本轮收尾归档）
 
@@ -9,7 +9,7 @@
 
 ---
 
-## 📦 版本变更归档（v1.0.0 → v1.1.1 · 2026-07-06 收尾）
+## 📦 版本变更归档（v1.0.0 → v1.1.2 · 2026-07-06 收尾）
 
 > 升级口径：bug / 打磨 / 技术债 = **patch**；新的用户可见能力 = **minor**。
 
@@ -27,6 +27,7 @@
 | v1.0.9 | `84d57e0` | **#6** 侧栏筛选命中显示暗淡相对路径（搜嵌套本就具备）|
 | v1.1.0 | `463f61c` | **D·技术债**：删 `toggleOpen` · 正则替换 `$1` 反向引用 + 「没有可替换的匹配」toast · **D3 修真泄漏**（非 md 里 ``` 会冒出复制按钮）|
 | v1.1.1 | `fae5aa1` | **修替换卡死**：`replaceCurrent` 自匹配替换时不再卡第一处，改为前进到替换后的下一个匹配 |
+| v1.1.2 | `51e5b2c` | **目录重构**：平铺 24 文件 → 10 个一层目录(App/Shell/Editor/Styling/Documents/Find/Outline/Sidebar/Palette/UI)；4 大文件按顶层类型粗拆(零逻辑改动，仅 5 处必要 private→internal)；AGENTS.md 收敛为单一来源 + CLAUDE.md 软链；README 加 Project Structure、清 `--self-test`/命令行传路径两处文档漂移 |
 
 ## ⏳ 长期 TODO（保留 · 各自单独立项，不夹带）
 

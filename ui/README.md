@@ -1,6 +1,6 @@
 # UI 设计稿说明
 
-本文件夹是 `markdown_viewer` 的设计源真相(source of truth)。实现(`Sources/MarkdownViewer/main.swift`)对齐时,**一切以这里为准**。
+本文件夹是 `markdown_viewer` 的设计源真相(source of truth)。实现(`Sources/MarkdownViewer/`)对齐时,**一切以这里为准**。
 
 ## 文件清单与定位
 
