@@ -1,9 +1,9 @@
 # UI 规约对齐 — 跟踪表
 
 > 设计真相源：`ui/Markdown Viewer.dc.html`
-> 主分支：`main` @ `51e5b2c`（已 push origin，本地=远程）　当前发布 **v1.1.2**
+> 主分支：`main` @ `81b1ea9`（已 push origin，本地=远程）　当前发布 **v1.1.2**
 > 版本从仓库根 `VERSION` 单一来源，`scripts/build.sh` 注入 `CFBundleShortVersionString`；`CFBundleVersion` = git 短 SHA（build 号）。
-> 最近更新：2026-07-06（本轮收尾归档）
+> 最近更新：2026-07-08（补上渲染层视觉回归测试）
 
 质检共 30 条，已逐条对源核验。状态分：✅完成 / 🔧进行中 / ⏳待办 / ❓待拍板 / ⛔不做(已拍板)。**当前:可做项全部完成,仅剩长期项(见文末)。**
 
@@ -37,6 +37,11 @@
 - **#15 cosmetic**（可选）：命令面板文档列表加「文件夹分组/缩进」或路径显示——功能已达成，仅观感。
 
 ---
+
+## ✅ 近期工程收口（2026-07-08）
+
+- **LiveMarkdownStyler 拆分安全网**：PR #7 建特征测试网，PR #8 按 CodeFence/Table/Inline/Incremental 拆分并收窄 helper 可见性。
+- **渲染层视觉回归测试**：新增 offscreen `CardLayoutManager` pixel checks，覆盖 code card full-width fill 与 table header/body hairline。
 
 ## 分支约定
 
