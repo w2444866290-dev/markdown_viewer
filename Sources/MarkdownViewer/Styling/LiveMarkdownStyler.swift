@@ -5,12 +5,8 @@ enum LiveMarkdownStyler {
     static var bodyPointSize: CGFloat = 15.5
     static var bodyFont: NSFont { NSFont.systemFont(ofSize: bodyPointSize) }
 
-    static let markerFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+    private static let markerFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
     private static let boldCodeFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .semibold)
-    // Mockup table header `th` (L317): 11px semibold sans, #86868b, letter-spacing 0.4.
-    static let tableHeaderFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
-    // Mockup table body `td` (L323): 13.5px (table font-size, L314), body sans.
-    static let tableBodyFont = NSFont.systemFont(ofSize: 13.5)
     private static let markerColor = DesignTokens.placeholderText
     private static let codeBackground = DesignTokens.codeBackground
     private static let quoteBackground = NSColor.clear
@@ -26,8 +22,7 @@ enum LiveMarkdownStyler {
 
         textStorage.beginEditing()
         textStorage.setAttributes(baseAttributes(), range: fullRange)
-        applyLineStyles(to: textStorage, scope: fullRange)
-        applyInlineStyles(to: textStorage, scope: fullRange)
+        applyScopedStyles(to: textStorage, scope: fullRange)
         textStorage.endEditing()
     }
 
@@ -79,9 +74,7 @@ enum LiveMarkdownStyler {
             }
         }
         if trimmed.hasPrefix(">") { return .blockquote }
-        if index + 1 < lines.count,
-           looksLikeTableLine(line),
-           isTableSeparatorLine(lines[index + 1].text) {
+        if isTableBlockStart(lines: lines, index: index) {
             return .table
         }
         if firstMatch(taskRegex, in: nsString, exactly: lines[index].range) != nil { return .list }
@@ -89,7 +82,12 @@ enum LiveMarkdownStyler {
         return .paragraph
     }
 
-    static func applyLineStyles(to textStorage: NSTextStorage, scope: NSRange) {
+    static func applyScopedStyles(to textStorage: NSTextStorage, scope: NSRange) {
+        applyLineStyles(to: textStorage, scope: scope)
+        applyInlineStyles(to: textStorage, scope: scope)
+    }
+
+    private static func applyLineStyles(to textStorage: NSTextStorage, scope: NSRange) {
         let nsString = textStorage.string as NSString
         let lines = markdownLines(in: nsString, fullRange: scope)
         var insideCodeBlock = false
@@ -154,7 +152,7 @@ enum LiveMarkdownStyler {
                 // `CardLayoutManager.drawCodeCards` would split the card into pieces
                 // with a hairline gap at the empty line (the directory-tree "grid").
                 if insideCodeBlock {
-                    markCodeBlockNewline(after: substringRange, in: nsString, textStorage: textStorage)
+                    applyCodeBlockBodyLine(lineRange: substringRange, in: nsString, textStorage: textStorage)
                 }
                 index += 1
                 continue
@@ -169,63 +167,20 @@ enum LiveMarkdownStyler {
 
             if trimmed.hasPrefix("```") {
                 let isOpeningFence = !insideCodeBlock
-                textStorage.addAttributes(codeBlockAttributes(role: isOpeningFence ? .open : .close), range: substringRange)
-                if isOpeningFence, let langRange = fenceLanguageRange(line: line, lineRange: substringRange) {
-                    // Hide the ``` markers but surface the language token as a small
-                    // uppercase-style gray label (mockup code-block header, #b3b3b8).
-                    let markersLength = langRange.location - substringRange.location
-                    if markersLength > 0 {
-                        textStorage.addAttributes(hiddenMarkupAttributes(),
-                            range: NSRange(location: substringRange.location, length: markersLength))
-                    }
-                    let langEnd = langRange.location + langRange.length
-                    let tailLength = (substringRange.location + substringRange.length) - langEnd
-                    if tailLength > 0 {
-                        textStorage.addAttributes(hiddenMarkupAttributes(),
-                            range: NSRange(location: langEnd, length: tailLength))
-                    }
-                    textStorage.addAttributes(codeLanguageLabelAttributes(), range: langRange)
-                } else {
-                    // Bare ``` (no language) or the closing fence: hide entirely.
-                    textStorage.addAttributes(hiddenMarkupAttributes(), range: substringRange)
-                }
-                // Mark the newline AFTER the opening fence so its `.mvCodeBlock` run
-                // touches the first body line — keeps the card a single piece even if
-                // the body starts with an empty line. (The closing fence needs no
-                // trailing extension; the card ends there.)
-                if isOpeningFence {
-                    markCodeBlockNewline(after: substringRange, in: nsString, textStorage: textStorage)
-                }
+                applyCodeFenceLine(line: line, lineRange: substringRange, isOpening: isOpeningFence, in: nsString, textStorage: textStorage)
                 insideCodeBlock.toggle()
                 index += 1
                 continue
             }
 
             if insideCodeBlock {
-                textStorage.addAttributes(codeBlockAttributes(), range: substringRange)
-                // Extend the marker over the trailing newline so this body line's
-                // `.mvCodeBlock` run touches the next line's run — empty lines in the
-                // block can't break card contiguity.
-                markCodeBlockNewline(after: substringRange, in: nsString, textStorage: textStorage)
+                applyCodeBlockBodyLine(lineRange: substringRange, in: nsString, textStorage: textStorage)
                 index += 1
                 continue
             }
 
-            if index + 1 < lines.count,
-               looksLikeTableLine(line),
-               isTableSeparatorLine(lines[index + 1].text) {
-                var tableRows: [(text: String, range: NSRange, isHeader: Bool)] = [
-                    (line, substringRange, true)
-                ]
-                let separatorRange = lines[index + 1].range
-                index += 2
-
-                while index < lines.count && looksLikeTableLine(lines[index].text) {
-                    tableRows.append((lines[index].text, lines[index].range, false))
-                    index += 1
-                }
-
-                applyTableBlock(rows: tableRows, separatorRange: separatorRange, to: textStorage)
+            if let nextIndex = applyTableBlockIfPresent(lines: lines, index: index, to: textStorage) {
+                index = nextIndex
                 continue
             }
 
@@ -353,7 +308,7 @@ enum LiveMarkdownStyler {
             || firstMatch(listRegex, in: nsString, exactly: r) != nil
     }
 
-    static func baseAttributes() -> [NSAttributedString.Key: Any] {
+    private static func baseAttributes() -> [NSAttributedString.Key: Any] {
         [
             .font: bodyFont,
             .foregroundColor: DesignTokens.bodyText,

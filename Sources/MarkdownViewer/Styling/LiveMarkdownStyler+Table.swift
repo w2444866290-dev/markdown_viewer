@@ -1,12 +1,41 @@
 import AppKit
 
 extension LiveMarkdownStyler {
-    static func looksLikeTableLine(_ line: String) -> Bool {
+    // Mockup table header `th` (L317): 11px semibold sans, #86868b, letter-spacing 0.4.
+    private static let tableHeaderFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    // Mockup table body `td` (L323): 13.5px (table font-size, L314), body sans.
+    private static let tableBodyFont = NSFont.systemFont(ofSize: 13.5)
+
+    static func isTableBlockStart(lines: [(text: String, range: NSRange)], index: Int) -> Bool {
+        guard index + 1 < lines.count else { return false }
+        return looksLikeTableLine(lines[index].text)
+            && isTableSeparatorLine(lines[index + 1].text)
+    }
+
+    static func applyTableBlockIfPresent(lines: [(text: String, range: NSRange)], index: Int, to textStorage: NSTextStorage) -> Int? {
+        guard isTableBlockStart(lines: lines, index: index) else { return nil }
+
+        var tableRows: [(text: String, range: NSRange, isHeader: Bool)] = [
+            (lines[index].text, lines[index].range, true)
+        ]
+        let separatorRange = lines[index + 1].range
+        var nextIndex = index + 2
+
+        while nextIndex < lines.count && looksLikeTableLine(lines[nextIndex].text) {
+            tableRows.append((lines[nextIndex].text, lines[nextIndex].range, false))
+            nextIndex += 1
+        }
+
+        applyTableBlock(rows: tableRows, separatorRange: separatorRange, to: textStorage)
+        return nextIndex
+    }
+
+    private static func looksLikeTableLine(_ line: String) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         return trimmed.contains("|") && (trimmed.hasPrefix("|") || trimmed.hasSuffix("|"))
     }
 
-    static func isTableSeparatorLine(_ line: String) -> Bool {
+    private static func isTableSeparatorLine(_ line: String) -> Bool {
         let cells = splitTableCells(line)
         guard cells.count >= 2 else { return false }
         return cells.allSatisfy { cell in
@@ -15,7 +44,7 @@ extension LiveMarkdownStyler {
         }
     }
 
-    static func applyTableBlock(rows: [(text: String, range: NSRange, isHeader: Bool)], separatorRange: NSRange, to textStorage: NSTextStorage) {
+    private static func applyTableBlock(rows: [(text: String, range: NSRange, isHeader: Bool)], separatorRange: NSRange, to textStorage: NSTextStorage) {
         let parsedRows = rows.map { row in
             (row: row, cells: parseTableCells(line: row.text, lineRange: row.range))
         }

@@ -65,8 +65,47 @@ extension LiveMarkdownStyler {
     /// Horizontal inset (points) of the code TEXT from the card's left/right
     /// edges. Mirrors `CardLayoutManager.cardPadX` so the painted card hugs the
     /// indented text (mockup `pre` padding 16px, Markdown Viewer.dc.html ~299).
-    static let codeCardPadX: CGFloat = 16
-    enum CodeLineRole { case open, body, close }
+    private static let codeCardPadX: CGFloat = 16
+    private enum CodeLineRole { case open, body, close }
+
+    static func applyCodeFenceLine(line: String, lineRange: NSRange, isOpening: Bool, in nsString: NSString, textStorage: NSTextStorage) {
+        textStorage.addAttributes(codeBlockAttributes(role: isOpening ? .open : .close), range: lineRange)
+        if isOpening, let langRange = fenceLanguageRange(line: line, lineRange: lineRange) {
+            // Hide the ``` markers but surface the language token as a small
+            // uppercase-style gray label (mockup code-block header, #b3b3b8).
+            let markersLength = langRange.location - lineRange.location
+            if markersLength > 0 {
+                textStorage.addAttributes(hiddenMarkupAttributes(),
+                    range: NSRange(location: lineRange.location, length: markersLength))
+            }
+            let langEnd = langRange.location + langRange.length
+            let tailLength = (lineRange.location + lineRange.length) - langEnd
+            if tailLength > 0 {
+                textStorage.addAttributes(hiddenMarkupAttributes(),
+                    range: NSRange(location: langEnd, length: tailLength))
+            }
+            textStorage.addAttributes(codeLanguageLabelAttributes(), range: langRange)
+        } else {
+            // Bare ``` (no language) or the closing fence: hide entirely.
+            textStorage.addAttributes(hiddenMarkupAttributes(), range: lineRange)
+        }
+        // Mark the newline AFTER the opening fence so its `.mvCodeBlock` run
+        // touches the first body line. The closing fence needs no trailing
+        // extension; the card ends there.
+        if isOpening {
+            markCodeBlockNewline(after: lineRange, in: nsString, textStorage: textStorage)
+        }
+    }
+
+    static func applyCodeBlockBodyLine(lineRange: NSRange, in nsString: NSString, textStorage: NSTextStorage) {
+        if lineRange.length > 0 {
+            textStorage.addAttributes(codeBlockAttributes(), range: lineRange)
+        }
+        // Extend the marker over the trailing newline so this body line's
+        // `.mvCodeBlock` run touches the next line's run. Empty lines in the
+        // block cannot break card contiguity.
+        markCodeBlockNewline(after: lineRange, in: nsString, textStorage: textStorage)
+    }
 
     private static func codeParagraphStyle(role: CodeLineRole) -> NSMutableParagraphStyle {
         // Margins zeroed: the blank lines around the fence carry the 22px outer
@@ -93,7 +132,7 @@ extension LiveMarkdownStyler {
     /// unmarked - and a 0-length empty line would leave a gap in the `.mvCodeBlock`
     /// character run, splitting the card. Marking the terminator keeps the run
     /// contiguous from the open fence through the close fence.
-    static func markCodeBlockNewline(after lineRange: NSRange, in nsString: NSString, textStorage: NSTextStorage) {
+    private static func markCodeBlockNewline(after lineRange: NSRange, in nsString: NSString, textStorage: NSTextStorage) {
         let newlineIndex = lineRange.location + lineRange.length
         guard newlineIndex < nsString.length else { return }
         let c = nsString.character(at: newlineIndex)
@@ -107,7 +146,7 @@ extension LiveMarkdownStyler {
     /// Attributes for a code line. `mvCodeBlock` marks the run so
     /// `CardLayoutManager` paints the rounded #FAFAFA card+border behind it; the
     /// flat `.backgroundColor` fill is intentionally gone (the card replaces it).
-    static func codeBlockAttributes(role: CodeLineRole = .body) -> [NSAttributedString.Key: Any] {
+    private static func codeBlockAttributes(role: CodeLineRole = .body) -> [NSAttributedString.Key: Any] {
         [
             .font: codeFont,
             // Fenced `pre` color is #444 (mockup), slightly lighter than body #333336.
@@ -125,7 +164,7 @@ extension LiveMarkdownStyler {
     /// The character range of the language token on an opening fence line (the
     /// text after the leading ```), or nil if the fence has no language. Trailing
     /// whitespace and any info-string remainder after the first word are excluded.
-    static func fenceLanguageRange(line: String, lineRange: NSRange) -> NSRange? {
+    private static func fenceLanguageRange(line: String, lineRange: NSRange) -> NSRange? {
         let ns = line as NSString
         // Locate the opening ``` (it may be indented by leading whitespace).
         let backtickRange = ns.range(of: "```")
@@ -149,7 +188,7 @@ extension LiveMarkdownStyler {
     /// (mockup: font-size 10.5, letter-spacing 0.6, color #b3b3b8, uppercase).
     /// True text-transform is omitted: this is live-editable text, so the
     /// displayed characters must stay byte-identical to what the user typed.
-    static func codeLanguageLabelAttributes() -> [NSAttributedString.Key: Any] {
+    private static func codeLanguageLabelAttributes() -> [NSAttributedString.Key: Any] {
         // No `.backgroundColor`: the CardLayoutManager paints the #FAFAFA card
         // behind this label. Reuse the `.open` paragraph style so the label keeps
         // the card's top spacing + left inset and stays inside the card padding.

@@ -42,9 +42,8 @@ extension LiveMarkdownStyler {
         }
 
         textStorage.beginEditing()
-        textStorage.setAttributes(baseAttributes(), range: scope)
-        applyLineStyles(to: textStorage, scope: scope)
-        applyInlineStyles(to: textStorage, scope: scope)
+        textStorage.setAttributes(typingAttributes(), range: scope)
+        applyScopedStyles(to: textStorage, scope: scope)
         textStorage.endEditing()
         return true
     }

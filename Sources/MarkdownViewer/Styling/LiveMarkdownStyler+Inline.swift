@@ -3,6 +3,7 @@ import AppKit
 extension LiveMarkdownStyler {
     // Inline `code` runs are 13px (mockup); the fenced code BLOCK stays 12.5.
     private static let inlineCodeFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    private static let linkURLFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
     private static let mutedColor = DesignTokens.secondaryText
 
     private static let strongStarRegex = try! NSRegularExpression(pattern: "\\*\\*([^\\n*]+)\\*\\*")
@@ -116,7 +117,7 @@ extension LiveMarkdownStyler {
             let urlRange = match.range(at: 2)
             textStorage.addAttributes([
                 .foregroundColor: mutedColor,
-                .font: markerFont,
+                .font: linkURLFont,
                 // The link address (URL) is not body reading text - exclude from find.
                 .mvNonBody: true
             ], range: urlRange)
