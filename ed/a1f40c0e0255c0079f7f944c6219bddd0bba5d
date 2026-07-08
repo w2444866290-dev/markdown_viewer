@@ -1,0 +1,23 @@
+Sources/MarkdownViewer/Styling/LiveMarkdownStyler+Table.swift
+  s_357d54b62aa35c::t_42b386a8c6670a 1-263
+Sources/MarkdownViewer/Styling/LiveMarkdownStyler.swift
+  s_357d54b62aa35c::t_c166fbcea4eda1 13,15,829
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "eda1f40c0e0255c0079f7f944c6219bddd0bba5d",
+  "prompts": {},
+  "sessions": {
+    "s_357d54b62aa35c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3f51-6784-7d51-b88b-b0411a4284b5",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
