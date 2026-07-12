@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,337 +8,1057 @@
 <body>
 <x-dc>
 <helmet>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
   <style>
-    html, body { height: 100%; }
-    body { margin: 0; background: #F2F2F4; -webkit-font-smoothing: antialiased; }
-    @keyframes dsLayer { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes dsLand { 0% { background: rgba(232,163,61,0); } 28% { background: rgba(232,163,61,0.16); } 100% { background: rgba(232,163,61,0); } }
+    :root {
+      --ds-page: #F2F2F4;
+      --ds-paper: #FFFFFF;
+      --ds-sidebar: #F7F7F8;
+      --ds-code: #F6F6F9;
+      --ds-text-strong: #1d1d1f;
+      --ds-text: #333336;
+      --ds-text-muted: #6e6e73;
+      --ds-text-soft: #86868b;
+      --ds-text-faint: #aeaeb2;
+      --ds-text-disabled: #c7c7cc;
+      --ds-line: #F0F0F1;
+      --ds-line-strong: #E9E9EF;
+      --ds-hover: rgba(0,0,0,0.05);
+      --ds-pressed: rgba(0,0,0,0.08);
+      --ds-selected: rgba(0,0,0,0.06);
+      --ds-accent: #E8A33D;
+      --ds-accent-soft: rgba(232,163,61,0.12);
+      --ds-accent-wash: rgba(232,163,61,0.22);
+      --ds-accent-current: rgba(232,163,61,0.55);
+      --ds-system-blue: #007AFF;
+      --ds-link: #2A6FDB;
+      --ds-danger: #C7482E;
+      --ds-danger-bg: rgba(199,72,46,0.10);
+      --ds-shadow-pop: 0 8px 28px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.05);
+      --ds-shadow-modal: 0 24px 60px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.05);
+      --ds-shadow-toast: 0 8px 28px rgba(0,0,0,0.22);
+      --ds-font-ui: -apple-system, "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --ds-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      --ds-content-width: 640px;
+      --ds-sidebar-width: 216px;
+      --ds-sidebar-min: 176px;
+      --ds-sidebar-max: 440px;
+      --ds-r-1: 4px;
+      --ds-r-2: 6px;
+      --ds-r-3: 8px;
+      --ds-r-4: 10px;
+      --ds-r-5: 14px;
+      --ds-r-pill: 999px;
+      --ds-max: 1180px;
+    }
+    html,
+    body {
+      min-height: 100%;
+    }
+    body {
+      margin: 0;
+      background: var(--ds-page);
+      color: var(--ds-text-strong);
+      font-family: var(--ds-font-ui);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    .ds-root {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(232,163,61,0.10), transparent 26%),
+        linear-gradient(180deg, #F7F7F9 0%, var(--ds-page) 42%, #ECECEE 100%);
+      color: var(--ds-text-strong);
+    }
+    .ds-wrap {
+      max-width: var(--ds-max);
+      margin: 0 auto;
+      padding: 72px 28px 120px;
+    }
+    .eyebrow {
+      color: var(--ds-text-faint);
+      font-family: var(--ds-font-mono);
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+      gap: 34px;
+      align-items: end;
+      padding-bottom: 44px;
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+    }
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+    h1 {
+      margin-top: 16px;
+      max-width: 780px;
+      font-size: clamp(42px, 6vw, 74px);
+      line-height: 0.96;
+      letter-spacing: -0.035em;
+      font-weight: 680;
+      text-wrap: balance;
+    }
+    .hero-copy {
+      margin-top: 22px;
+      max-width: 700px;
+      color: var(--ds-text-muted);
+      font-size: 16.5px;
+      line-height: 1.72;
+      text-wrap: pretty;
+    }
+    .hero-panel {
+      background: rgba(255,255,255,0.82);
+      border: 1px solid rgba(0,0,0,0.06);
+      border-radius: var(--ds-r-5);
+      box-shadow: 0 14px 40px rgba(0,0,0,0.07);
+      padding: 22px;
+      backdrop-filter: blur(14px);
+    }
+    .authority-row {
+      display: grid;
+      gap: 12px;
+    }
+    .authority-item {
+      display: grid;
+      grid-template-columns: 12px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      color: var(--ds-text-muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      margin-top: 6px;
+      border-radius: 50%;
+      background: var(--ds-accent);
+      box-shadow: 0 0 0 4px var(--ds-accent-soft);
+    }
+    .dot.neutral {
+      background: #B9B9BE;
+      box-shadow: 0 0 0 4px rgba(0,0,0,0.04);
+    }
+    .section {
+      margin-top: 58px;
+    }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(240px, 0.75fr) minmax(0, 1.25fr);
+      gap: 28px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+    h2 {
+      margin-top: 6px;
+      font-size: 25px;
+      line-height: 1.18;
+      letter-spacing: -0.02em;
+      font-weight: 650;
+    }
+    .section-desc {
+      color: var(--ds-text-muted);
+      font-size: 14px;
+      line-height: 1.72;
+      text-wrap: pretty;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .panel {
+      background: var(--ds-paper);
+      border: 1px solid rgba(0,0,0,0.055);
+      border-radius: var(--ds-r-5);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.035);
+      padding: 22px;
+    }
+    .panel.tight {
+      padding: 18px;
+    }
+    .panel-title {
+      color: var(--ds-text-strong);
+      font-size: 14px;
+      font-weight: 650;
+      letter-spacing: -0.01em;
+    }
+    .panel-kicker {
+      color: var(--ds-text-faint);
+      font-family: var(--ds-font-mono);
+      font-size: 10.5px;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      margin-bottom: 9px;
+    }
+    .note {
+      margin-top: 10px;
+      color: var(--ds-text-muted);
+      font-size: 12.5px;
+      line-height: 1.65;
+      text-wrap: pretty;
+    }
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 24px;
+    }
+    .metric {
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(0,0,0,0.055);
+      border-radius: var(--ds-r-4);
+      padding: 14px 16px;
+    }
+    .metric strong {
+      display: block;
+      color: var(--ds-text-strong);
+      font-family: var(--ds-font-mono);
+      font-size: 22px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric span {
+      display: block;
+      margin-top: 8px;
+      color: var(--ds-text-muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .swatch-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .swatch {
+      min-height: 106px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-radius: var(--ds-r-4);
+      padding: 10px;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+    }
+    .swatch.light {
+      color: var(--ds-text-strong);
+    }
+    .swatch.dark {
+      color: #fff;
+    }
+    .swatch-name {
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .code {
+      font-family: var(--ds-font-mono);
+      font-size: 11px;
+      line-height: 1.5;
+      font-variant-numeric: tabular-nums;
+      word-break: break-word;
+    }
+    .token-table,
+    .matrix-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    .token-table th,
+    .token-table td,
+    .matrix-table th,
+    .matrix-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--ds-line);
+      text-align: left;
+      vertical-align: top;
+    }
+    .token-table th,
+    .matrix-table th {
+      background: var(--ds-code);
+      color: var(--ds-text-strong);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .token-table tr:last-child td,
+    .matrix-table tr:last-child td {
+      border-bottom: 0;
+    }
+    .token-table code,
+    .matrix-table code,
+    .inline-code {
+      font-family: var(--ds-font-mono);
+      font-size: 11.5px;
+      color: var(--ds-text-strong);
+      background: var(--ds-code);
+      border: 1px solid var(--ds-line-strong);
+      border-radius: var(--ds-r-1);
+      padding: 1px 5px;
+    }
+    .component-card {
+      min-height: 216px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .component-demo {
+      min-height: 82px;
+      border-radius: var(--ds-r-3);
+      background: var(--ds-sidebar);
+      border: 1px solid rgba(0,0,0,0.05);
+      padding: 10px;
+      overflow: hidden;
+    }
+    .component-meta {
+      display: grid;
+      gap: 6px;
+      color: var(--ds-text-muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 10px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 9px;
+      border-radius: var(--ds-r-pill);
+      background: var(--ds-code);
+      border: 1px solid var(--ds-line-strong);
+      color: var(--ds-text-muted);
+      font-size: 11.5px;
+      white-space: nowrap;
+    }
+    .pill.accent {
+      background: var(--ds-accent-soft);
+      border-color: rgba(232,163,61,0.28);
+      color: #7A4C08;
+    }
+    .mini-shell {
+      height: 118px;
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr);
+      border-radius: var(--ds-r-3);
+      overflow: hidden;
+      background: var(--ds-paper);
+      border: 1px solid var(--ds-line-strong);
+    }
+    .mini-sidebar {
+      background: var(--ds-sidebar);
+      padding: 12px 8px;
+    }
+    .mini-line {
+      height: 7px;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      background: #D9D9DE;
+    }
+    .mini-line.current {
+      background: var(--ds-selected);
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 5px;
+    }
+    .mini-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ds-accent);
+    }
+    .mini-paper {
+      background: #fff;
+      padding: 18px 20px;
+    }
+    .mini-paper .mini-line {
+      background: #E7E7EA;
+      height: 8px;
+    }
+    .button-demo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-top: 14px;
+    }
+    .icon-btn,
+    .text-btn,
+    .toggle-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--ds-r-2);
+      background: var(--ds-hover);
+      color: var(--ds-text-muted);
+      font-size: 12px;
+    }
+    .icon-btn {
+      width: 28px;
+      height: 26px;
+    }
+    .text-btn {
+      height: 28px;
+      padding: 0 12px;
+      color: var(--ds-text-strong);
+    }
+    .toggle-chip {
+      width: 22px;
+      height: 22px;
+      font-family: var(--ds-font-mono);
+      font-weight: 650;
+    }
+    .find-demo {
+      display: grid;
+      gap: 6px;
+      border-radius: var(--ds-r-4);
+      background: rgba(255,255,255,0.97);
+      box-shadow: var(--ds-shadow-pop);
+      padding: 6px;
+    }
+    .find-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .field {
+      height: 28px;
+      flex: 1;
+      min-width: 0;
+      border-radius: var(--ds-r-2);
+      background: rgba(0,0,0,0.045);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 9px;
+      color: var(--ds-text-faint);
+      font-size: 12px;
+    }
+    .palette-demo {
+      overflow: hidden;
+      border-radius: var(--ds-r-5);
+      background: #fff;
+      box-shadow: var(--ds-shadow-modal);
+    }
+    .palette-input {
+      height: 42px;
+      border-bottom: 1px solid var(--ds-line);
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      color: var(--ds-text-faint);
+      font-size: 13px;
+    }
+    .palette-row {
+      height: 32px;
+      margin: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-radius: var(--ds-r-2);
+      padding: 0 10px;
+      color: var(--ds-text);
+      font-size: 12.5px;
+    }
+    .palette-row.selected {
+      background: var(--ds-hover);
+    }
+    .rail-demo {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      min-height: 88px;
+    }
+    .ticks {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .tick {
+      height: 2px;
+      border-radius: 2px;
+      background: #CACACE;
+    }
+    .tick.active {
+      background: var(--ds-accent);
+    }
+    .edit-rail-demo {
+      margin-left: -14px;
+      padding: 1px 0 1px 14px;
+      border-radius: 2px;
+      box-shadow: inset 3px 0 0 var(--ds-accent);
+      color: var(--ds-text);
+    }
+    .edit-rail-demo .source-line {
+      font-size: 16.5px;
+      line-height: 1.72;
+      color: #333336;
+    }
+    .edit-rail-demo.code-like {
+      padding: 0 0 0 14px;
+      background: transparent;
+      box-shadow: inset 3px 0 0 var(--ds-accent);
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 12.5px;
+      line-height: 1.7;
+      color: #444;
+    }
+    .edit-rail-demo.code-like .code-surface {
+      padding: 12px 14px;
+      border-radius: 6px;
+      background: var(--ds-code);
+      box-shadow: inset 0 0 0 1px var(--ds-line-strong);
+    }
+    .toast-demo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 82px;
+    }
+    .toast {
+      display: inline-flex;
+      align-items: center;
+      height: 30px;
+      padding: 0 14px;
+      border-radius: var(--ds-r-pill);
+      background: rgba(28,28,30,0.90);
+      color: #fff;
+      box-shadow: var(--ds-shadow-toast);
+      font-size: 12px;
+    }
+    .outline-rule {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .rule {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1fr);
+      gap: 12px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--ds-line);
+      font-size: 12.5px;
+      line-height: 1.58;
+    }
+    .rule:last-child {
+      border-bottom: 0;
+    }
+    .rule strong {
+      color: var(--ds-text-strong);
+      font-size: 12.5px;
+    }
+    .rule span {
+      color: var(--ds-text-muted);
+    }
+    .roadmap {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .stage {
+      position: relative;
+      min-height: 180px;
+      border-radius: var(--ds-r-5);
+      background: var(--ds-paper);
+      border: 1px solid rgba(0,0,0,0.055);
+      padding: 18px;
+    }
+    .stage-num {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--ds-text-strong);
+      color: #fff;
+      font-family: var(--ds-font-mono);
+      font-size: 12px;
+      margin-bottom: 18px;
+    }
+    .stage p {
+      margin-top: 8px;
+      color: var(--ds-text-muted);
+      font-size: 12.5px;
+      line-height: 1.65;
+    }
+    .footer {
+      margin-top: 58px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(0,0,0,0.07);
+      color: var(--ds-text-faint);
+      font-size: 12px;
+      line-height: 1.65;
+    }
+    @media (max-width: 940px) {
+      .hero,
+      .section-head,
+      .grid-2,
+      .grid-3,
+      .roadmap {
+        grid-template-columns: 1fr;
+      }
+      .grid-4,
+      .metric-row,
+      .swatch-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 560px) {
+      .ds-wrap {
+        padding: 42px 16px 90px;
+      }
+      h1 {
+        font-size: 40px;
+      }
+      .grid-4,
+      .metric-row,
+      .swatch-grid {
+        grid-template-columns: 1fr;
+      }
+      .rule {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+    }
   </style>
 </helmet>
-
-<div data-screen-label="Design System" style="min-height: 100vh; background: #F2F2F4; font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif; color: #1d1d1f;">
-  <div style="max-width: 1040px; margin: 0 auto; padding: 72px 28px 120px;">
-
-    <!-- ===== Masthead ===== -->
-    <div style="margin-bottom: 56px;">
-      <div style="font-size: 11px; letter-spacing: 2px; color: #aeaeb2; margin-bottom: 16px;">DESIGN SYSTEM · v1.1</div>
-      <h1 style="margin: 0 0 14px; font-size: 38px; font-weight: 600; letter-spacing: -0.6px; color: #111;">Markdown Viewer</h1>
-      <p style="margin: 0 0 28px; font-size: 16px; line-height: 1.7; color: #6e6e73; max-width: 640px; text-wrap: pretty;">一套为「安静的 macOS 本地阅读器」服务的设计语言。它的全部决策都服务于一句话 —— 读起来像一页纸，而不是一个应用。新功能请先在这里取材，再落到代码。</p>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <div style="display: inline-flex; align-items: center; gap: 8px; background: #fff; border-radius: 99px; padding: 7px 14px; font-size: 12.5px; color: #3f3f46; box-shadow: 0 0 0 1px rgba(0,0,0,0.05);"><span style="width: 8px; height: 8px; border-radius: 50%; background: #E8A33D;"></span>单一强调色</div>
-        <div style="display: inline-flex; align-items: center; gap: 8px; background: #fff; border-radius: 99px; padding: 7px 14px; font-size: 12.5px; color: #3f3f46; box-shadow: 0 0 0 1px rgba(0,0,0,0.05);">默认安静 · 按需展开</div>
-        <div style="display: inline-flex; align-items: center; gap: 8px; background: #fff; border-radius: 99px; padding: 7px 14px; font-size: 12.5px; color: #3f3f46; box-shadow: 0 0 0 1px rgba(0,0,0,0.05);">鼠标 + 键盘双路径</div>
-      </div>
-    </div>
-
-    <!-- ===== 01 原则 ===== -->
-    <div style="margin-bottom: 56px;">
-      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">01 — PRINCIPLES</div>
-      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">设计原则</h2>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
-        <div style="background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px;">像一页纸</div>
-          <p style="margin: 0; font-size: 13.5px; line-height: 1.7; color: #6e6e73; text-wrap: pretty;">内容区是一张纸：540px 单栏、行高 1.7、无边框无卡片。容器噪音越少越好。</p>
-        </div>
-        <div style="background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px;">默认安静，按需展开</div>
-          <p style="margin: 0; font-size: 13.5px; line-height: 1.7; color: #6e6e73; text-wrap: pretty;">复杂度藏在交互后面 —— 目录是几根短横、查找/命令面板按需唤起。首屏只留必要之物。</p>
-        </div>
-        <div style="background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px;">双路径可达</div>
-          <p style="margin: 0; font-size: 13.5px; line-height: 1.7; color: #6e6e73; text-wrap: pretty;">每个功能都有键盘快捷键 + 鼠标可发现入口。界面上看不见的，⌘K 里全找得到；⌘K 永远看得见。</p>
-        </div>
-        <div style="background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px;">强调色克制</div>
-          <p style="margin: 0; font-size: 13.5px; line-height: 1.7; color: #6e6e73; text-wrap: pretty;">琥珀 <span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px;">#E8A33D</span> 只承担三件事：未保存点、查找命中、当前目录项。其余一律中性灰。</p>
+<main class="ds-root" data-screen-label="Design System" data-od-id="design-system-root">
+  <div class="ds-wrap" data-od-id="design-system-wrap">
+    <header class="hero" data-od-id="hero">
+      <div data-od-id="hero-copy">
+        <div class="eyebrow">Markdown Viewer Design System · v2.0</div>
+        <h1 data-od-id="hero-title">设计系统维护语言，终稿承载实现</h1>
+        <p class="hero-copy" data-od-id="hero-description">这份设计系统维护 Markdown Viewer 的视觉语言、token、组件状态、扩展规则和反模式边界。开发实现与逐元素验收只以 <span class="inline-code">Markdown Viewer.dc.html</span> 为准。</p>
+        <div class="metric-row" data-od-id="system-metrics">
+          <div class="metric"><strong>01</strong><span>DS 供设计维护</span></div>
+          <div class="metric"><strong>06</strong><span>核心 token 层</span></div>
+          <div class="metric"><strong>10</strong><span>真实组件族</span></div>
+          <div class="metric"><strong>09</strong><span>状态矩阵基线</span></div>
         </div>
       </div>
-    </div>
-
-    <!-- ===== 02 色彩 ===== -->
-    <div style="margin-bottom: 56px;">
-      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">02 — COLOR</div>
-      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">色彩</h2>
-
-      <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04); margin-bottom: 14px;">
-        <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">表面 SURFACES</div>
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;">
-          <div><div style="height: 64px; border-radius: 10px; background: #FFFFFF; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">纸面 / 内容</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#FFFFFF</div></div>
-          <div><div style="height: 64px; border-radius: 10px; background: #F7F7F8; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">侧栏</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#F7F7F8</div></div>
-          <div><div style="height: 64px; border-radius: 10px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">应用底</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#F2F2F4</div></div>
-          <div><div style="height: 64px; border-radius: 10px; background: #FAFAFA; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">代码块</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#FAFAFA</div></div>
+      <aside class="hero-panel" data-od-id="authority-panel">
+        <div class="panel-kicker">Authority boundary</div>
+        <div class="authority-row">
+          <div class="authority-item"><span class="dot"></span><span><strong>设计系统服务设计维护。</strong>它维护 token、组件状态、扩展规则和反模式边界，不作为开发实现或验收依据。</span></div>
+          <div class="authority-item"><span class="dot neutral"></span><span><strong>终稿负责落到实现。</strong>开发逐元素实现只看终稿里的布局、行为和精确样式。</span></div>
+          <div class="authority-item"><span class="dot neutral"></span><span><strong>新增能力先补状态。</strong>AI 阅读、个人 wiki、长任务和引用来源先进入扩展规则，再进入具体界面。</span></div>
         </div>
+      </aside>
+    </header>
+    <section class="section" data-od-id="source-boundary-section">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">01 · Source boundary</div>
+          <h2 data-od-id="source-boundary-title">文件职责</h2>
+        </div>
+        <p class="section-desc">先把权威关系写清楚，避免开发和设计使用不同依据。设计系统定义设计维护边界，终稿定义当前屏幕的实现细节；两者冲突时先做设计裁决，再进入开发。</p>
       </div>
-
-      <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; margin-bottom: 14px;">
-        <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">文字阶梯 TEXT</div>
-          <div style="display: flex; flex-direction: column; gap: 12px;">
-            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #1d1d1f; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #1d1d1f;">主文字 / 标题</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#1d1d1f</span></div>
-            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #333336; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #333336;">正文</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#333336</span></div>
-            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #6e6e73; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #6e6e73;">次要 / 引用</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#6e6e73</span></div>
-            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #86868b; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #86868b;">三级</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#86868b</span></div>
-            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #aeaeb2; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #aeaeb2;">标签 / 占位符</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#aeaeb2</span></div>
-            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #c7c7cc; flex: none;"></span><span style="flex: 1; font-size: 13.5px; color: #c7c7cc;">极淡 / 禁用</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#c7c7cc</span></div>
+      <div class="grid-3">
+        <article class="panel" data-od-id="source-final-draft">
+          <div class="panel-kicker">直接实现依据</div>
+          <h3 class="panel-title">Markdown Viewer.dc.html</h3>
+          <p class="note">完整产品屏幕，包含真实布局、运行状态、交互逻辑和精确内联样式。开发实现、逐元素核验和 QA 验收只以它为准。</p>
+          <div class="pill-row">
+            <span class="pill accent">实现依据</span>
+            <span class="pill">逐元素对稿</span>
+            <span class="pill">行为状态</span>
           </div>
-        </div>
-        <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">系统色 SYSTEM</div>
-          <div style="display: flex; flex-direction: column; gap: 12px;">
-            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #007AFF; flex: none;"></span><span style="flex: 1; font-size: 13.5px;">系统蓝（访达选中）</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#007AFF</span></div>
-            <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 18px; height: 18px; border-radius: 5px; background: #2A6FDB; flex: none;"></span><span style="flex: 1; font-size: 13.5px;">链接</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#2A6FDB</span></div>
-            <div style="display: flex; align-items: center; gap: 12px;"><span style="display: flex; gap: 5px; flex: none;"><span style="width: 13px; height: 13px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span><span style="width: 13px; height: 13px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span><span style="width: 13px; height: 13px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span></span><span style="flex: 1; font-size: 13.5px; color: #6e6e73;">红绿灯 仅窗口控制</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2;">FF5F57·FEBC2E·28C840</span></div>
+        </article>
+        <article class="panel" data-od-id="source-design-system">
+          <div class="panel-kicker">设计维护文件</div>
+          <h3 class="panel-title">Design System.dc.html</h3>
+          <p class="note">维护视觉语言、token、组件状态、扩展规则和禁用边界。它供设计师维护方向和抽象规则，不作为开发验收入口。</p>
+          <div class="pill-row">
+            <span class="pill accent">抽象规则</span>
+            <span class="pill">未来扩展</span>
+            <span class="pill">设计评审</span>
           </div>
-          <p style="margin: 16px 0 0; font-size: 12px; line-height: 1.6; color: #aeaeb2; text-wrap: pretty;">系统蓝不参与品牌叙事，仅借用于「访达」等系统语境。</p>
+        </article>
+        <article class="panel" data-od-id="source-checklist">
+          <div class="panel-kicker">验收辅助</div>
+          <h3 class="panel-title">实现核验清单.md</h3>
+          <p class="note">开发和 QA 的核验清单。若清单、终稿和设计系统出现冲突，先由设计侧裁决，再把需要开发执行的结论同步到终稿或清单。</p>
+          <div class="pill-row">
+            <span class="pill">QA</span>
+            <span class="pill">冲突定位</span>
+            <span class="pill">验收步骤</span>
+          </div>
+        </article>
+      </div>
+    </section>
+    <section class="section" data-od-id="principles-section">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">02 · Product principles</div>
+          <h2 data-od-id="principles-title">设计原则</h2>
+        </div>
+        <p class="section-desc">原则保留旧版里成立的方向，但补上实现边界：所有原则都必须能转译为组件状态，而不是停留在审美口号。</p>
+      </div>
+      <div class="grid-4">
+        <article class="panel tight" data-od-id="principle-paper">
+          <div class="panel-title">像一页纸</div>
+          <p class="note">内容区保持 640px 单栏、16.5px、1.72 行高。阅读时减少容器感，编辑时只让当前块暴露语法。</p>
+        </article>
+        <article class="panel tight" data-od-id="principle-quiet">
+          <div class="panel-title">默认安静，按需展开</div>
+          <p class="note">复杂能力藏在悬浮层、命令面板和局部编辑态里。首屏不堆工具条，不抢正文注意力。</p>
+        </article>
+        <article class="panel tight" data-od-id="principle-dual-path">
+          <div class="panel-title">鼠标 + 键盘双路径</div>
+          <p class="note">所有高频功能必须同时有可发现入口和快捷键路径。看不见的入口必须能在命令面板里找到。</p>
+        </article>
+        <article class="panel tight" data-od-id="principle-accent">
+          <div class="panel-title">琥珀只作定位信号</div>
+          <p class="note">琥珀不做品牌装饰，只用于未保存、当前项、编辑焦点、落点 wash、查找命中等终稿明示状态。</p>
+        </article>
+      </div>
+    </section>
+    <section class="section" data-od-id="tokens-section">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">03 · Token layer</div>
+          <h2 data-od-id="tokens-title">Token 层</h2>
+        </div>
+        <p class="section-desc">从终稿数值抽象出命名 token。token 名描述用途，值只描述当前实现。调整视觉时先改 token，再判断是否需要回到终稿改稿。</p>
+      </div>
+      <div class="panel" data-od-id="color-tokens-panel">
+        <div class="panel-kicker">Color tokens</div>
+        <div class="swatch-grid">
+          <div class="swatch light" style="background:#FFFFFF"><div class="swatch-name">纸面</div><div class="code">--ds-paper<br>#FFFFFF</div></div>
+          <div class="swatch light" style="background:#F7F7F8"><div class="swatch-name">侧栏</div><div class="code">--ds-sidebar<br>#F7F7F8</div></div>
+          <div class="swatch light" style="background:#F6F6F9"><div class="swatch-name">代码块</div><div class="code">--ds-code<br>#F6F6F9</div></div>
+          <div class="swatch dark" style="background:#1d1d1f"><div class="swatch-name">强文本</div><div class="code">--ds-text-strong<br>#1d1d1f</div></div>
+          <div class="swatch light" style="background:#E8A33D"><div class="swatch-name">琥珀</div><div class="code">--ds-accent<br>#E8A33D</div></div>
+          <div class="swatch dark" style="background:#2A6FDB"><div class="swatch-name">链接</div><div class="code">--ds-link<br>#2A6FDB</div></div>
         </div>
       </div>
-
-      <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04); margin-bottom: 14px;">
-        <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px;">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2;">强调色 ACCENT — 仅此一色</div>
-          <div style="font-size: 11.5px; color: #c0392b;">不得他用</div>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
-          <div><div style="height: 56px; border-radius: 10px; background: #E8A33D;"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">琥珀 实色</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">#E8A33D · 未保存点 / 当前目录项</div></div>
-          <div><div style="height: 56px; border-radius: 10px; background: rgba(232,163,61,0.55);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">当前命中</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">rgba(…,0.55)</div></div>
-          <div><div style="height: 56px; border-radius: 10px; background: rgba(232,163,61,0.22);"></div><div style="margin-top: 8px; font-size: 12.5px; font-weight: 500;">其余命中</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">rgba(…,0.22)</div></div>
-        </div>
+      <div class="grid-2" style="margin-top:14px">
+        <article class="panel" data-od-id="semantic-token-table">
+          <div class="panel-kicker">Semantic mapping</div>
+          <table class="token-table">
+            <thead><tr><th>Token</th><th>用途</th><th>边界</th></tr></thead>
+            <tbody>
+              <tr><td><code>--ds-accent</code></td><td>未保存点、当前大纲、编辑焦点、任务完成、脚注编号。</td><td>禁止扩展成大面积品牌底色。</td></tr>
+              <tr><td><code>--ds-system-blue</code></td><td>focus ring、系统打开、侧栏拖拽线。</td><td>只借用系统语境，不参与品牌叙事。</td></tr>
+              <tr><td><code>--ds-hover</code></td><td>图标按钮、行、标签、查找控件 hover。</td><td>侧栏行 hover 即时出现，不做长过渡。</td></tr>
+              <tr><td><code>--ds-danger</code></td><td>确认关闭、删除行列等破坏性短确认。</td><td>不用于普通错误提示文案。</td></tr>
+            </tbody>
+          </table>
+        </article>
+        <article class="panel" data-od-id="type-space-token-table">
+          <div class="panel-kicker">Type / space / radius</div>
+          <table class="token-table">
+            <thead><tr><th>层级</th><th>终稿值</th><th>规则</th></tr></thead>
+            <tbody>
+              <tr><td>正文纸面</td><td><code>16.5 / 1.72 / 640</code></td><td>阅读默认，不随工具栏变化。</td></tr>
+              <tr><td>界面文字</td><td><code>12.5 - 13</code></td><td>侧栏、标签、按钮与面板主体。</td></tr>
+              <tr><td>微标签</td><td><code>10.5 - 11</code></td><td>分组标题、快捷键、代码语言。</td></tr>
+              <tr><td>圆角</td><td><code>4 / 6 / 8 / 10 / 14</code></td><td>从微标记到弹窗逐级递增。</td></tr>
+            </tbody>
+          </table>
+        </article>
       </div>
-
-      <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-        <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">交互态 · 描边 STATES &amp; LINES</div>
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;">
-          <div><div style="height: 48px; border-radius: 9px; background: rgba(0,0,0,0.05);"></div><div style="margin-top: 8px; font-size: 12px;">悬停底</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2;">rgba(0,0,0,.05)</div></div>
-          <div><div style="height: 48px; border-radius: 9px; background: rgba(0,0,0,0.08);"></div><div style="margin-top: 8px; font-size: 12px;">按下底</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2;">rgba(0,0,0,.08)</div></div>
-          <div><div style="height: 48px; border-radius: 9px; background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);"></div><div style="margin-top: 8px; font-size: 12px;">发丝描边</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2;">rgba(0,0,0,.06)</div></div>
-          <div><div style="height: 48px; border-radius: 9px; background: #fff; box-shadow: inset 0 0 0 1px #F0F0F1;"></div><div style="margin-top: 8px; font-size: 12px;">分隔线</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2;">#F0F0F1</div></div>
-        </div>
+      <div class="grid-3" style="margin-top:14px">
+        <article class="panel tight" data-od-id="elevation-tokens">
+          <div class="panel-kicker">Elevation</div>
+          <div class="outline-rule">
+            <div class="rule"><strong>浅浮层</strong><span><code>0 8px 28px rgba(0,0,0,.14)</code> 用于查找、拖入提示、轻工具层。</span></div>
+            <div class="rule"><strong>强弹窗</strong><span><code>0 24px 60px rgba(0,0,0,.22)</code> 用于命令面板和系统访达模拟。</span></div>
+            <div class="rule"><strong>深色提示</strong><span>toast、tooltip、脚注悬停预览使用 90% 左右深色半透明。</span></div>
+          </div>
+        </article>
+        <article class="panel tight" data-od-id="motion-tokens">
+          <div class="panel-kicker">Motion</div>
+          <div class="outline-rule">
+            <div class="rule"><strong>浮层入场</strong><span>120ms fade + 4px slide，短促不抢正文。</span></div>
+            <div class="rule"><strong>落点 wash</strong><span>900ms 琥珀 wash，用于目录跳转和查找定位。</span></div>
+            <div class="rule"><strong>reduced motion</strong><span>尊重系统设置，退化为瞬切。</span></div>
+          </div>
+        </article>
+        <article class="panel tight" data-od-id="density-tokens">
+          <div class="panel-kicker">Density</div>
+          <div class="outline-rule">
+            <div class="rule"><strong>侧栏</strong><span>默认 216px，范围 176 - 440px，行高 28px。</span></div>
+            <div class="rule"><strong>标签</strong><span>高度 28px，圆角 6px，未保存点与关闭按钮同位。</span></div>
+            <div class="rule"><strong>命令面板</strong><span>宽 460px，顶部距窗 96px，行高 36px。</span></div>
+          </div>
+        </article>
       </div>
-    </div>
-
-    <!-- ===== 03 字体 ===== -->
-    <div style="margin-bottom: 56px;">
-      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">03 — TYPOGRAPHY</div>
-      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">字体</h2>
-      <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04); margin-bottom: 14px;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-          <div><div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 8px;">界面 / 正文</div><div style="font-size: 15px; color: #1d1d1f;">系统无衬线</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; margin-top: 4px;">-apple-system, 'PingFang SC', 'Helvetica Neue'</div></div>
-          <div><div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 8px;">代码 / 数字</div><div style="font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 15px; color: #1d1d1f;">等宽 · tabular-nums</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; margin-top: 4px;">ui-monospace, 'SF Mono', Menlo</div></div>
+    </section>
+    <section class="section" data-od-id="components-section">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">04 · Component system</div>
+          <h2 data-od-id="components-title">组件系统</h2>
         </div>
+        <p class="section-desc">组件不再只展示一个静态样子，而是标明用途、关键结构和必备状态。终稿里已存在的复杂交互全部进入组件族。</p>
       </div>
-      <div style="background: #fff; border-radius: 14px; padding: 12px 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-        <div style="display: flex; align-items: baseline; gap: 20px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.2px; color: #111; flex: 1;">标题 H1 Dependencies</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; white-space: nowrap;">26 / 600 / -0.2</div></div>
-        <div style="display: flex; align-items: baseline; gap: 20px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.3px; color: #111; flex: 1;">小节 H2 — 英文 UPPERCASE</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; white-space: nowrap;">18 / 600 / +0.3</div></div>
-        <div style="display: flex; align-items: baseline; gap: 20px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="margin: 0; font-size: 15.5px; line-height: 1.7; color: #333336; flex: 1;">正文 Body — 行高 1.7，读起来像一页纸。</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; white-space: nowrap;">15.5 / 1.7 / 540px</div></div>
-        <div style="display: flex; align-items: baseline; gap: 20px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="margin: 0; font-size: 13px; color: #3f3f46; flex: 1;">界面文字 UI — 侧栏、标签、菜单</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; white-space: nowrap;">13 / 400</div></div>
-        <div style="display: flex; align-items: baseline; gap: 20px; padding: 16px 0;"><div style="margin: 0; font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; flex: 1;">标签 LABEL — 全大写字距</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2; white-space: nowrap;">11 / +1.5</div></div>
-      </div>
-      <p style="margin: 14px 2px 0; font-size: 12.5px; line-height: 1.6; color: #86868b; text-wrap: pretty;">H2 的全大写 + 字距只对纯英文标题生效；中文标题不加字距，避免拉伸变形。所有数字（计数、进度、字数）使用 <span style="font-family: ui-monospace, Menlo, monospace;">tabular-nums</span> 防抖。</p>
-    </div>
-
-    <!-- ===== 04 间距 · 圆角 · 投影 ===== -->
-    <div style="margin-bottom: 56px;">
-      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">04 — SPACE · RADIUS · ELEVATION</div>
-      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">间距 · 圆角 · 投影</h2>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
-        <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 18px;">圆角 RADIUS</div>
-          <div style="display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">
-            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 4px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">4 chip</div></div>
-            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 6px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">6 控件</div></div>
-            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 8px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">8 行/标签</div></div>
-            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 10px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">10 浮层</div></div>
-            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 14px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">14 弹窗</div></div>
-            <div style="text-align: center;"><div style="width: 44px; height: 44px; background: #F2F2F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); border-radius: 99px;"></div><div style="margin-top: 6px; font-size: 11px; color: #86868b;">99 pill</div></div>
+      <div class="grid-3">
+        <article class="panel component-card" data-od-id="component-app-shell">
+          <div>
+            <div class="panel-kicker">App shell</div>
+            <h3 class="panel-title">应用壳</h3>
           </div>
-        </div>
-        <div style="background: #fff; border-radius: 14px; padding: 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 18px;">间距节奏 SPACE · 8pt 网格</div>
-          <div style="display: flex; flex-direction: column; gap: 10px;">
-            <div style="display: flex; align-items: center; gap: 12px;"><div style="height: 8px; width: 8px; background: #E8A33D; border-radius: 2px;"></div><span style="font-size: 12px; color: #6e6e73;">4 · 6 — 图标与文字、列表项间</span></div>
-            <div style="display: flex; align-items: center; gap: 12px;"><div style="height: 8px; width: 16px; background: #d8b27a; border-radius: 2px;"></div><span style="font-size: 12px; color: #6e6e73;">8 · 12 — 控件内边距</span></div>
-            <div style="display: flex; align-items: center; gap: 12px;"><div style="height: 8px; width: 28px; background: #cdb88f; border-radius: 2px;"></div><span style="font-size: 12px; color: #6e6e73;">16 · 22 — 段落间距</span></div>
-            <div style="display: flex; align-items: center; gap: 12px;"><div style="height: 8px; width: 44px; background: #c7c7cc; border-radius: 2px;"></div><span style="font-size: 12px; color: #6e6e73;">40 · 56 — 标题上方留白</span></div>
-          </div>
-          <p style="margin: 16px 0 0; font-size: 12px; line-height: 1.6; color: #aeaeb2;">命中区底线：列表行 ≥ 28px，标签 32px，触控目标尽量 44px。</p>
-        </div>
-      </div>
-
-      <div style="background: #fff; border-radius: 14px; padding: 30px 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04); margin-bottom: 14px;">
-        <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 22px;">投影 ELEVATION — 仅两档</div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 28px;">
-          <div style="text-align: center;"><div style="height: 80px; border-radius: 10px; background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #6e6e73;">浮层 · 查找 / 目录</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2; margin-top: 12px;">0 6px 24px /.12 + ring</div></div>
-          <div style="text-align: center;"><div style="height: 80px; border-radius: 14px; background: #fff; box-shadow: 0 24px 60px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #6e6e73;">弹窗 · ⌘K / 访达</div><div style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #aeaeb2; margin-top: 12px;">0 24px 60px /.22 + ring</div></div>
-        </div>
-      </div>
-
-      <div style="background: #fff; border-radius: 14px; padding: 30px 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-        <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 22px;">材质 MATERIAL — 浮层二选一</div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 28px;">
-          <div style="background: linear-gradient(120deg, #E8A33D22, #2A6FDB22), #ECECEE; border-radius: 12px; padding: 22px;">
-            <div style="background: rgba(255,255,255,0.92); border-radius: 12px; padding: 16px 18px; box-shadow: 0 12px 34px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.05); backdrop-filter: blur(14px);"><div style="font-size: 13px; font-weight: 500; color: #1d1d1f;">浅色玻璃</div><div style="font-size: 11.5px; color: #86868b; margin-top: 4px;">查找 · ⌘K · 悬浮目录</div></div>
-          </div>
-          <div style="background: linear-gradient(120deg, #1d1d1f, #3a3a3c); border-radius: 12px; padding: 22px; display: flex; align-items: center; justify-content: center;">
-            <div style="background: rgba(28,28,30,0.9); color: #fff; border-radius: 99px; padding: 8px 16px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); backdrop-filter: blur(10px);">✓ 已复制代码</div>
-          </div>
-        </div>
-        <p style="margin: 18px 0 0; font-size: 12px; line-height: 1.6; color: #aeaeb2; text-wrap: pretty;">浅色玻璃用于所有常驻浮层；深色 pill 仅留给瞬时反馈的 toast —— 它是界面里唯一的深色对比点。</p>
-      </div>
-    </div>
-
-    <!-- ===== 05 动效 ===== -->
-    <div style="margin-bottom: 56px;">
-      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">05 — MOTION</div>
-      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">动效</h2>
-      <div style="background: #fff; border-radius: 14px; padding: 12px 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="width: 96px; flex: none;"><div data-demo-layer="1" style="background: rgba(255,255,255,0.97); border-radius: 8px; padding: 8px 10px; font-size: 11px; color: #6e6e73; box-shadow: 0 6px 18px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.06); animation: dsLayer 0.12s ease both;">浮层</div></div><div style="flex: 1;"><div style="font-size: 13.5px; font-weight: 500;">浮层入场</div><div style="font-size: 12px; color: #86868b;">120ms fade + 4px slide-down · 查找 / ⌘K / 目录</div></div></div>
-        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="width: 96px; flex: none;"><span data-demo-land="1" style="display: inline-block; padding: 4px 8px; border-radius: 5px; font-size: 12px; color: #1d1d1f; animation: dsLand 0.9s ease infinite;">落点</span></div><div style="flex: 1;"><div style="font-size: 13.5px; font-weight: 500;">跳转落点微洗</div><div style="font-size: 12px; color: #86868b;">900ms 琥珀 wash · 目录/查找跳转后告诉你「落在这」</div></div></div>
-        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="width: 96px; flex: none; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #6e6e73;">120–200ms</div><div style="flex: 1;"><div style="font-size: 13.5px; font-weight: 500;">悬停 / 切换过渡</div><div style="font-size: 12px; color: #86868b;">浮层背景 / 颜色 / 短横宽度 120–200ms ease；侧栏列表行 hover 即时无过渡（求利落）</div></div></div>
-        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid #F4F4F5;"><div style="width: 96px; flex: none; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #6e6e73;">180 / 240ms</div><div style="flex: 1;"><div style="font-size: 13.5px; font-weight: 500;">悬浮目录展开</div><div style="font-size: 12px; color: #86868b;">标题浮现 180ms、行高 240ms（easeOutQuint），逐行 12ms 错落；收起统一无错落</div></div></div>
-        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 0;"><div style="width: 96px; flex: none; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #6e6e73;">≈ 0ms</div><div style="flex: 1;"><div style="font-size: 13.5px; font-weight: 500;">prefers-reduced-motion</div><div style="font-size: 12px; color: #86868b;">尊重系统设置，所有动效退化为瞬切</div></div></div>
-      </div>
-    </div>
-
-    <!-- ===== 06 组件 ===== -->
-    <div style="margin-bottom: 24px;">
-      <div style="font-size: 11px; letter-spacing: 1.5px; color: #aeaeb2; margin-bottom: 6px;">06 — COMPONENTS</div>
-      <h2 style="margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; color: #111;">组件</h2>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
-
-        <!-- 按钮 -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">按钮 BUTTONS</div>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 6px; color: #6e6e73; background: rgba(0,0,0,0.05);"><svg width="14" height="14" viewBox="0 0 14 14"><circle cx="6" cy="6" r="4.3" fill="none" stroke="currentColor" stroke-width="1.4"></circle><line x1="9.2" y1="9.2" x2="12.5" y2="12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></line></svg></span>
-            <span style="padding: 5px 12px; border-radius: 6px; font-size: 12.5px; color: #1d1d1f; background: rgba(0,0,0,0.05);">打开</span>
-            <span style="padding: 6px 16px; border-radius: 7px; background: #007AFF; color: #fff; font-size: 13px; font-weight: 500;">确认</span>
-          </div>
-          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">图标钮 / 幽灵钮默认透明，hover 才显 5% 底；主操作用系统蓝。</p>
-        </div>
-
-        <!-- toggle chips -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">开关芯片 TOGGLES</div>
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; font-size: 11px; font-weight: 600; font-family: ui-monospace, Menlo, monospace; background: rgba(0,122,255,0.14); color: #007AFF;">Aa</span>
-            <span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; font-size: 11px; font-weight: 600; font-family: ui-monospace, Menlo, monospace; color: #aeaeb2;">W</span>
-            <span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; font-size: 12px; font-weight: 600; font-family: ui-monospace, Menlo, monospace; color: #aeaeb2;">.*</span>
-          </div>
-          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">区分大小写 / 全词 / 正则。激活态用系统蓝 14% 底。</p>
-        </div>
-
-        <!-- 侧栏行 -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">侧栏行 SIDEBAR ROW</div>
-          <div style="background: #F7F7F8; border-radius: 8px; padding: 6px;">
-            <div style="display: flex; align-items: center; gap: 7px; height: 28px; border-radius: 6px; font-size: 13px; padding: 0 8px; color: #aeaeb2;"><span style="font-size: 9px; width: 9px; flex: none;">▾</span><svg width="13" height="11" viewBox="0 0 14 12" style="flex: none;"><path d="M1 3 Q1 1.5 2.5 1.5 L5 1.5 L6.5 3 L11.5 3 Q13 3 13 4.5 L13 9.5 Q13 11 11.5 11 L2.5 11 Q1 11 1 9.5 Z" fill="#C7C7CC"></path></svg><span style="flex: 1;">agents</span></div>
-            <div style="display: flex; align-items: center; gap: 7px; height: 28px; border-radius: 6px; font-size: 13px; padding: 0 8px 0 24px; color: #3f3f46;"><svg width="10" height="12" viewBox="0 0 11 13" style="flex: none;"><rect x="0.7" y="0.7" width="9.6" height="11.6" rx="1.6" fill="#fff" stroke="#c2c2c8" stroke-width="1"></rect><line x1="3" y1="4" x2="8" y2="4" stroke="#c2c2c8" stroke-width="1"></line><line x1="3" y1="6.5" x2="8" y2="6.5" stroke="#c2c2c8" stroke-width="1"></line></svg><span style="flex: 1;">README.md</span></div>
-            <div style="display: flex; align-items: center; gap: 7px; height: 28px; border-radius: 6px; font-size: 13px; padding: 0 8px; color: #1d1d1f; font-weight: 600; background: rgba(0,0,0,0.06);"><svg width="10" height="12" viewBox="0 0 11 13" style="flex: none;"><rect x="0.7" y="0.7" width="9.6" height="11.6" rx="1.6" fill="#fff" stroke="#c2c2c8" stroke-width="1"></rect><line x1="3" y1="4" x2="8" y2="4" stroke="#c2c2c8" stroke-width="1"></line><line x1="3" y1="6.5" x2="8" y2="6.5" stroke="#c2c2c8" stroke-width="1"></line></svg><span style="flex: 1;">SKILL.md</span><span style="width: 7px; height: 7px; border-radius: 50%; background: #E8A33D;"></span></div>
-          </div>
-          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">选中态 6% 底；右侧琥珀点 = 未保存。文件夹点击折叠 ▾/▸；行 hover 即时显底、无过渡。</p>
-        </div>
-
-        <!-- 标签 -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">标签页 TABS</div>
-          <div style="display: flex; align-items: center; gap: 2px;">
-            <span style="display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; color: #1d1d1f; font-weight: 600; background: rgba(0,0,0,0.06);">SKILL.md<span style="width: 7px; height: 7px; border-radius: 50%; background: #E8A33D;"></span></span>
-            <span style="display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; color: #86868b;">README.md<span style="color: #aeaeb2;">×</span></span>
-          </div>
-          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">未保存点与关闭 × 同位：hover 时点变 ×。</p>
-        </div>
-
-        <!-- 命令面板行 -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">命令面板 ⌘K</div>
-          <div style="border-radius: 10px; box-shadow: 0 0 0 1px rgba(0,0,0,0.05); overflow: hidden;">
-            <div style="font-size: 10.5px; letter-spacing: 0.5px; color: #aeaeb2; padding: 10px 12px 4px;">命令</div>
-            <div style="display: flex; align-items: center; height: 38px; padding: 0 12px; background: rgba(0,0,0,0.06); font-size: 13.5px;"><span style="flex: 1;">查找 / 替换</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">⌘F</span></div>
-            <div style="display: flex; align-items: center; height: 38px; padding: 0 12px; font-size: 13.5px;"><span style="flex: 1;">新建文档</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #aeaeb2;">⌘N</span></div>
-          </div>
-          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">分段（命令 / 文档），右侧常驻快捷键，↑↓ Enter 导航。</p>
-        </div>
-
-        <!-- 目录 rail -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">悬浮目录 OUTLINE</div>
-          <div style="display: flex; align-items: center; gap: 16px;">
-            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-              <span style="height: 2px; width: 22px; border-radius: 1px; background: #E8A33D;"></span>
-              <span style="height: 2px; width: 14px; border-radius: 1px; background: #CACACE;"></span>
-              <span style="height: 2px; width: 22px; border-radius: 1px; background: #CACACE;"></span>
-              <span style="height: 2px; width: 14px; border-radius: 1px; background: #CACACE;"></span>
-            </div>
-            <span style="color: #c7c7cc; font-size: 13px;">→</span>
-            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right;">
-              <div style="font-size: 13px; color: #E8A33D; font-weight: 600;">Dependencies</div>
-              <div style="font-size: 12px; color: #86868b;">Installation</div>
-              <div style="font-size: 13px; color: #86868b; font-weight: 600;">Phase 1</div>
+          <div class="component-demo">
+            <div class="mini-shell">
+              <div class="mini-sidebar"><div class="mini-line"></div><div class="mini-line" style="width:72%"></div><div class="mini-line current"><span class="mini-dot"></span></div></div>
+              <div class="mini-paper"><div class="mini-line" style="width:44%"></div><div class="mini-line" style="width:90%"></div><div class="mini-line" style="width:82%"></div><div class="mini-line" style="width:65%"></div></div>
             </div>
           </div>
-          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">默认几根短横（当前项琥珀），悬停约 180ms「化」为右对齐标题文字、逐行 12ms 错落。</p>
-        </div>
-
-        <!-- 代码块 -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">代码块 CODE</div>
-          <div style="background: #FAFAFA; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.045); overflow: hidden;">
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 14px 2px;"><span style="font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; letter-spacing: 0.6px; color: #b3b3b8; text-transform: uppercase;">bash</span><span style="font-size: 11px; color: #b3b3b8;">复制</span></div>
-            <pre style="margin: 0; background: transparent; padding: 4px 16px 16px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.7; color: #444;"><span style="color: #aaa;"># latest</span>
-npx -y @dev/cli@latest</pre>
+          <div class="component-meta"><span>结构：窗口控制、侧栏、标签栏、纸面内容区、悬浮目录。</span><span>状态：侧栏开闭、宽度记忆、空文档、拖入。</span></div>
+        </article>
+        <article class="panel component-card" data-od-id="component-sidebar-tabs">
+          <div>
+            <div class="panel-kicker">Navigation</div>
+            <h3 class="panel-title">侧栏行与标签页</h3>
           </div>
-          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">极细内描边定边界；语言可改、复制按钮 hover 浮现。</p>
-        </div>
-
-        <!-- 表格 / 引用 -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">表格 · 引用 TABLE / QUOTE</div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 12.5px;"><thead><tr><th style="text-align: left; padding: 6px 10px 6px 0; font-size: 10px; font-weight: 600; letter-spacing: 0.4px; color: #aeaeb2; border-bottom: 1px solid #ECECEE;">字段</th><th style="text-align: left; padding: 6px 0; font-size: 10px; font-weight: 600; letter-spacing: 0.4px; color: #aeaeb2; border-bottom: 1px solid #ECECEE;">说明</th></tr></thead><tbody><tr><td style="padding: 7px 10px 7px 0; border-bottom: 1px solid #F4F4F5; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;">alarm_id</td><td style="padding: 7px 0; border-bottom: 1px solid #F4F4F5; color: #6e6e73;">唯一标识</td></tr></tbody></table>
-          <blockquote style="margin: 14px 0 0; padding-left: 0; color: #86868b; font-size: 13px; text-wrap: pretty;">— 设计原则：读起来像一页纸。</blockquote>
-        </div>
-
-        <!-- 状态 / toast -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">反馈 FEEDBACK</div>
-          <div style="display: flex; align-items: center; gap: 14px;">
-            <span style="background: rgba(28,28,30,0.9); color: #fff; border-radius: 99px; padding: 7px 16px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);">✓ 已保存</span>
-            <span style="font-size: 11px; color: #8e8e93; font-variant-numeric: tabular-nums;">10,485 字 · 261 行 · 42%</span>
+          <div class="component-demo">
+            <div style="display:grid;gap:6px">
+              <div style="height:28px;border-radius:6px;background:rgba(0,0,0,.06);display:flex;align-items:center;padding:0 8px;font-size:12.5px;font-weight:650">README.md<span style="margin-left:auto" class="mini-dot"></span></div>
+              <div style="height:28px;border-radius:6px;display:flex;align-items:center;padding:0 8px;font-size:12.5px;color:#86868b">更新日志.md<span style="margin-left:auto;color:#aeaeb2">×</span></div>
+              <div style="height:18px;border-radius:6px;display:inline-flex;align-items:center;width:max-content;padding:0 7px;color:var(--ds-danger);background:var(--ds-danger-bg);font-size:11px">确认关闭?</div>
+            </div>
           </div>
-          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">toast 瞬时浮现；右下状态条滚动淡出、静止淡入。</p>
-        </div>
-
-        <!-- 窗口红绿灯 -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">窗口控制 TRAFFIC LIGHTS</div>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span>
-            <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span>
-            <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.1);"></span>
+          <div class="component-meta"><span>结构：图标、文本、dirty 点、关闭按钮或确认关闭。</span><span>状态：普通、hover、当前、dirty、关闭确认、长文件名截断。</span></div>
+        </article>
+        <article class="panel component-card" data-od-id="component-buttons">
+          <div>
+            <div class="panel-kicker">Controls</div>
+            <h3 class="panel-title">按钮与开关芯片</h3>
           </div>
-          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">12px 圆点、间距 8，距窗角左 14 / 上 16；hover 浮现 × − + 符号。收起侧栏时顶栏左移避让。</p>
-        </div>
-
-        <!-- 侧栏拖拽 -->
-        <div style="background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="font-size: 11px; letter-spacing: 0.5px; color: #aeaeb2; margin-bottom: 16px;">侧栏宽度 RESIZE</div>
-          <div style="display: flex; align-items: stretch; height: 56px; border-radius: 8px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);">
-            <div style="width: 96px; background: #F7F7F8; flex: none;"></div>
-            <div style="width: 9px; background: #fff; flex: none; display: flex; justify-content: center; cursor: col-resize;"><span style="width: 1px; background: rgba(0,0,0,0.18);"></span></div>
-            <div style="flex: 1; background: #fff;"></div>
+          <div class="component-demo">
+            <div class="button-demo">
+              <span class="icon-btn">⌕</span>
+              <span class="text-btn">替换</span>
+              <span class="toggle-chip">Aa</span>
+              <span class="toggle-chip" style="background:transparent;color:#aeaeb2">W</span>
+              <span class="toggle-chip" style="background:transparent;color:#aeaeb2">.*</span>
+            </div>
           </div>
-          <p style="margin: 14px 0 0; font-size: 12px; color: #aeaeb2; line-height: 1.6;">右缘拖拽手柄（col-resize），范围 176–440px，默认 216；hover 灰线 / 拖拽蓝线，宽度记忆到会话。</p>
-        </div>
-
+          <div class="component-meta"><span>结构：图标按钮、文本按钮、三态查找芯片。</span><span>状态：default、hover、pressed、active、disabled、focus-visible。</span></div>
+        </article>
+        <article class="panel component-card" data-od-id="component-find-replace">
+          <div>
+            <div class="panel-kicker">Find</div>
+            <h3 class="panel-title">查找 / 替换面板</h3>
+          </div>
+          <div class="component-demo" style="background:#fff">
+            <div class="find-demo">
+              <div class="find-row"><span class="icon-btn">▸</span><div class="field">查找<span class="code">1/8</span></div><span class="toggle-chip">Aa</span><span class="toggle-chip">.*</span></div>
+              <div class="find-row"><span style="width:28px"></span><div class="field">替换为</div><span class="text-btn">替换</span></div>
+            </div>
+          </div>
+          <div class="component-meta"><span>结构：折叠箭头、输入框、计数、过滤芯片、导航、替换操作。</span><span>状态：折叠、展开、无结果、正则错误、可替换、不可导航。</span></div>
+        </article>
+        <article class="panel component-card" data-od-id="component-command-palette">
+          <div>
+            <div class="panel-kicker">Command</div>
+            <h3 class="panel-title">命令面板</h3>
+          </div>
+          <div class="component-demo" style="background:#fff">
+            <div class="palette-demo">
+              <div class="palette-input">搜索文档或命令...</div>
+              <div class="palette-row selected"><span>README.md</span><span class="code">当前</span></div>
+              <div class="palette-row"><span>查找 / 替换</span><span class="code">⌘F</span></div>
+            </div>
+          </div>
+          <div class="component-meta"><span>结构：搜索输入、文档分组、命令分组、快捷键、空结果。</span><span>状态：打开、筛选、键盘选中、空结果、执行后关闭。</span></div>
+        </article>
+        <article class="panel component-card" data-od-id="component-outline">
+          <div>
+            <div class="panel-kicker">Outline</div>
+            <h3 class="panel-title">悬浮目录</h3>
+          </div>
+          <div class="component-demo">
+            <div class="rail-demo">
+              <div class="ticks"><span class="tick active" style="width:16px"></span><span class="tick" style="width:13px"></span><span class="tick" style="width:11px"></span><span class="tick" style="width:9px"></span></div>
+              <div style="display:grid;gap:6px;font-size:12.5px"><strong style="color:var(--ds-accent)">Dependencies</strong><span style="color:#86868b">Installation</span><strong style="color:#86868b">Phase 1</strong></div>
+            </div>
+          </div>
+          <div class="component-meta"><span>结构：H1-H6 短横、展开标签、当前项、跳转落点。</span><span>状态：收起、hover 展开、当前标题、长标题截断。</span><span>规则：正文标题文字统一深色，不通过层级逐渐变浅；层级只由字号、间距和左侧短横体现。</span></div>
+        </article>
+        <article class="panel component-card" data-od-id="component-markdown-content">
+          <div>
+            <div class="panel-kicker">Markdown body</div>
+            <h3 class="panel-title">Markdown 内容元素</h3>
+          </div>
+          <div class="component-demo" style="background:#fff">
+            <div style="max-width:300px;margin:auto;color:#333336;font-size:13px;line-height:1.7">
+              <div style="display:flex;gap:10px;align-items:center;font-weight:650;color:#111"><span style="width:4px;height:19px;border-radius:2px;background:var(--ds-accent)"></span>一级标题</div>
+              <p style="margin:8px 0 0">正文读起来像一页纸，行内代码 <code class="inline-code">npm install</code> 不抢视线。</p>
+              <div class="edit-rail-demo" style="margin-top:16px">
+                <div class="source-line">- 第一层项目</div>
+                <div class="source-line" style="padding-left:20px;color:#6e6e73">- 第二层嵌套</div>
+                <div class="source-line">- 另一个第一层项目</div>
+              </div>
+              <div class="edit-rail-demo code-like" style="margin-top:14px">
+                <div class="code-surface">const active = true;<br>return active ? "编辑态" : "阅读态";</div>
+              </div>
+            </div>
+          </div>
+          <div class="component-meta"><span>结构：标题、段落、列表、引用、代码、表格、链接、脚注、图片占位。</span><span>状态：阅读、块级编辑、语法高亮、长行滚动、引用回跳。</span><span>分块：列表按项拆块；有序列表 marker 按层级显示为 1/a/i；缩进围栏代码独立成代码块；二层引用压平成单层引用视觉，但保留内层 <code>&gt;</code> 作为正文字符；引用块内连续 quote 行保留断行。</span><span>编辑提示线：普通块和代码块都使用同列外层容器画 <code>box-shadow: inset 3px 0 0 #E8A33D</code>；普通块左移 14px 再补 14px padding，代码块内层卡片只保留代码背景和内描边。</span></div>
+        </article>
+        <article class="panel component-card" data-od-id="component-table-editor">
+          <div>
+            <div class="panel-kicker">Table editor</div>
+            <h3 class="panel-title">表格编辑器</h3>
+          </div>
+          <div class="component-demo" style="background:#fff">
+            <div class="edit-rail-demo">
+              <div style="display:inline-flex;gap:2px;background:rgba(28,28,30,.92);border-radius:8px;padding:4px;color:#fff;font-size:11px"><span style="padding:2px 7px">+行</span><span style="padding:2px 7px">+列</span><span style="color:#ff9a8f;padding:2px 7px">删行</span></div>
+              <div style="height:34px;margin-top:8px;border-radius:6px;background:var(--ds-code);border:1px solid var(--ds-line-strong)"></div>
+            </div>
+          </div>
+          <div class="component-meta"><span>结构：编辑焦点条、深色工具条、单元格输入、帮助提示。</span><span>状态：单元格 focus、增删行列、对齐切换、Esc 完成。</span></div>
+        </article>
+        <article class="panel component-card" data-od-id="component-feedback">
+          <div>
+            <div class="panel-kicker">Feedback</div>
+            <h3 class="panel-title">反馈层</h3>
+          </div>
+          <div class="component-demo">
+            <div class="toast-demo"><span class="toast">已复制代码</span><span style="font-size:11.5px;color:#767676">10,485 字 · 42%</span></div>
+          </div>
+          <div class="component-meta"><span>结构：toast、tooltip、脚注预览、链接预览、状态栏、拖入高亮。</span><span>状态：出现、延迟、自动消失、长 URL 截断、reduced motion。</span></div>
+        </article>
       </div>
-    </div>
-
-    <div style="margin-top: 40px; padding-top: 24px; border-top: 1px solid rgba(0,0,0,0.07); font-size: 12px; color: #aeaeb2;">Markdown Viewer Design System · 取材后再落代码，新增 token 前先回到这里。</div>
-
+    </section>
+    <section class="section" data-od-id="state-matrix-section">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">05 · State matrix</div>
+          <h2 data-od-id="state-matrix-title">状态矩阵</h2>
+        </div>
+        <p class="section-desc">状态矩阵是后续扩展的入口。若新增功能没有进入这里，就不应该直接画进终稿。</p>
+      </div>
+      <div class="panel" data-od-id="state-matrix-panel">
+        <table class="matrix-table">
+          <thead><tr><th>组件</th><th>必须覆盖的状态</th><th>琥珀使用</th><th>核验方式</th></tr></thead>
+          <tbody>
+            <tr><td>应用壳</td><td>有文档、无文档、拖入、侧栏开闭、侧栏拖拽。</td><td>仅拖入边框和落点。</td><td>终稿中存在根视图、拖入层和侧栏宽度范围。</td></tr>
+            <tr><td>侧栏行</td><td>文件夹、文件、当前、hover、dirty、筛选后空。</td><td>dirty 点，不用于 hover。</td><td>逐项对照侧栏行高、缩进、颜色和图标。</td></tr>
+            <tr><td>标签页</td><td>普通、当前、dirty、hover 关闭、确认关闭。</td><td>dirty 点。</td><td>关闭按钮与 dirty 点同位，不同时出现。</td></tr>
+            <tr><td>查找 / 替换</td><td>关闭、打开、替换展开、无结果、正则错误、不可导航。</td><td>命中高亮和输入 focus。</td><td>计数、芯片、上下导航和替换按钮都可回到终稿。</td></tr>
+            <tr><td>命令面板</td><td>打开、筛选、文档分组、命令分组、空结果、键盘选中。</td><td>不使用琥珀。</td><td>选中行使用中性 hover 背景。</td></tr>
+            <tr><td>悬浮目录</td><td>收起、展开、当前项、跳转 wash、长标题截断。</td><td>当前短横与当前标签。</td><td>H1-H6 短横宽度必须分级。</td></tr>
+            <tr><td>Markdown 内容</td><td>阅读、块级编辑、代码长行、任务勾选、脚注悬停。</td><td>编辑提示线、任务完成、脚注编号。</td><td>编辑提示线为当前编辑容器的左侧 3px inset 色带；普通块正文列不能跳动。</td></tr>
+            <tr><td>表格编辑器</td><td>普通表格、编辑表格、单元格 focus、增删行列、对齐切换。</td><td>编辑提示线和 cell focus ring。</td><td>工具条为深色浮层；表格编辑外层容器使用同款 3px inset 色带。</td></tr>
+            <tr><td>反馈层</td><td>toast、tooltip、链接预览、脚注预览、状态栏淡入淡出。</td><td>只用于定位，不用于 toast 底色。</td><td>状态栏文字色和位置以终稿为准。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="section" data-od-id="extension-section">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">06 · Future modules</div>
+          <h2 data-od-id="extension-title">AI / wiki 扩展规则</h2>
+        </div>
+        <p class="section-desc">暂不假装当前产品已经有 AI 功能。这里先定义未来能力进入系统的方式，避免它们破坏“像一页纸”的核心体验。</p>
+      </div>
+      <div class="roadmap">
+        <article class="stage" data-od-id="future-ai-reading">
+          <div class="stage-num">01</div>
+          <h3 class="panel-title">AI 辅助阅读</h3>
+          <p>作为文档旁路层出现，不变成聊天窗口。必须展示来源段落、生成状态、失败状态、复制动作和重新生成入口。</p>
+        </article>
+        <article class="stage" data-od-id="future-personal-wiki">
+          <div class="stage-num">02</div>
+          <h3 class="panel-title">个人 LLM wiki</h3>
+          <p>优先使用右侧或底部可收起面板承载关系、反向链接和知识卡片。不要挤压 640px 正文纸面。</p>
+        </article>
+        <article class="stage" data-od-id="future-long-doc">
+          <div class="stage-num">03</div>
+          <h3 class="panel-title">长文档理解</h3>
+          <p>摘要、章节解释和引用定位必须和目录系统协作。摘要不应插入正文流，除非用户明确保存为文档内容。</p>
+        </article>
+        <article class="stage" data-od-id="future-privacy">
+          <div class="stage-num">04</div>
+          <h3 class="panel-title">本地隐私感</h3>
+          <p>清楚区分本地处理、外部模型、未同步和不可用状态。外部调用不能使用“系统已保存”一类模糊反馈。</p>
+        </article>
+      </div>
+    </section>
+    <section class="section" data-od-id="bridge-section">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">07 · Bridge</div>
+          <h2 data-od-id="bridge-title">实现桥接</h2>
+        </div>
+        <p class="section-desc">桥接层只降低从设计系统到终稿再到实现的转译成本。开发落地时看终稿细节；设计判断时先检查这里的 token、组件状态和边界。</p>
+      </div>
+      <div class="grid-2">
+        <article class="panel" data-od-id="designer-checklist">
+          <div class="panel-kicker">设计师补系统前</div>
+          <div class="outline-rule">
+            <div class="rule"><strong>1. 找终稿</strong><span>先确认这个样式或行为已经在终稿中出现。</span></div>
+            <div class="rule"><strong>2. 抽 token</strong><span>把裸色值、尺寸、阴影和动效抽成语义 token。</span></div>
+            <div class="rule"><strong>3. 补状态</strong><span>把组件的 hover、focus、selected、empty、error 等状态补齐。</span></div>
+            <div class="rule"><strong>4. 写边界</strong><span>说明什么时候禁止使用，尤其是琥珀和系统蓝。</span></div>
+          </div>
+        </article>
+        <article class="panel" data-od-id="developer-boundary">
+          <div class="panel-kicker">开发协作边界</div>
+          <div class="outline-rule">
+            <div class="rule"><strong>允许参考</strong><span>终稿中的具体尺寸、行为和 line number，以及本文件中的 token、状态边界和扩展规则。</span></div>
+            <div class="rule"><strong>不允许参考</strong><span>用旧终稿绕开当前设计系统，或直接从设计系统猜测实现细节。</span></div>
+            <div class="rule"><strong>冲突处理</strong><span>先做设计裁决：默认修正终稿；如果是系统缺口，先补设计系统再同步终稿；确需例外时写入核验清单。</span></div>
+            <div class="rule"><strong>验收路径</strong><span>逐元素对稿和 QA 仍通过终稿与核验清单完成。</span></div>
+          </div>
+        </article>
+      </div>
+    </section>
+    <section class="section" data-od-id="anti-pattern-section">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">08 · Anti-patterns</div>
+          <h2 data-od-id="anti-pattern-title">反模式</h2>
+        </div>
+        <p class="section-desc">这些规则保护产品不被后续功能带偏。它们不是审美偏好，而是当前产品气质的边界。</p>
+      </div>
+      <div class="grid-3">
+        <article class="panel tight" data-od-id="anti-pattern-accent">
+          <h3 class="panel-title">禁止大面积琥珀</h3>
+          <p class="note">琥珀只做定位和当前状态，不做品牌背景、按钮主色或装饰渐变。</p>
+        </article>
+        <article class="panel tight" data-od-id="anti-pattern-chat">
+          <h3 class="panel-title">禁止聊天化 AI</h3>
+          <p class="note">未来 AI 层不能把文档工具变成聊天界面。回答、来源和操作必须贴合阅读上下文。</p>
+        </article>
+        <article class="panel tight" data-od-id="anti-pattern-card-noise">
+          <h3 class="panel-title">禁止卡片噪音</h3>
+          <p class="note">正文区不是卡片流。除代码、表格、脚注和编辑态外，避免给段落增加容器感。</p>
+        </article>
+      </div>
+    </section>
+    <footer class="footer" data-od-id="footer">
+      Markdown Viewer Design System · v2.0。此文件用于设计维护、抽象规则和后续扩展；开发实现与验收仍以 Markdown Viewer.dc.html 为准。
+    </footer>
   </div>
-</div>
+</main>
 </x-dc>
 </body>
 </html>

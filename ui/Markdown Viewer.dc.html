@@ -9,38 +9,67 @@
 <x-dc>
 <helmet>
   <style>
+    :root {
+      --mv-bg: #FFFFFF;
+      --mv-surface: #fff;
+      --mv-sidebar: #F7F7F8;
+      --mv-fg: #1d1d1f;
+      --mv-text: #333336;
+      --mv-muted: #86868b;
+      --mv-muted-2: #aeaeb2;
+      --mv-muted-3: #c7c7cc;
+      --mv-border: #E9E9EF;
+      --mv-border-strong: #C7C7CC;
+      --mv-code-bg: #F6F6F9;
+      --mv-accent: #E8A33D;
+      --mv-danger: #C7482E;
+      --mv-status: #767676;
+      --mv-focus: rgba(0,122,255,0.45);
+      --mv-row-hover: rgba(0,0,0,0.05);
+      --mv-row-active: rgba(0,0,0,0.06);
+      --mv-row-kb: rgba(0,0,0,0.05);
+      --mv-row-soft: rgba(0,0,0,0.045);
+      --mv-control-bg: rgba(0,0,0,0.04);
+    }
     html, body { height: 100%; }
-    body { margin: 0; background: #FFFFFF; -webkit-font-smoothing: antialiased; }
+    body { margin: 0; background: var(--mv-bg); -webkit-font-smoothing: antialiased; }
     ::highlight(mdfind) { background-color: rgba(232,163,61,0.22); }
     ::highlight(mdfind-current) { background-color: rgba(232,163,61,0.55); }
-    [data-copy] { color: #aeaeb2; cursor: pointer; opacity: 0; transition: opacity 0.15s, color 0.15s; }
-    [data-copy]:hover { color: #1d1d1f; }
+    [data-copy] { color: var(--mv-muted-2); cursor: pointer; opacity: 0; transition: opacity 0.15s, color 0.15s; }
+    [data-copy]:hover { color: var(--mv-fg); }
     [data-code]:hover [data-copy] { opacity: 1; }
-    [data-lang] { cursor: text; border-radius: 6px; padding: 0 3px; transition: background 0.15s; }
-    [data-lang]:hover { background: rgba(0,0,0,0.05); }
-    [data-lang][contenteditable="true"] { background: rgba(0,0,0,0.05); box-shadow: 0 0 0 1px rgba(0,0,0,0.16); outline: none; color: #1d1d1f; }
     [data-tabx] { display: none; }
     [data-tab]:hover [data-tabx] { display: inline-flex; }
     [data-tab]:hover [data-tabdot] { display: none; }
+    [data-viewblock][data-boxy="0"] { position: relative; z-index: 0; }
+    [data-viewblock][data-boxy="0"]::before { content: ''; position: absolute; inset: -5px -14px; border-radius: 8px; background: transparent; transition: background 0.13s ease; pointer-events: none; z-index: -1; }
+    [data-viewblock][data-boxy="0"]:hover::before { background: rgba(0,0,0,0.035); }
+    [data-code], [data-tbox], [data-ibox], [data-fnbox] { transition: box-shadow 0.16s ease, border-color 0.16s ease; }
+    [data-viewblock][data-boxy="1"]:hover [data-code] { box-shadow: 0 0 0 1px #D2D2D8, 0 3px 9px rgba(0,0,0,0.08) !important; }
+    [data-viewblock][data-boxy="1"]:hover [data-tbox] { box-shadow: inset 0 0 0 1px #D2D2D8, 0 3px 9px rgba(0,0,0,0.08) !important; }
+    [data-viewblock][data-boxy="1"]:hover [data-ibox] { box-shadow: inset 0 0 0 1px #D2D2D8, 0 3px 9px rgba(0,0,0,0.08) !important; }
+    [data-viewblock][data-boxy="1"]:hover [data-fnbox] { border-color: #B4B4BA !important; box-shadow: 0 3px 9px rgba(0,0,0,0.07) !important; }
+    [data-tbl-input] { width: 100%; box-sizing: border-box; border: 0; outline: none; background: transparent; padding: 3px 2px; font-family: inherit; border-radius: 4px; -webkit-appearance: none; appearance: none; }
+    [data-tbl-input]:focus { box-shadow: 0 0 0 2px rgba(232,163,61,0.7); }
+    [data-editblock] { transition: background 0.13s ease; }
+    [data-editblock]:empty::before { content: attr(data-ph); color: #c7c7cc; pointer-events: none; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.28); }
-    a[data-link]:hover { text-decoration-color: #86868b !important; }
+    a[data-link]:hover { text-decoration-color: var(--mv-accent) !important; }
     [data-traffic] span { position: relative; transition: filter 0.12s; }
     [data-traffic]:hover span::after { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 9px; font-weight: 700; line-height: 1; color: rgba(0,0,0,0.45); }
     [data-traffic]:hover span:nth-child(1)::after { content: '\00d7'; }
     [data-traffic]:hover span:nth-child(2)::after { content: '\2212'; }
     [data-traffic]:hover span:nth-child(3)::after { content: '\002b'; }
-    input:focus-visible, [tabindex]:focus-visible { outline: 2px solid rgba(0,122,255,0.45); outline-offset: 1px; }
+    input:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--mv-focus); outline-offset: 1px; }
     @keyframes overlayIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes railIn { from { opacity: 0; transform: translateX(4px); } to { opacity: 1; transform: translateX(0); } }
     @keyframes tipIn { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes railHint { 0% { transform: scaleX(1); } 16% { transform: scaleX(var(--pk, 1.9)); background-color: #E8A33D; } 54% { transform: scaleX(var(--pk, 1.9)); background-color: #E8A33D; } 100% { transform: scaleX(1); } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
   </style>
 </helmet>
-<div data-screen-label="Markdown Viewer" onDragOver="{{ onDragOver }}" onDrop="{{ onDrop }}" style="position: relative; height: 100vh; display: flex; overflow: hidden; background: #fff; font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif; color: #1d1d1f;">
+<div data-screen-label="Markdown Editor" onDragOver="{{ onDragOver }}" onDrop="{{ onDrop }}" style="position: relative; height: 100vh; display: flex; overflow: hidden; background: var(--mv-surface); font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif; color: var(--mv-fg);">
 
   <!-- ===== 窗口红绿灯 ===== -->
   <div data-traffic="1" title="窗口控制" style="position: absolute; top: 16px; left: 14px; z-index: 35; display: flex; gap: 8px; align-items: center;">
@@ -51,14 +80,14 @@
 
   <!-- ===== 安静侧栏 ===== -->
   <sc-if value="{{ sidebarOpen }}" hint-placeholder-val="{{ true }}">
-    <div style="width: {{ sideW }}px; flex: none; position: relative; display: flex; flex-direction: column; background: #F7F7F8;">
+    <div style="width: {{ sideW }}px; flex: none; position: relative; display: flex; flex-direction: column; background: var(--mv-sidebar);">
       <div onMouseDown="{{ onResizeStart }}" onMouseEnter="{{ onResizeEnter }}" onMouseLeave="{{ onResizeLeave }}" title="拖动调整侧栏宽度" style="position: absolute; top: 0; right: -4px; width: 9px; height: 100%; cursor: col-resize; z-index: 25; display: flex; justify-content: center;">
         <span style="width: 1px; height: 100%; background: {{ resizeLine }};"></span>
       </div>
       <div style="height: 44px; flex: none;"></div>
 
       <div style="padding: 2px 12px 8px;">
-        <input value="{{ sideFilter }}" onChange="{{ onSideFilter }}" onKeyDown="{{ onSideFilterKey }}" placeholder="筛选文档" style="width: 100%; box-sizing: border-box; height: 28px; border: none; outline: none; border-radius: 6px; background: rgba(0,0,0,0.04); padding: 0 10px; font-size: 12.5px; font-family: inherit; color: #1d1d1f;" />
+        <input value="{{ sideFilter }}" onChange="{{ onSideFilter }}" onKeyDown="{{ onSideFilterKey }}" placeholder="筛选文档" style="width: 100%; box-sizing: border-box; height: 28px; border: none; outline: none; border-radius: 6px; background: var(--mv-control-bg); padding: 0 10px; font-size: 12.5px; font-family: inherit; color: var(--mv-fg);" />
       </div>
 
       <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 4px 10px 12px;">
@@ -72,16 +101,24 @@
               <sc-if value="{{ item.file }}" hint-placeholder-val="{{ true }}">
                 <svg width="10" height="12" viewBox="0 0 11 13" style="flex: none;"><rect x="0.7" y="0.7" width="9.6" height="11.6" rx="1.6" fill="#fff" stroke="#c2c2c8" stroke-width="1"></rect><line x1="3" y1="4" x2="8" y2="4" stroke="#c2c2c8" stroke-width="1"></line><line x1="3" y1="6.5" x2="8" y2="6.5" stroke="#c2c2c8" stroke-width="1"></line></svg>
               </sc-if>
-              <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ item.name }}</span>
+              <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ item.name }}</span>
+              <sc-if value="{{ item.showPath }}" hint-placeholder-val="{{ false }}">
+                <span title="{{ item.path }}" style="max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mv-muted-2); font-size: 11.5px; font-weight: 400; margin-left: auto;">{{ item.path }}</span>
+              </sc-if>
               <sc-if value="{{ item.dirty }}" hint-placeholder-val="{{ false }}">
-                <span title="未保存 · ⌘S 保存" style="width: 7px; height: 7px; border-radius: 50%; background: #E8A33D; flex: none;"></span>
+                <span title="未保存 · ⌘S 保存" style="width: 7px; height: 7px; border-radius: 50%; background: var(--mv-accent); flex: none;"></span>
               </sc-if>
             </div>
           </sc-for>
+          <sc-if value="{{ sidebarEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="height: 32px; display: flex; align-items: center; padding: 0 8px; border-radius: 6px; color: var(--mv-muted-2); font-size: 12.5px;">
+              没有匹配的文档
+            </div>
+          </sc-if>
         </div>
       </div>
 
-      <div onClick="{{ openPaletteBtn }}" tabindex="0" data-tip="所有命令与文档 · ⌘K" style="flex: none; display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 16px; cursor: pointer; color: #9a9a9e; font-size: 11.5px;" style-hover="color: #6e6e73;">
+      <div onClick="{{ openPaletteBtn }}" tabindex="0" data-tip="所有命令与文档 · ⌘K" style="flex: none; display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 16px; cursor: pointer; color: #9a9a9e; font-size: 11.5px;" style-hover="color: var(--mv-muted);">
         <span style="font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 10.5px; background: rgba(0,0,0,0.05); border-radius: 6px; padding: 2px 6px; line-height: 1.4;">⌘K</span>
         全部命令
       </div>
@@ -93,7 +130,7 @@
 
     <!-- 标签页栏 -->
     <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 {{ tabPadLeft }};">
-      <span onClick="{{ toggleSidebar }}" tabindex="0" data-tip="显示 / 隐藏侧栏" style="display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; color: #aeaeb2; flex: none;" style-hover="background: rgba(0,0,0,0.05); color: #6e6e73;">
+      <span onClick="{{ toggleSidebar }}" tabindex="0" data-tip="显示 / 隐藏侧栏 · ⌘&#92;" style="display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; color: var(--mv-muted-2); flex: none;" style-hover="background: var(--mv-row-hover); color: var(--mv-muted);">
         <svg width="16" height="13" viewBox="0 0 16 13"><rect x="0.7" y="0.7" width="14.6" height="11.6" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.3"></rect><line x1="5.5" y1="1" x2="5.5" y2="12" stroke="currentColor" stroke-width="1.3"></line></svg>
       </span>
 
@@ -107,21 +144,22 @@
             <sc-if value="{{ t.notConfirming }}" hint-placeholder-val="{{ true }}">
               <span style="position: relative; width: 16px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center;">
                 <sc-if value="{{ t.showDot }}" hint-placeholder-val="{{ false }}">
-                  <span data-tabdot="1" title="未保存 · ⌘S 保存" style="width: 7px; height: 7px; border-radius: 50%; background: #E8A33D; flex: none;"></span>
+                  <span data-tabdot="1" title="未保存 · ⌘S 保存" style="width: 7px; height: 7px; border-radius: 50%; background: var(--mv-accent); flex: none;"></span>
                 </sc-if>
-                <span data-tabx="1" onClick="{{ t.onClose }}" title="关闭 · ⌘W" style="position: absolute; inset: 0; align-items: center; justify-content: center; border-radius: 6px; font-size: 13px; color: #aeaeb2; line-height: 1;" style-hover="background: rgba(0,0,0,0.08); color: #1d1d1f;">×</span>
+                <span data-tabx="1" onClick="{{ t.onClose }}" title="关闭 · ⌘W" style="position: absolute; inset: 0; align-items: center; justify-content: center; border-radius: 6px; font-size: 13px; color: var(--mv-muted-2); line-height: 1;" style-hover="background: rgba(0,0,0,0.08); color: var(--mv-fg);">×</span>
               </span>
             </sc-if>
           </span>
         </sc-for>
-        <span onClick="{{ newDoc }}" tabindex="0" data-tip="新建文档 · ⌘N" style="display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; color: #aeaeb2; font-size: 16px; flex: none;" style-hover="background: rgba(0,0,0,0.05); color: #6e6e73;">＋</span>
+        <span onClick="{{ newDoc }}" tabindex="0" data-tip="新建文档 · ⌘N" style="display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; color: var(--mv-muted-2); font-size: 16px; flex: none;" style-hover="background: var(--mv-row-hover); color: var(--mv-muted);">＋</span>
       </div>
 
-      <div style="display: flex; align-items: center; gap: 2px; font-size: 12.5px; color: #86868b; flex: none;">
-        <span onClick="{{ openFind }}" tabindex="0" data-tip="查找 / 替换 · ⌘F" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 6px; cursor: pointer; color: #aeaeb2;" style-hover="background: rgba(0,0,0,0.05); color: #6e6e73;">
+      <div style="display: flex; align-items: center; gap: 2px; font-size: 12.5px; color: var(--mv-muted); flex: none;">
+        <span onClick="{{ togglePreviewAll }}" tabindex="0" data-tip="{{ previewTip }}" style="display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 9px; border-radius: 6px; cursor: pointer; font-size: 11.5px; color: {{ previewColor }}; background: {{ previewBg }};" style-hover="background: var(--mv-row-hover); color: var(--mv-muted);">{{ previewLabel }}</span>
+        <span onClick="{{ openFind }}" tabindex="0" data-tip="查找 / 替换 · ⌘F" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 6px; cursor: pointer; color: var(--mv-muted-2);" style-hover="background: var(--mv-row-hover); color: var(--mv-muted);">
           <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="6" cy="6" r="4.3" fill="none" stroke="currentColor" stroke-width="1.4"></circle><line x1="9.2" y1="9.2" x2="12.5" y2="12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></line></svg>
         </span>
-        <span onClick="{{ openSystem }}" tabindex="0" data-tip="打开 · ⌘O" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 6px; cursor: pointer; color: #aeaeb2;" style-hover="background: rgba(0,0,0,0.05); color: #6e6e73;">
+        <span onClick="{{ openSystem }}" tabindex="0" data-tip="打开 · ⌘O" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 6px; cursor: pointer; color: var(--mv-muted-2);" style-hover="background: var(--mv-row-hover); color: var(--mv-muted);">
           <svg width="15" height="14" viewBox="0 0 15 14"><path d="M1 3.3 Q1 2.1 2.2 2.1 L5.4 2.1 L6.8 3.6 L12.8 3.6 Q14 3.6 14 4.8 L14 10.4 Q14 11.6 12.8 11.6 L2.2 11.6 Q1 11.6 1 10.4 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"></path></svg>
         </span>
       </div>
@@ -150,7 +188,7 @@
               <span onClick="{{ findNext }}" title="下一个 · 回车" style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; cursor: {{ navCursor }}; color: {{ navColor }}; font-size: 12px;" style-hover="background: {{ navHoverBg }};">↓</span>
             </div>
             <span style="width: 1px; height: 16px; background: rgba(0,0,0,0.08); flex: none;"></span>
-            <span onClick="{{ closeFind }}" title="关闭 · Esc" style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; cursor: pointer; color: #aeaeb2; font-size: 14px;" style-hover="background: rgba(0,0,0,0.05); color: #1d1d1f;">×</span>
+            <span onClick="{{ closeFind }}" title="关闭 · Esc" style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; cursor: pointer; color: var(--mv-muted-2); font-size: 14px;" style-hover="background: var(--mv-row-hover); color: var(--mv-fg);">×</span>
           </div>
           <sc-if value="{{ replaceOpen }}" hint-placeholder-val="{{ false }}">
             <div style="display: flex; align-items: center; gap: 6px;">
@@ -167,50 +205,93 @@
         </div>
       </sc-if>
 
-      <div ref="{{ contentRef }}" onScroll="{{ onScroll }}" onClick="{{ onContentClick }}" onKeyDown="{{ onContentKeyDown }}" onBlur="{{ onContentBlur }}" onMouseOver="{{ onContentOver }}" onMouseLeave="{{ onContentLeave }}" style="position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;">
+      <div ref="{{ contentRef }}" onScroll="{{ onScroll }}" onMouseOver="{{ onContentOver }}" onMouseLeave="{{ onContentLeave }}" style="position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;">
 
         <sc-if value="{{ noDoc }}" hint-placeholder-val="{{ false }}">
-          <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #aeaeb2;">
+          <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--mv-muted-2);">
             <div style="font-size: 14px;">没有打开的文档</div>
-            <div style="font-size: 12px; color: #c7c7cc;">在左侧选择文件，或按 ⌘K</div>
+            <div style="font-size: 12px; color: var(--mv-muted-3);">按 ⌘N 新建，或 ⌘K 打开一篇</div>
           </div>
         </sc-if>
 
         <sc-if value="{{ hasDoc }}" hint-placeholder-val="{{ true }}">
-          <div style="width: 540px; max-width: calc(100% - 140px); margin: 0 auto; padding: 44px 0 33vh; font-size: {{ bodyFontSize }}px; line-height: 1.7; color: #333336;">
-            {{ docBody }}
+          <div style="width: 640px; max-width: calc(100% - 132px); margin: 0 auto; padding: 40px 0 34vh; font-size: {{ bodyFontSize }}px; line-height: 1.72; color: var(--mv-text);">
+            <sc-for list="{{ blockViews }}" as="b" hint-placeholder-count="7">
+              <div style="position: relative;">
+                <sc-if value="{{ b.editingPlain }}" hint-placeholder-val="{{ false }}">
+                  <div ref="{{ editRef }}" contentEditable="true" spellcheck="false" data-editblock="1" data-ph="{{ editPlaceholder }}" style="{{ b.editStyle }}"></div>
+                </sc-if>
+                <sc-if value="{{ b.editingCode }}" hint-placeholder-val="{{ false }}">
+                  <div style="{{ b.editWrapStyle }}">
+                    <div ref="{{ editRef }}" contentEditable="true" spellcheck="false" data-editblock="1" data-ph="{{ editPlaceholder }}" style="{{ b.editStyle }}"></div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ b.editingGrid }}" hint-placeholder-val="{{ false }}">
+                  <div ref="{{ tblRef }}" style="margin: 0 0 20px 0; margin-left: -14px; padding: 2px 0 6px 14px; box-shadow: inset 3px 0 0 #E8A33D; border-radius: 2px;">
+                    <div style="display: inline-flex; align-items: center; gap: 2px; background: rgba(28,28,30,0.92); border-radius: 8px; padding: 4px; margin-bottom: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.2);">
+                      <span onMouseDown="{{ tblAddRow }}" title="在末尾加一行" style="color: #fff; font-size: 11px; padding: 3px 8px; border-radius: 5px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.14);">＋行</span>
+                      <span onMouseDown="{{ tblAddCol }}" title="在末尾加一列" style="color: #fff; font-size: 11px; padding: 3px 8px; border-radius: 5px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.14);">＋列</span>
+                      <span style="width: 1px; height: 14px; background: rgba(255,255,255,0.2);"></span>
+                      <span onMouseDown="{{ tblAlign }}" title="切换当前列对齐" style="color: #d0d0d5; font-size: 11px; padding: 3px 8px; border-radius: 5px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.14); color: #fff;">{{ tblAlignLabel }}</span>
+                      <span style="width: 1px; height: 14px; background: rgba(255,255,255,0.2);"></span>
+                      <span onMouseDown="{{ tblDelRow }}" title="删除当前行" style="color: #ff9a8f; font-size: 11px; padding: 3px 8px; border-radius: 5px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.12);">删行</span>
+                      <span onMouseDown="{{ tblDelCol }}" title="删除当前列" style="color: #ff9a8f; font-size: 11px; padding: 3px 8px; border-radius: 5px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.12);">删列</span>
+                    </div>
+                    <div style="width: 100%; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--mv-border); overflow-x: auto; overflow-y: hidden;">
+                      <div style="{{ tblGridStyle }}">
+                        <sc-for list="{{ gridHeaderCells }}" as="hc" hint-placeholder-count="3">
+                          <div style="text-align: {{ hc.align }}; padding: 8px 12px; border-bottom: 1px solid var(--mv-border); background: var(--mv-code-bg);">
+                            <input data-tbl-input="1" value="{{ hc.value }}" onChange="{{ hc.onInput }}" onFocus="{{ hc.onFocus }}" onKeyDown="{{ hc.onKey }}" data-r="-1" data-c="{{ hc.c }}" spellcheck="false" style="text-align: {{ hc.align }}; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; color: var(--mv-muted);" />
+                          </div>
+                        </sc-for>
+                      </div>
+                        <sc-for list="{{ gridBodyRows }}" as="row" hint-placeholder-count="2">
+                          <div style="{{ tblGridStyle }}">
+                            <sc-for list="{{ row.cells }}" as="cell" hint-placeholder-count="3">
+                              <div style="text-align: {{ cell.align }}; padding: 2px 12px; border-bottom: 1px solid {{ cell.border }}; background: #FBFBFC;">
+                                <input data-tbl-input="1" value="{{ cell.value }}" onChange="{{ cell.onInput }}" onFocus="{{ cell.onFocus }}" onKeyDown="{{ cell.onKey }}" data-r="{{ cell.r }}" data-c="{{ cell.c }}" spellcheck="false" style="text-align: {{ cell.align }}; font-size: 13.5px; color: var(--mv-text);" />
+                              </div>
+                            </sc-for>
+                          </div>
+                        </sc-for>
+                    </div>
+                    <div style="font-size: 11px; color: var(--mv-muted-2); margin-top: 9px;">Tab / 回车 移动单元格 · Esc 完成</div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ b.viewing }}" hint-placeholder-val="{{ true }}">
+                  <div onMouseDown="{{ b.onDown }}" data-viewblock="1" data-boxy="{{ b.boxy }}" style="{{ b.viewStyle }}">{{ b.node }}</div>
+                </sc-if>
+              </div>
+            </sc-for>
           </div>
         </sc-if>
       </div>
 
-      <!-- 右侧悬浮目录：每根刻度逐条「融化」成标题 -->
+      <!-- 右侧悬浮目录 -->
       <sc-if value="{{ hasOutline }}" hint-placeholder-val="{{ true }}">
-        <div onMouseEnter="{{ onRailEnter }}" onMouseLeave="{{ onRailLeave }}" style="position: absolute; right: 0; top: 46%; transform: translateY(-50%); z-index: 16; min-width: 26px; min-height: 130px; padding: 30px 18px 30px 64px; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 2px;">
+        <div onMouseEnter="{{ onRailEnter }}" onMouseLeave="{{ onRailLeave }}" style="position: absolute; left: 0; top: 46%; transform: translateY(-50%); z-index: 16; min-width: 26px; min-height: 130px; padding: 30px 20px 30px 18px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px;">
           <sc-for list="{{ outlineRows }}" as="o" hint-placeholder-count="5">
-            <div onClick="{{ o.onJump }}" onMouseEnter="{{ o.onEnter }}" title="{{ o.label }}" style="position: relative; height: {{ o.rowH }}px; min-width: 26px; display: flex; align-items: center; justify-content: flex-end; cursor: pointer; transition: height 0.24s cubic-bezier(0.22, 1, 0.36, 1) {{ o.delay }};">
-              <span style="position: absolute; right: 0; height: 2px; border-radius: 1px; width: {{ o.tickW }}px; background: {{ o.tickBg }}; opacity: {{ o.tickOp }}; filter: blur({{ o.tickBlur }}); transform: {{ o.tickTf }}; --pk: {{ o.tickPeak }}; animation: {{ o.tickAnim }}; transform-origin: right center; pointer-events: {{ o.tickPE }}; transition: opacity 0.18s ease {{ o.delay }}, filter 0.18s ease {{ o.delay }}, transform 0.18s ease {{ o.delay }}, background 0.2s ease, width 0.2s ease;"></span>
-              <span style="position: absolute; right: 0; max-width: 220px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: {{ o.size }}px; line-height: 1.2; color: {{ o.color }}; font-weight: {{ o.weight }}; text-shadow: 0 0 8px #fff, 0 0 5px #fff, 0 0 2px #fff; opacity: {{ o.labelOp }}; filter: blur({{ o.labelBlur }}); transform: {{ o.labelTf }}; transform-origin: right center; pointer-events: {{ o.labelPE }}; transition: opacity 0.18s ease {{ o.delay }}, filter 0.18s ease {{ o.delay }}, transform 0.12s ease, color 0.15s ease;">{{ o.label }}</span>
+            <div onClick="{{ o.onJump }}" onMouseEnter="{{ o.onEnter }}" title="{{ o.label }}" style="position: relative; height: {{ o.rowH }}px; min-width: 26px; display: flex; align-items: center; justify-content: flex-start; cursor: pointer; transition: height 0.24s cubic-bezier(0.22, 1, 0.36, 1) {{ o.delay }};">
+              <span style="position: absolute; left: 0; height: 2px; border-radius: 1px; width: {{ o.tickW }}px; background: {{ o.tickBg }}; opacity: {{ o.tickOp }}; filter: blur({{ o.tickBlur }}); transform: {{ o.tickTf }}; transform-origin: left center; pointer-events: {{ o.tickPE }}; transition: opacity 0.18s ease {{ o.delay }}, filter 0.18s ease {{ o.delay }}, transform 0.18s ease {{ o.delay }}, background 0.2s ease, width 0.2s ease;"></span>
+              <span style="position: absolute; left: {{ o.labelLeft }}; max-width: 220px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: {{ o.size }}px; line-height: 1.2; color: {{ o.color }}; font-weight: {{ o.weight }}; text-shadow: 0 0 8px #fff, 0 0 5px #fff, 0 0 2px #fff; opacity: {{ o.labelOp }}; filter: blur({{ o.labelBlur }}); transform: {{ o.labelTf }}; transform-origin: left center; pointer-events: {{ o.labelPE }}; transition: opacity 0.18s ease {{ o.delay }}, filter 0.18s ease {{ o.delay }}, transform 0.12s ease, color 0.15s ease;">{{ o.label }}</span>
             </div>
           </sc-for>
         </div>
       </sc-if>
 
-      <!-- 目录发现提示（首次打开时浮现，hover 或数秒后消失） -->
-      <sc-if value="{{ coachShow }}" hint-placeholder-val="{{ false }}">
-        <div style="position: absolute; right: 46px; top: 46%; transform: translateY(-50%); z-index: 22; display: flex; align-items: center; pointer-events: none;">
-          <div style="background: rgba(28,28,30,0.92); color: #fff; font-size: 12px; line-height: 1.3; padding: 7px 12px; border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,0.22); backdrop-filter: blur(10px); white-space: nowrap;">本页目录 · 悬停展开</div>
-          <span style="width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 6px solid rgba(28,28,30,0.92);"></span>
-        </div>
-      </sc-if>
-
-      <!-- 状态（滚动时淡出） -->
+      <!-- 状态 -->
       <sc-if value="{{ hasDoc }}" hint-placeholder-val="{{ true }}">
-        <div style="position: absolute; bottom: 14px; right: 20px; font-size: 11.5px; color: #767676; z-index: 14; font-variant-numeric: tabular-nums; opacity: {{ statusOpacity }}; transition: opacity 0.3s; pointer-events: none;">{{ statusText }} · {{ progressPct }}%</div>
+        <div style="position: absolute; bottom: 14px; right: 20px; font-size: 11.5px; color: var(--mv-status); z-index: 14; font-variant-numeric: tabular-nums; opacity: {{ statusOpacity }}; transition: opacity 0.3s; pointer-events: none;">{{ statusText }} · {{ progressPct }}%</div>
       </sc-if>
 
-      <!-- 链接预览（浏览器惯例，左下角） -->
+      <!-- 链接预览 -->
       <sc-if value="{{ showHoverUrl }}" hint-placeholder-val="{{ false }}">
-        <div style="position: absolute; bottom: 14px; left: 20px; font-size: 11.5px; color: #767676; z-index: 14; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none;">{{ hoverUrl }}</div>
+        <div style="position: absolute; bottom: 14px; left: 20px; font-size: 11.5px; color: var(--mv-status); z-index: 14; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none;">{{ hoverUrl }}</div>
+      </sc-if>
+
+      <!-- 脚注悬停预览 -->
+      <sc-if value="{{ fnPopShow }}" hint-placeholder-val="{{ false }}">
+        <div style="position: fixed; left: {{ fnPopX }}px; top: {{ fnPopY }}px; transform: translate(-50%, -100%) translateY(-8px); z-index: 80; max-width: 300px; background: rgba(28,28,30,0.95); color: #fff; font-size: 12px; line-height: 1.45; padding: 8px 11px; border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,0.22); pointer-events: none;">{{ fnPopText }}</div>
       </sc-if>
     </div>
   </div>
@@ -226,31 +307,31 @@
   <sc-if value="{{ paletteOpen }}" hint-placeholder-val="{{ false }}">
     <div onClick="{{ closePalette }}" style="position: absolute; inset: 0; z-index: 50; background: rgba(248,248,250,0.6); backdrop-filter: blur(6px); display: flex; justify-content: center; align-items: flex-start; padding-top: 96px;">
       <div onClick="{{ stop }}" style="width: 460px; max-width: calc(100% - 48px); background: #fff; border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.05); overflow: hidden; animation: overlayIn 0.12s ease;">
-        <input value="{{ filter }}" onChange="{{ onFilter }}" onKeyDown="{{ onPaletteKey }}" placeholder="搜索文档或命令…" autofocus="{{ true }}" style="width: 100%; box-sizing: border-box; height: 46px; border: none; outline: none; border-bottom: 1px solid #F0F0F1; padding: 0 18px; font-size: 14px; font-family: inherit; color: #1d1d1f;" />
+        <input value="{{ filter }}" onChange="{{ onFilter }}" onKeyDown="{{ onPaletteKey }}" placeholder="搜索文档或命令…" autofocus="{{ true }}" style="width: 100%; box-sizing: border-box; height: 46px; border: none; outline: none; border-bottom: 1px solid #F0F0F1; padding: 0 18px; font-size: 14px; font-family: inherit; color: var(--mv-fg);" />
         <div style="max-height: 340px; overflow-y: auto; padding: 8px;">
           <sc-if value="{{ hasPalFiles }}" hint-placeholder-val="{{ true }}">
-            <div style="font-size: 10.5px; color: #aeaeb2; letter-spacing: 0.5px; padding: 6px 12px 4px;">文档</div>
+            <div style="font-size: 10.5px; color: var(--mv-muted-2); letter-spacing: 0.5px; padding: 6px 12px 4px;">文档</div>
           </sc-if>
           <sc-for list="{{ paletteFiles }}" as="item" hint-placeholder-count="4">
-            <div onClick="{{ item.onClick }}" onMouseEnter="{{ item.onHover }}" style="display: flex; align-items: center; gap: 10px; height: 36px; border-radius: 6px; padding: 0 12px; cursor: pointer; background: {{ item.bg }}; color: #1d1d1f; font-size: 13.5px;">
+            <div onClick="{{ item.onClick }}" onMouseEnter="{{ item.onHover }}" style="display: flex; align-items: center; gap: 10px; height: 36px; border-radius: 6px; padding: 0 12px; cursor: pointer; background: {{ item.bg }}; color: var(--mv-fg); font-size: 13.5px;">
               <svg width="11" height="13" viewBox="0 0 11 13" style="flex: none;"><rect x="0.7" y="0.7" width="9.6" height="11.6" rx="1.6" fill="#fff" stroke="#c2c2c8" stroke-width="1"></rect><line x1="3" y1="4" x2="8" y2="4" stroke="#c2c2c8" stroke-width="1"></line><line x1="3" y1="6.5" x2="8" y2="6.5" stroke="#c2c2c8" stroke-width="1"></line></svg>
               <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ item.name }}</span>
               <sc-if value="{{ item.active }}" hint-placeholder-val="{{ false }}">
-                <span style="font-size: 10px; color: #aeaeb2;">当前</span>
+                <span style="font-size: 10px; color: var(--mv-muted-2);">当前</span>
               </sc-if>
             </div>
           </sc-for>
           <sc-if value="{{ hasPalCmds }}" hint-placeholder-val="{{ true }}">
-            <div style="font-size: 10.5px; color: #aeaeb2; letter-spacing: 0.5px; padding: 10px 12px 4px;">命令</div>
+            <div style="font-size: 10.5px; color: var(--mv-muted-2); letter-spacing: 0.5px; padding: 10px 12px 4px;">命令</div>
           </sc-if>
           <sc-for list="{{ paletteCmds }}" as="c" hint-placeholder-count="3">
-            <div onClick="{{ c.onClick }}" onMouseEnter="{{ c.onHover }}" style="display: flex; align-items: center; gap: 10px; height: 36px; border-radius: 6px; padding: 0 12px; cursor: pointer; background: {{ c.bg }}; color: #1d1d1f; font-size: 13.5px;">
+            <div onClick="{{ c.onClick }}" onMouseEnter="{{ c.onHover }}" style="display: flex; align-items: center; gap: 10px; height: 36px; border-radius: 6px; padding: 0 12px; cursor: pointer; background: {{ c.bg }}; color: var(--mv-fg); font-size: 13.5px;">
               <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ c.label }}</span>
-              <span style="font-size: 11px; color: #aeaeb2; font-family: ui-monospace, 'SF Mono', Menlo, monospace;">{{ c.kbd }}</span>
+              <span style="font-size: 11px; color: var(--mv-muted-2); font-family: ui-monospace, 'SF Mono', Menlo, monospace;">{{ c.kbd }}</span>
             </div>
           </sc-for>
           <sc-if value="{{ palEmpty }}" hint-placeholder-val="{{ false }}">
-            <div style="padding: 18px 12px; font-size: 12.5px; color: #aeaeb2;">没有匹配的文档或命令</div>
+            <div style="padding: 18px 12px; font-size: 12.5px; color: var(--mv-muted-2);">没有匹配的文档或命令</div>
           </sc-if>
         </div>
       </div>
@@ -261,148 +342,198 @@
     <div style="position: absolute; top: 56px; left: 50%; transform: translateX(-50%); z-index: 60; background: rgba(28,28,30,0.9); color: #fff; border-radius: 99px; padding: 7px 16px; font-size: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.2); backdrop-filter: blur(10px);">✓ {{ toast }}</div>
   </sc-if>
 
-  <!-- 悬停描述提示（停留后浮现） -->
+  <!-- 悬停描述提示 -->
   <sc-if value="{{ tipShow }}" hint-placeholder-val="{{ false }}">
     <div style="position: fixed; left: {{ tipX }}px; top: {{ tipY }}px; transform: translate(-50%, {{ tipShift }}); z-index: 90; background: rgba(28,28,30,0.92); color: #fff; border-radius: 6px; padding: 4px 9px; font-size: 11.5px; line-height: 1.3; white-space: nowrap; box-shadow: 0 6px 20px rgba(0,0,0,0.22); backdrop-filter: blur(10px); pointer-events: none; animation: tipIn 0.12s ease;">{{ tip }}</div>
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;}}">
 class Component extends DCLogic {
-  FONT_SIZES = [14, 15.5, 17];
+  FONT_SIZES = [15, 16.5, 18];
 
-  DOCS = {
-    'SKILL.md': {
-      stats: '10,485 字 · 261 行',
-      outline: [
-        { id: 'h-dep', label: 'Dependencies And Tooling', lv: 1 },
-        { id: 'h-before', label: 'Before relying on a capability', lv: 2 },
-        { id: 'h-install', label: 'Installation paths', lv: 2 },
-        { id: 'h-phase1', label: 'Phase 1: Input Confirmation', lv: 1 },
-        { id: 'h-capture', label: 'What to capture', lv: 2 },
-      ],
-      html: `
-        <h1 id="h-dep" data-h="h-dep" style="margin: 0 0 24px; font-size: 26px; font-weight: 600; letter-spacing: -0.2px; color: #111;">Dependencies And Tooling</h1>
-        <p style="margin: 0 0 22px; text-wrap: pretty;">For internal investigations, <code style="font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 13px; background: #F0F0F1; border-radius: 4px; padding: 2px 6px; color: #1d1d1f;">bytedcli</code> is the default dependency for reading internal platforms such as Feishu, Argos/APM, TCE, TCC, Codebase, logs and metrics.</p>
-        <h2 id="h-before" data-h="h-before" style="margin: 40px 0 16px; font-size: 18px; font-weight: 600; letter-spacing: 0.3px; color: #111;">Before relying on a capability</h2>
-        <ol style="margin: 0 0 22px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px;">
-          <li>Confirm the CLI is available and current.</li>
-          <li>Teach one of the installation paths below.</li>
-          <li>Check auth when commands fail due to login or scope.</li>
-          <li>Verify availability with <code style="font-family: ui-monospace, Menlo, monospace; font-size: 13px; background: #F0F0F1; border-radius: 4px; padding: 2px 6px; color: #1d1d1f;">--help</code> before claiming a source is unavailable.</li>
-        </ol>
-        <div data-code="true" style="margin: 0 0 22px; background: #FAFAFA; border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 14px 2px;">
-            <span style="font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 10.5px; letter-spacing: 0.6px; color: #b3b3b8; text-transform: uppercase;" data-lang="1" title="点击修改语言">bash</span>
-            <span data-copy="1" title="复制代码" style="font-size: 11px;">复制</span>
-          </div>
-          <pre style="margin: 0; padding: 4px 16px 16px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.7; color: #444; overflow-x: auto; background: transparent;"><span style="color: #aaa;"># Run latest without global install</span><br>npx -y @dev/cli@latest --version</pre>
-        </div>
-        <h2 id="h-install" data-h="h-install" style="margin: 40px 0 16px; font-size: 18px; font-weight: 600; letter-spacing: 0.3px; color: #111;">Installation paths</h2>
-        <p style="margin: 0 0 16px; text-wrap: pretty;">Run the latest version without a global install, or install globally if the workflow repeats daily:</p>
-        <div data-code="true" style="margin: 0 0 22px; background: #FAFAFA; border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 14px 2px;">
-            <span style="font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 10.5px; letter-spacing: 0.6px; color: #b3b3b8; text-transform: uppercase;" data-lang="1" title="点击修改语言">bash</span>
-            <span data-copy="1" title="复制代码" style="font-size: 11px;">复制</span>
-          </div>
-          <pre style="margin: 0; padding: 4px 16px 16px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.7; color: #444; overflow-x: auto; background: transparent;"><span style="color: #aaa;"># Or install globally</span><br>npm install -g @dev/cli@latest<br>cli &lt;command&gt;</pre>
-        </div>
-        <blockquote style="margin: 0 0 22px; padding-left: 0; color: #767676; font-size: 14.5px; text-wrap: pretty;">— If the CLI lacks a wrapper for a page or API, say "not exposed by the current command surface". Do not claim the platform has no data when only the CLI lacks a wrapper.</blockquote>
-        <h1 id="h-phase1" data-h="h-phase1" style="margin: 56px 0 24px; font-size: 26px; font-weight: 600; letter-spacing: -0.2px; color: #111;">Phase 1: Input And Context Confirmation</h1>
-        <p style="margin: 0 0 22px; text-wrap: pretty;">Input is usually one alarm table row, alarm rule URL, alarm event URL, or a short user question that points to an alarm. Do not turn intake into a separate research project. Capture only what is needed to start.</p>
-        <h2 id="h-capture" data-h="h-capture" style="margin: 40px 0 16px; font-size: 18px; font-weight: 600; letter-spacing: 0.3px; color: #111;">What to capture</h2>
-        <table style="width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 0 0 22px;">
-          <thead>
-            <tr>
-              <th style="text-align: left; padding: 8px 14px 8px 0; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; color: #86868b; border-bottom: 1px solid #ECECEE;">字段</th>
-              <th style="text-align: left; padding: 8px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; color: #86868b; border-bottom: 1px solid #ECECEE;">说明</th>
-              <th style="text-align: left; padding: 8px 0 8px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; color: #86868b; border-bottom: 1px solid #ECECEE;">必填</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td style="padding: 9px 14px 9px 0; border-bottom: 1px solid #F4F4F5; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: #1d1d1f;">alarm_id</td><td style="padding: 9px 14px; border-bottom: 1px solid #F4F4F5;">告警规则或事件的唯一标识</td><td style="padding: 9px 0 9px 14px; border-bottom: 1px solid #F4F4F5; color: #767676;">是</td></tr>
-            <tr><td style="padding: 9px 14px 9px 0; border-bottom: 1px solid #F4F4F5; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: #1d1d1f;">time_range</td><td style="padding: 9px 14px; border-bottom: 1px solid #F4F4F5;">默认最近 1 小时，可由用户覆盖</td><td style="padding: 9px 0 9px 14px; border-bottom: 1px solid #F4F4F5; color: #767676;">否</td></tr>
-            <tr><td style="padding: 9px 14px 9px 0; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: #1d1d1f;">platform</td><td style="padding: 9px 14px;">Argos、TCE 等来源平台</td><td style="padding: 9px 0 9px 14px; color: #767676;">否</td></tr>
-          </tbody>
-        </table>
-        <p style="margin: 0; text-wrap: pretty;">If the current agent supports computer-use or browser access, open the system browser to read the page or inspect the page data directly before escalating.</p>
-      `,
-    },
-    'README.md': {
-      stats: '1,240 字 · 86 行',
-      outline: [
-        { id: 'h-r1', label: 'Markdown Viewer', lv: 1 },
-        { id: 'h-r2', label: '特性', lv: 2 },
-        { id: 'h-r3', label: '快捷键', lv: 2 },
-      ],
-      html: `
-        <h1 id="h-r1" data-h="h-r1" style="margin: 0 0 24px; font-size: 26px; font-weight: 600; letter-spacing: -0.2px; color: #111;">Markdown Viewer</h1>
-        <p style="margin: 0 0 22px; text-wrap: pretty;">一个为 macOS 设计的轻量 Markdown 阅读器：打开即读，不打扰。无账号、无云端，文件就在你的磁盘上。</p>
-        <h2 id="h-r2" data-h="h-r2" style="margin: 40px 0 16px; font-size: 18px; font-weight: 600; color: #111;">特性</h2>
-        <ul style="margin: 0 0 22px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px;">
-          <li>安静侧栏与文档树，支持按名称筛选与键盘导航</li>
-          <li>顶部多标签页，未保存的文档以琥珀点提示</li>
-          <li>右侧悬浮目录，滚动同步高亮，点击即跳转</li>
-          <li>⌘F 查找与替换，⌘K 文档与命令面板，拖入 .md 文件即可打开</li>
-        </ul>
-        <h2 id="h-r3" data-h="h-r3" style="margin: 40px 0 16px; font-size: 18px; font-weight: 600; color: #111;">快捷键</h2>
-        <table style="width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 0 0 22px;">
-          <tbody>
-            <tr><td style="padding: 9px 14px 9px 0; border-bottom: 1px solid #F4F4F5; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; width: 90px;">⌘ F</td><td style="padding: 9px 0; border-bottom: 1px solid #F4F4F5;">查找 / 替换</td></tr>
-            <tr><td style="padding: 9px 14px 9px 0; border-bottom: 1px solid #F4F4F5; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;">⌘ K</td><td style="padding: 9px 0; border-bottom: 1px solid #F4F4F5;">所有文档与命令</td></tr>
-            <tr><td style="padding: 9px 14px 9px 0; border-bottom: 1px solid #F4F4F5; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;">⇧ ⇧</td><td style="padding: 9px 0; border-bottom: 1px solid #F4F4F5;">快速搜索文档与命令</td></tr>
-            <tr><td style="padding: 9px 14px 9px 0; border-bottom: 1px solid #F4F4F5; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;">⌘ N</td><td style="padding: 9px 0; border-bottom: 1px solid #F4F4F5;">新建文档</td></tr>
-            <tr><td style="padding: 9px 14px 9px 0; border-bottom: 1px solid #F4F4F5; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;">⌘ W</td><td style="padding: 9px 0; border-bottom: 1px solid #F4F4F5;">关闭标签页</td></tr>
-            <tr><td style="padding: 9px 14px 9px 0; border-bottom: 1px solid #F4F4F5; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;">⌘ + / − / 0</td><td style="padding: 9px 0; border-bottom: 1px solid #F4F4F5;">调整 / 重置正文字号</td></tr>
-            <tr><td style="padding: 9px 14px 9px 0; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;">⌘ S</td><td style="padding: 9px 0;">保存（清除未保存标记）</td></tr>
-          </tbody>
-        </table>
-        <blockquote style="margin: 0; padding-left: 0; color: #767676; font-size: 14.5px;">— 设计原则：读起来像一页纸，而不是一个应用。</blockquote>
-      `,
-    },
-    '更新日志.md': {
-      stats: '760 字 · 50 行',
-      outline: [
-        { id: 'h-c1', label: '更新日志', lv: 1 },
-        { id: 'h-c2', label: 'v1.3.0', lv: 2 },
-        { id: 'h-c3', label: 'v1.2.0', lv: 2 },
-      ],
-      html: `
-        <h1 id="h-c1" data-h="h-c1" style="margin: 0 0 24px; font-size: 26px; font-weight: 600; letter-spacing: -0.2px; color: #111;">更新日志</h1>
-        <p style="margin: 0 0 22px; color: #767676;">遵循<a href="https://semver.org/lang/zh-CN/" target="_blank" data-link="1" style="color: #1d1d1f; text-decoration: underline; text-decoration-color: #C7C7CC; text-underline-offset: 3px;">语义化版本</a>。</p>
-        <h2 id="h-c2" data-h="h-c2" style="margin: 40px 0 16px; font-size: 18px; font-weight: 600; letter-spacing: 0.3px; color: #111;">V1.3.0 <span style="font-weight: 400; color: #c7c7cc; margin-left: 8px; letter-spacing: 0;">2026-06-12</span></h2>
-        <ul style="margin: 0 0 22px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px;">
-          <li>新增 ⌘F 查找与替换，命中高亮、上下跳转、单个 / 全部替换</li>
-          <li>「打开」交由系统访达接管</li>
-          <li>未保存的文档在侧栏与标签以琥珀点提示</li>
-          <li>代码块标注语言并支持一键复制</li>
-        </ul>
-        <h2 id="h-c3" data-h="h-c3" style="margin: 40px 0 16px; font-size: 18px; font-weight: 600; letter-spacing: 0.3px; color: #111;">V1.2.0 <span style="font-weight: 400; color: #c7c7cc; margin-left: 8px; letter-spacing: 0;">2026-06-10</span></h2>
-        <ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px;">
-          <li>加回安静侧栏与顶部标签页</li>
-          <li>本篇目录移至右侧悬浮，悬停展开</li>
-        </ul>
-      `,
-    },
-    'openai.yaml': {
-      stats: '38 行 · YAML',
-      outline: [],
-      html: `
-        <div style="font-size: 12px; color: #86868b; margin-bottom: 16px;">非 Markdown 文件 · 以源码形式查看</div>
-        <div data-code="true" style="background: #FAFAFA; border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0,0,0,0.04);">
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 14px 2px;">
-            <span style="font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 10.5px; letter-spacing: 0.6px; color: #b3b3b8; text-transform: uppercase;" data-lang="1" title="点击修改语言">yaml</span>
-            <span data-copy="1" title="复制代码" style="font-size: 11px;">复制</span>
-          </div>
-          <pre style="margin: 0; padding: 4px 16px 16px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.8; color: #444; overflow-x: auto; background: transparent;"><span style="color: #8a8a8f;">model</span>: gpt-4o<br><span style="color: #8a8a8f;">temperature</span>: 0.2<br><span style="color: #8a8a8f;">tools</span>:<br>  - <span style="color: #8a8a8f;">name</span>: search<br>    <span style="color: #8a8a8f;">enabled</span>: true<br>  - <span style="color: #8a8a8f;">name</span>: code_interpreter<br>    <span style="color: #8a8a8f;">enabled</span>: false</pre>
-        </div>
-      `,
-    },
+  SEED = {
+    '格式示例.md': [
+      '# Markdown 全格式示例',
+      '',
+      '这是一份**实时富文本**编辑器的演示文档。点击任意段落即可编辑，光标移开后立即渲染成富文本 —— 下面覆盖了 Markdown 的*绝大多数*语法。',
+      '',
+      '## 一到六级标题',
+      '',
+      '# 一级标题 H1',
+      '',
+      '## 二级标题 H2',
+      '',
+      '### 三级标题 H3',
+      '',
+      '#### 四级标题 H4',
+      '',
+      '##### 五级标题 H5',
+      '',
+      '###### 六级标题 H6',
+      '',
+      '## 文本样式',
+      '',
+      '正文里可以有 **加粗**、*斜体*、***粗斜体***、~~删除线~~、<u>下划线</u>，以及行内代码 `const answer = 42`。还支持上标 x<sup>2</sup>、下标 H<sub>2</sub>O，和 emoji 😀 🎉 ✅。',
+      '',
+      '转义与边界：带空格的星号不会被误当作强调 —— 2 * 3 = 6、4 * 5 = 20；需要字面标记时用反斜杠转义，如 \\*星号\\*、\\_下划线\\_、\\`反引号\\`。',
+      '',
+      '> 这是一段引用，常用来写注释或补充说明。引用可以嵌套：',
+      '> > 第二层引用，语气更轻。',
+      '>',
+      '> —— 设计原则：读起来像一页纸，而不是一个应用。',
+      '',
+      '## 列表',
+      '',
+      '无序列表，支持多级缩进：',
+      '',
+      '- 第一层项目',
+      '  - 第二层嵌套',
+      '    - 第三层嵌套',
+      '- 另一个第一层项目',
+      '',
+      '有序列表：',
+      '',
+      '1. 打开一篇文档',
+      '   1. 选择模板',
+      '      1. 空白文稿',
+      '      2. 从示例开始',
+      '   2. 命名并保存',
+      '2. 点击段落进入编辑，比如插入一段命令：',
+      '   ```bash',
+      '   npm run dev',
+      '   ```',
+      '3. 移开光标即渲染',
+      '',
+      '任务列表（可直接点击勾选）：',
+      '',
+      '- [x] 实时渲染',
+      '- [x] 语法即时高亮',
+      '- [ ] 协同编辑',
+      '- [ ] 导出 PDF',
+      '',
+      '## 代码',
+      '',
+      '行内代码：`npm install`、`git commit -m "msg"`。代码块带语言标注与复制按钮，超长行可在卡片内横向滚动：',
+      '',
+      '```js',
+      'function greet(name) {',
+      '  // 和 Markdown 打个招呼 —— 下面这行很长，卡片右缘会渐隐提示可横向滚动',
+      '  const endpoint = "https://api.example.com/v2/markdown/render?theme=paper&inline=true&cache=false&pretty=false&token=demo";',
+      '  return `Hello, ${name}! (${endpoint})`;',
+      '}',
+      'console.log(greet("Markdown"));',
+      '```',
+      '',
+      '```bash',
+      '# 安装并运行',
+      'npx -y @dev/cli@latest --version',
+      '```',
+      '',
+      '## 链接与图片',
+      '',
+      '行内链接：[语义化版本](https://semver.org) 与 [Markdown 指南](https://www.markdownguide.org)。',
+      '',
+      '![一张产品截图](placeholder)',
+      '',
+      '## 表格',
+      '',
+      '| 快捷键 | 功能 | 平台 |',
+      '| --- | --- | :---: |',
+      '| ⌘B | 加粗 | 全部 |',
+      '| ⌘I | 斜体 | 全部 |',
+      '| ⌘K | 命令面板 | 全部 |',
+      '| ⌘F | 查找替换 | 全部 |',
+      '',
+      '列较多、一行放不下时，表格会出现横向滚动条，可左右拖动查看（下表就是一个例子）：',
+      '',
+      '| 命令 | 默认快捷键 | 作用域 | 支持平台 | 可否自定义 | 说明 |',
+      '| --- | --- | --- | --- | :---: | --- |',
+      '| 加粗 | ⌘B | 行内选区 | macOS / Windows / Linux | 可以 | 包裹所选文字为 **粗体** |',
+      '| 斜体 | ⌘I | 行内选区 | macOS / Windows / Linux | 可以 | 包裹所选文字为 *斜体* |',
+      '| 行内代码 | ⌘E | 行内选区 | macOS / Windows / Linux | 暂不支持 | 包裹所选文字为 `代码` |',
+      '| 命令面板 | ⌘K | 全局 | macOS / Windows / Linux | 可以 | 搜索并跳转文档与命令 |',
+      '| 查找替换 | ⌘F | 当前文档 | macOS / Windows / Linux | 可以 | 支持正则、区分大小写与全词匹配 |',
+      '',
+      '## 分割线',
+      '',
+      '上下用一条水平分割线隔开：',
+      '',
+      '---',
+      '',
+      '## 脚注',
+      '',
+      'Markdown 是一种轻量级标记语言[^1]，本编辑器实现了其中最常用的子集[^scope]。',
+      '',
+      '[^1]: 由 John Gruber 于 2004 年提出。',
+      '[^scope]: 标题、列表、代码、表格、链接、脚注等。',
+    ].join('\n'),
+
+    'README.md': [
+      '# Markdown Editor',
+      '',
+      '一个为 macOS 设计的轻量 Markdown **实时富文本编辑器**：点开即读、点中即改，移开光标就渲染。无账号、无云端，文件就在你的磁盘上。',
+      '',
+      '## 特性',
+      '',
+      '- 所见即所得：单栏纸面，输入即渲染，只有光标所在块显露语法',
+      '- 安静侧栏与文档树，支持按名称筛选与键盘导航',
+      '- 顶部多标签页，未保存的文档以琥珀点提示',
+      '- 右侧悬浮目录，滚动同步高亮，点击即跳转',
+      '- ⌘F 查找替换、⌘K 命令面板，拖入 `.md` 即可打开',
+      '',
+      '## 快捷键',
+      '',
+      '| 快捷键 | 功能 |',
+      '| --- | --- |',
+      '| ⌘B / ⌘I / ⌘E | 加粗 / 斜体 / 行内代码 |',
+      '| ⌘F | 查找 / 替换 |',
+      '| ⌘K | 所有文档与命令 |',
+      '| ⌘N / ⌘W | 新建 / 关闭标签 |',
+      '| ⌘S | 保存 |',
+      '',
+      '> —— 设计原则：读起来像一页纸，而不是一个应用。',
+    ].join('\n'),
+
+    '更新日志.md': [
+      '# 更新日志',
+      '',
+      '遵循[语义化版本](https://semver.org/lang/zh-CN/)。',
+      '',
+      '## v2.0.0 — 实时编辑器',
+      '',
+      '- 从只读阅读器升级为 **所见即所得** 的实时富文本编辑器',
+      '- 点击任意块进入源码编辑，移开即渲染，光标所在块显露语法标记',
+      '- 支持 ⌘B / ⌘I / ⌘E、任务列表点击勾选、回车拆分与退格合并',
+      '- 大纲与字数改为实时计算',
+      '',
+      '## v1.3.0',
+      '',
+      '- 新增 ⌘F 查找与替换',
+      '- 代码块标注语言并支持一键复制',
+    ].join('\n'),
+
+    'config.yaml': [
+      '```yaml',
+      'model: gpt-4o',
+      'temperature: 0.2',
+      'tools:',
+      '  - name: search',
+      '    enabled: true',
+      '  - name: code_interpreter',
+      '    enabled: false',
+      '```',
+    ].join('\n'),
   };
 
+  blocksByDoc = {};
+  dirtyDocs = {};
+  _bid = 1;
   scrollPos = {};
   ranges = [];
   extraOrder = [];
+  _pendingCaret = null;
+  _composing = false;
 
   state = {
     sidebarOpen: true,
@@ -412,10 +543,12 @@ class Component extends DCLogic {
     sideW: 216,
     resizing: false,
     resizeHover: false,
-    tabs: ['SKILL.md'],
-    active: 'SKILL.md',
+    tabs: ['格式示例.md'],
+    active: '格式示例.md',
+    activeId: '',
+    forcePreview: false,
     progress: 0,
-    activeHeading: 'h-dep',
+    activeHeading: '',
     railOpen: false,
     railPulse: false,
     coachShow: false,
@@ -433,8 +566,9 @@ class Component extends DCLogic {
     replaceOpen: false,
     replaceText: '',
     toast: '',
-    dirty: {},
+    dirtyTick: 0,
     hasUntitled: false,
+    untitledCount: 0,
     confirmClose: '',
     lastClosed: '',
     statusFaded: false,
@@ -446,53 +580,53 @@ class Component extends DCLogic {
     tipY: 0,
     tipAbove: false,
     tipShow: false,
-    hoverIdx: -1,
     hoverFile: '',
+    hoverIdx: -1,
+    tblDraft: null,
+    tblFocus: null,
   };
 
   contentRef = (el) => { this.contentEl = el; };
-  bodyRef = (el) => { this.bodyEl = el; if (el) this.normalizeHeadings(); };
   findInputRef = (el) => { this.findInput = el; };
 
+  // ============ 生命周期 ============
   componentDidMount() {
     try {
-      const raw = localStorage.getItem('mdviewer.v2.session');
+      const raw = localStorage.getItem('mdeditor.v1.session');
       if (raw) {
         const sess = JSON.parse(raw) || {};
         const patch = {};
-        const tabs = Array.isArray(sess.tabs) ? sess.tabs.filter((t) => this.DOCS[t]) : [];
-        if (tabs.length) {
-          patch.tabs = tabs;
-          patch.active = tabs.includes(sess.active) ? sess.active : tabs[0];
-        }
+        const tabs = Array.isArray(sess.tabs) ? sess.tabs.filter((t) => this.SEED[t]) : [];
+        if (tabs.length) { patch.tabs = tabs; patch.active = tabs.includes(sess.active) ? sess.active : tabs[0]; }
         if (typeof sess.fontIdx === 'number' && sess.fontIdx >= 0 && sess.fontIdx < this.FONT_SIZES.length) patch.fontIdx = sess.fontIdx;
         if (typeof sess.sideW === 'number' && sess.sideW >= 176 && sess.sideW <= 440) patch.sideW = sess.sideW;
         if (sess.scrollPos && typeof sess.scrollPos === 'object') this.scrollPos = sess.scrollPos;
-        if (Object.keys(patch).length) this.setState(patch, () => this.restoreScroll(this.state.active));
+        if (Object.keys(patch).length) this.setState(patch, () => { this.ensureBlocks(this.state.active); this.restoreScroll(this.state.active); });
       }
     } catch (_) {}
+    this.ensureBlocks(this.state.active);
     this.syncScroll();
-    this.maybeHintRail();
+    this._scheduleFades();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => this.updateCodeFades());
+    this._fadeT1 = setTimeout(() => this.updateCodeFades(), 350);
+    this._onResize = () => this._scheduleFades();
+    window.addEventListener('resize', this._onResize);
+
     this._onKey = (e) => {
-      // 连按两下 Shift → 快速搜索文档与命令
       if (e.key === 'Shift') {
         if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
           const now = Date.now();
-          if (this._lastShift && now - this._lastShift < 350) {
-            this._lastShift = 0;
-            e.preventDefault();
-            if (this.state.findOpen) this.closeFind();
-            this.setState({ paletteOpen: true, filter: '', palSel: 0 });
-          } else {
-            this._lastShift = now;
-          }
+          if (this._lastShift && now - this._lastShift < 350) { this._lastShift = 0; e.preventDefault(); if (this.state.findOpen) this.closeFind(); this.setState({ paletteOpen: true, filter: '', palSel: 0 }); }
+          else this._lastShift = now;
         }
         return;
       }
       this._lastShift = 0;
       const meta = e.metaKey || e.ctrlKey;
       if (meta && e.shiftKey && (e.key === 't' || e.key === 'T')) { e.preventDefault(); this.reopenClosed(); }
+      else if (meta && e.shiftKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); this.togglePreviewAll(); }
       else if (meta && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); this.togglePalette(); }
+      else if (meta && e.key === '\\') { e.preventDefault(); this.toggleSidebar(); }
       else if (meta && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); this.openFind(); }
       else if (meta && (e.key === 'o' || e.key === 'O')) { e.preventDefault(); this.openSystem(); }
       else if (meta && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); this.newDoc(); }
@@ -501,84 +635,23 @@ class Component extends DCLogic {
       else if (meta && (e.key === '=' || e.key === '+')) { e.preventDefault(); this.fontUp(); }
       else if (meta && e.key === '-') { e.preventDefault(); this.fontDown(); }
       else if (meta && e.key === '0') { e.preventDefault(); this.fontReset(); }
-      else if (e.key === 'Escape') {
-        if (this.state.findOpen) this.closeFind();
-        else if (this.state.paletteOpen) this.setState({ paletteOpen: false });
-      }
+      else if (e.key === 'Escape') { if (this.state.findOpen) this.closeFind(); else if (this.state.paletteOpen) this.setState({ paletteOpen: false }); else if (this.state.activeId) this.deactivate(); }
     };
     window.addEventListener('keydown', this._onKey);
 
     this._onTipOver = (e) => {
-      const t = e.target;
-      const el = t && t.closest ? t.closest('[data-tip]') : null;
+      const el = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
       if (!el) return;
       clearTimeout(this._tipT);
       const r = el.getBoundingClientRect();
-      const text = el.getAttribute('data-tip');
       const above = r.bottom > window.innerHeight - 90;
-      const x = r.left + r.width / 2;
-      const y = above ? r.top - 8 : r.bottom + 8;
-      this._tipT = setTimeout(() => this.setState({ tip: text, tipX: x, tipY: y, tipAbove: above, tipShow: true }), 480);
+      this._tipT = setTimeout(() => this.setState({ tip: el.getAttribute('data-tip'), tipX: r.left + r.width / 2, tipY: above ? r.top - 8 : r.bottom + 8, tipAbove: above, tipShow: true }), 480);
     };
-    this._onTipOut = (e) => {
-      const t = e.target;
-      const el = t && t.closest ? t.closest('[data-tip]') : null;
-      if (!el) return;
-      clearTimeout(this._tipT);
-      if (this.state.tipShow) this.setState({ tipShow: false });
-    };
+    this._onTipOut = (e) => { const el = e.target && e.target.closest ? e.target.closest('[data-tip]') : null; if (!el) return; clearTimeout(this._tipT); if (this.state.tipShow) this.setState({ tipShow: false }); };
     this._hideTip = () => { clearTimeout(this._tipT); if (this.state.tipShow) this.setState({ tipShow: false }); };
     document.addEventListener('mouseover', this._onTipOver, true);
     document.addEventListener('mouseout', this._onTipOut, true);
     window.addEventListener('mousedown', this._hideTip, true);
-  }
-
-  // 中英分流：含 CJK 的小节标题去掉大写 / 字距，纯西文标题才套大写 + 字距
-  normalizeHeadings() {
-    const root = this.bodyEl;
-    if (!root) return;
-    const CJK = /[\u2E80-\u9FFF\u3040-\u30FF\uAC00-\uD7AF\uFF00-\uFFEF\u3000-\u303F]/;
-    root.querySelectorAll('h2[data-h]').forEach((el) => {
-      const cjk = CJK.test(el.textContent || '');
-      el.style.textTransform = cjk ? 'none' : 'uppercase';
-      el.style.letterSpacing = cjk ? 'normal' : '0.3px';
-    });
-  }
-
-  // 目录刻度脉冲：每次打开 / 切换文档时闪一下（无文字气泡、不记忆）
-  pulseRail() {
-    const doc = this.DOCS[this.state.active];
-    clearTimeout(this._pulseT); clearTimeout(this._pulseOnT);
-    if (!doc || !doc.outline.length) { if (this.state.railPulse) this.setState({ railPulse: false }); return; }
-    // 先关再开：强制所有刻度（含被按位置复用的 DOM 节点）重新触发动画
-    this.setState({ railPulse: false });
-    this._pulseOnT = setTimeout(() => {
-      this.setState({ railPulse: true });
-      this._pulseT = setTimeout(() => this.setState({ railPulse: false }), 1400);
-    }, 30);
-  }
-
-  // 悬浮目录：首次出现时刻度做一次极淡的横向脉冲（发现过即不再打扰）
-  maybeHintRail() {
-    if (this._railHintDone) return;
-    try { if (localStorage.getItem('mdviewer.railCoach')) { this._railHintDone = true; return; } } catch (_) {}
-    const doc = this.DOCS[this.state.active];
-    if (!doc || !doc.outline.length) return;
-    this._railHintDone = true;
-    clearTimeout(this._railHintT1); clearTimeout(this._railHintT2); clearTimeout(this._railHintT3);
-    this._railHintT1 = setTimeout(() => {
-      this.setState({ railPulse: true, coachShow: true });
-      try { localStorage.setItem('mdviewer.railCoach', '1'); } catch (_) {}
-    }, 900);
-    this._railHintT2 = setTimeout(() => this.setState({ railPulse: false }), 4100);
-    this._railHintT3 = setTimeout(() => this.setState({ coachShow: false }), 7200);
-  }
-
-  markRailSeen() {
-    clearTimeout(this._railHintT1); clearTimeout(this._railHintT2); clearTimeout(this._railHintT3);
-    this._railHintDone = true;
-    if (this.state.railPulse || this.state.coachShow) this.setState({ railPulse: false, coachShow: false });
-    try { localStorage.setItem('mdviewer.railCoach', '1'); } catch (_) {}
   }
 
   componentWillUnmount() {
@@ -586,111 +659,894 @@ class Component extends DCLogic {
     document.removeEventListener('mouseover', this._onTipOver, true);
     document.removeEventListener('mouseout', this._onTipOut, true);
     window.removeEventListener('mousedown', this._hideTip, true);
-    clearTimeout(this._tipT);
-    clearTimeout(this._pulseT);
-    clearTimeout(this._pulseOnT);
-    clearTimeout(this._railHintT1);
-    clearTimeout(this._railHintT2);
-    clearTimeout(this._railHintT3);
+    clearTimeout(this._tipT); clearTimeout(this._pulseT); clearTimeout(this._pulseOnT);
+    clearTimeout(this._railHintT1); clearTimeout(this._railHintT2); clearTimeout(this._railHintT3);
+    if (this._onResize) window.removeEventListener('resize', this._onResize);
+    clearTimeout(this._fadeT1);
     this.clearHighlights();
   }
 
-  saveSession() {
-    try {
-      localStorage.setItem('mdviewer.v2.session', JSON.stringify({
-        tabs: this.state.tabs,
-        active: this.state.active,
-        fontIdx: this.state.fontIdx,
-        sideW: this.state.sideW,
-        scrollPos: this.scrollPos,
-      }));
-    } catch (_) {}
-  }
-
-  buildDefs() {
-    const defs = [
-      { name: 'agents', folder: true, indent: 0 },
-      { name: 'openai.yaml', indent: 1 },
-      { name: 'SKILL.md', indent: 1 },
-      { name: 'README.md', indent: 0 },
-      { name: '更新日志.md', indent: 0 },
-    ];
-    this.extraOrder.forEach((n) => defs.push({ name: n, indent: 0 }));
-    if (this.state.hasUntitled) defs.push({ name: '未命名.md', indent: 0 });
-    return defs;
-  }
-
-  onResizeStart = (e) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = this.state.sideW;
-    this.setState({ resizing: true });
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'col-resize';
-    const move = (ev) => {
-      const w = Math.max(176, Math.min(440, startW + (ev.clientX - startX)));
-      if (w !== this.state.sideW) this.setState({ sideW: w });
-    };
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-      this.setState({ resizing: false });
-      this.saveSession();
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  };
-
-  toggleFolder(name) {
-    this.setState((st) => ({ folderCollapsed: { ...st.folderCollapsed, [name]: !st.folderCollapsed[name] } }));
-  }
-
-  sideVisibleFiles() {
-    const sf = this.state.sideFilter.trim().toLowerCase();
-    return this.buildDefs().filter((d) => !d.folder && d.name.toLowerCase().includes(sf)).map((d) => d.name);
-  }
-
-  syncScroll() {
-    const el = this.contentEl;
-    if (!el) return;
-    const max = el.scrollHeight - el.clientHeight;
-    const progress = max > 0 ? Math.min(1, Math.max(0, el.scrollTop / max)) : 0;
-    let activeHeading = '';
-    const hs = el.querySelectorAll('[data-h]');
-    hs.forEach((h) => { if (h.offsetTop <= el.scrollTop + 140) activeHeading = h.getAttribute('data-h'); });
-    if (!activeHeading && hs.length) activeHeading = hs[0].getAttribute('data-h');
-    if (progress !== this.state.progress || activeHeading !== this.state.activeHeading) {
-      this.setState({ progress, activeHeading });
-    }
-  }
-
-  onScroll = () => {
-    if (this.contentEl) this.scrollPos[this.state.active] = this.contentEl.scrollTop;
-    if (!this.state.statusFaded) this.setState({ statusFaded: true });
-    clearTimeout(this._statusT);
-    this._statusT = setTimeout(() => this.setState({ statusFaded: false }), 800);
-    clearTimeout(this._sessT);
-    this._sessT = setTimeout(() => this.saveSession(), 400);
-    this.syncScroll();
-  };
-
-  restoreScroll(name) {
-    requestAnimationFrame(() => {
-      if (!this.contentEl) return;
-      this.contentEl.scrollTop = this.scrollPos[name] || 0;
-      this.syncScroll();
+  // ---- 3A 超长代码行:右缘渐隐提示(仅在可横向滚动且未到末端时显示) ----
+  componentDidUpdate() { this._scheduleFades(); }
+  _scheduleFades() { if (this._fadeRaf) cancelAnimationFrame(this._fadeRaf); this._fadeRaf = requestAnimationFrame(() => this.updateCodeFades()); }
+  updateCodeFades() {
+    const root = this.contentEl; if (!root) return;
+    root.querySelectorAll('[data-codebody]').forEach((pre) => {
+      const fade = pre.parentElement && pre.parentElement.querySelector('[data-codefade]');
+      if (!fade) return;
+      const upd = () => { const more = pre.scrollWidth - pre.clientWidth - pre.scrollLeft > 1; fade.style.opacity = more ? '1' : '0'; };
+      upd();
+      if (!pre._fadeWired) { pre._fadeWired = true; pre.addEventListener('scroll', upd, { passive: true }); }
     });
   }
 
-  openFile(name) {
+  // ============ 块模型 ============
+  ensureBlocks(name) {
+    if (!name || !this.SEED[name]) { if (name && !this.blocksByDoc[name]) this.blocksByDoc[name] = [{ id: 'b' + (this._bid++), type: 'paragraph', source: '' }]; return; }
+    if (this.blocksByDoc[name]) return;
+    const parts = this.splitBlocks(this.SEED[name]);
+    this.blocksByDoc[name] = (parts.length ? parts : [{ type: 'paragraph', source: '' }]).map((p) => ({ id: 'b' + (this._bid++), type: p.type, source: p.source }));
+  }
+  currentBlocks() { return this.blocksByDoc[this.state.active] || []; }
+  blockIndexById(id) { return this.currentBlocks().findIndex((b) => b.id === id); }
+  activeBlock() { const i = this.blockIndexById(this.state.activeId); return i < 0 ? null : this.currentBlocks()[i]; }
+  docSource(name) { return (this.blocksByDoc[name] || []).map((b) => b.source).join('\n\n'); }
+
+  splitBlocks(src) {
+    const lines = (src || '').replace(/\r\n?/g, '\n').split('\n');
+    const blocks = [];
+    const blank = (l) => !l.trim();
+    const push = (type, arr) => blocks.push({ type, source: arr.join('\n') });
+    let i = 0;
+    while (i < lines.length) {
+      const l = lines[i];
+      if (blank(l)) { i++; continue; }
+      const fence = l.match(/^\s*(```|~~~)/);
+      if (fence) { const arr = [l]; i++; while (i < lines.length) { arr.push(lines[i]); const closed = lines[i].trim().startsWith(fence[1]); i++; if (closed) break; } push('code', arr); continue; }
+      if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(l)) { push('hr', [l]); i++; continue; }
+      if (/^\s*#{1,6}\s+/.test(l)) { push('heading', [l]); i++; continue; }
+      if (/\|/.test(l) && i + 1 < lines.length && /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/.test(lines[i + 1])) { const arr = [l]; i++; while (i < lines.length && lines[i].includes('|') && !blank(lines[i])) { arr.push(lines[i]); i++; } push('table', arr); continue; }
+      if (/^\s*\[\^[^\]]+\]:/.test(l)) { const arr = [l]; i++; while (i < lines.length && (/^\s*\[\^[^\]]+\]:/.test(lines[i]) || (/^\s{2,}\S/.test(lines[i]) && !blank(lines[i])))) { arr.push(lines[i]); i++; } push('footnotes', arr); continue; }
+      if (/^\s*>/.test(l)) { const arr = [l]; i++; while (i < lines.length && /^\s*>/.test(lines[i])) { arr.push(lines[i]); i++; } push('quote', arr); continue; }
+      if (this.isListStartLine(l)) {
+        const arr = [l]; i++;
+        while (i < lines.length) {
+          const t = lines[i];
+          if (blank(t)) break;
+          if (this.isListStartLine(t)) break;
+          if (/^\s*(```|~~~)/.test(t)) break;
+          if (/^\s+\S/.test(t)) { arr.push(t); i++; continue; }
+          break;
+        }
+        push('list', arr); continue;
+      }
+      const arr = [l]; i++;
+      while (i < lines.length) { const t = lines[i]; if (blank(t)) break; if (/^\s*(#{1,6}\s+|```|~~~|>)/.test(t) || this.isListStartLine(t)) break; if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(t)) break; arr.push(t); i++; }
+      if (arr.length === 1 && /^\s*!\[[^\]]*\]\([^)]+\)\s*$/.test(arr[0])) push('image', arr);
+      else push('paragraph', arr);
+    }
+    return blocks;
+  }
+
+  detectType(src) { const b = this.splitBlocks(src); return b.length === 1 ? b[0].type : 'paragraph'; }
+
+  // ============ 行内渲染 ============
+  esc(s) { return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  inlineHTML(t) {
+    if (t == null) return '';
+    const esc2 = [];
+    const codes = [];
+    // 4A: 先保护反斜杠转义,使 \* \_ \` \[ 等按字面渲染。
+    t = t.replace(/\\([\\`*_~\[\]()#+\-.!<>{}])/g, (m, ch) => { esc2.push(this.esc(ch)); return '\u0000E' + (esc2.length - 1) + '\u0000'; });
+    t = t.replace(/`([^`]+)`/g, (m, c) => { codes.push(c); return '\u0000C' + (codes.length - 1) + '\u0000'; });
+    t = this.esc(t);
+    t = t.replace(/&lt;u&gt;/g, '<u style="text-decoration-color:#C7C7CC; text-underline-offset:3px; text-decoration-thickness:1px;">').replace(/&lt;\/u&gt;/g, '</u>');
+    t = t.replace(/&lt;sup&gt;/g, '<sup>').replace(/&lt;\/sup&gt;/g, '</sup>');
+    t = t.replace(/&lt;sub&gt;/g, '<sub>').replace(/&lt;\/sub&gt;/g, '</sub>');
+    t = t.replace(/&lt;mark&gt;/g, '<mark style="background:rgba(232,163,61,0.28); border-radius:3px; padding:0 2px;">').replace(/&lt;\/mark&gt;/g, '</mark>');
+    t = t.replace(/&lt;br\s*\/?&gt;/g, '<br>');
+    t = t.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, a) => '<span style="font-family:ui-monospace,Menlo,monospace; font-size:0.8em; color:#9a9a9e; background:#F4F4F5; border-radius:4px; padding:1px 6px;">🖼 ' + this.esc(a || 'image') + '</span>');
+    t = t.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)/g, (m, tx, u) => '<a href="' + this.esc(u) + '" target="_blank" data-link="1" style="color:#1d1d1f; text-decoration:underline dashed; text-decoration-color:rgba(232,163,61,0.75); text-underline-offset:3px; text-decoration-thickness:1.5px;">' + tx + '</a>');
+    // 5A: 脚注引用带 data-fnref,支持点击跳转与悬停预览。
+    t = t.replace(/\[\^([^\]]+)\]/g, (m, id) => '<sup data-fnref="' + this.esc(id) + '" style="font-size:0.7em; color:#E8A33D; font-weight:700; cursor:pointer; padding:0 1px;">' + this.esc(id) + '</sup>');
+    // 4A: 强调收紧 —— 定界符必须紧贴非空白,避免「2 * 3 = 6」被误判为斜体。
+    t = t.replace(/\*\*\*(?=\S)([^\n*]+?)(?<=\S)\*\*\*/g, '<strong style="font-weight:650;"><em>$1</em></strong>');
+    t = t.replace(/\*\*(?=\S)([^\n*]+?)(?<=\S)\*\*/g, '<strong style="font-weight:650;">$1</strong>');
+    t = t.replace(/__(?=\S)([^\n_]+?)(?<=\S)__/g, '<strong style="font-weight:650;">$1</strong>');
+    t = t.replace(/(^|[^*\w])\*(?=\S)([^\n*]+?)(?<=\S)\*(?!\w)/g, '$1<em>$2</em>');
+    t = t.replace(/(^|[^_\w])_(?=\S)([^\n_]+?)(?<=\S)_(?!\w)/g, '$1<em>$2</em>');
+    t = t.replace(/~~(?=\S)([^\n~]+?)(?<=\S)~~/g, '<s style="text-decoration-color:#c7c7cc;">$1</s>');
+    t = t.replace(/\u0000C(\d+)\u0000/g, (m, k) => '<code style="font-family:ui-monospace,\'SF Mono\',Menlo,monospace; font-size:0.85em; font-weight:500; background:#F6F6F9; box-shadow:inset 0 0 0 1px #E9E9EF; border-radius:5px; padding:1.5px 6px; color:#1d1d1f;">' + this.esc(codes[+k]) + '</code>');
+    t = t.replace(/\u0000E(\d+)\u0000/g, (m, k) => esc2[+k]);
+    return t;
+  }
+
+  // ============ 块渲染（富文本视图） ============
+  headingId(index, text) { return 'h-' + index + '-' + (text || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 28); }
+
+  renderBlockHTML(b, index) {
+    switch (b.type) {
+      case 'heading': return this.renderHeading(b, index);
+      case 'hr': return '<div style="margin:16px 0; padding:14px 0;"><div style="border-top:1px solid #E9E9EF;"></div></div>';
+      case 'code': return this.renderCode(b);
+      case 'table': return this.renderTable(b);
+      case 'quote': return this.renderQuote(b);
+      case 'list': return this.renderList(b, index);
+      case 'footnotes': return this.renderFootnotes(b);
+      case 'image': return this.renderImage(b);
+      default: return this.renderPara(b);
+    }
+  }
+
+  renderHeading(b, index) {
+    const m = b.source.match(/^\s*(#{1,6})\s+([\s\S]*)$/);
+    if (!m) return this.renderPara(b);
+    const lv = m[1].length;
+    const text = m[2].replace(/\s+#*\s*$/, '').trim();
+    const id = this.headingId(index, text);
+    const map = { 1: [26, 600, '-0.2px', '#111', 4, 19], 2: [20, 600, '-0.1px', '#111', 3.5, 15], 3: [17, 600, '0', '#111', 3, 12], 4: [15.5, 600, '0', '#111', 2.5, 11], 5: [14, 600, '0.4px', '#111', 2, 10], 6: [13, 600, '0.4px', '#111', 2, 9] };
+    const mt = { 1: 34, 2: 32, 3: 26, 4: 22, 5: 20, 6: 18 };
+    const mb = { 1: 16, 2: 14, 3: 10, 4: 8, 5: 6, 6: 6 };
+    const s = map[lv];
+    const bar = '<span aria-hidden="true" style="flex:none; width:' + s[4] + 'px; height:' + s[5] + 'px; border-radius:2px; background:#E8A33D;"></span>';
+    return '<h' + lv + ' id="' + id + '" data-h="' + id + '" style="margin:' + (index === 0 ? 0 : mt[lv]) + 'px 0 ' + mb[lv] + 'px; display:flex; align-items:center; gap:11px; font-size:' + s[0] + 'px; font-weight:' + s[1] + '; letter-spacing:' + s[2] + '; color:' + s[3] + '; line-height:1.3;">' + bar + '<span style="min-width:0; text-wrap:balance;">' + this.inlineHTML(text) + '</span></h' + lv + '>';
+  }
+
+  renderPara(b) { return '<p style="margin:0 0 18px; text-wrap:pretty;">' + this.inlineHTML(b.source.replace(/\n/g, ' ')) + '</p>'; }
+  renderQuotePara(b) { return '<p style="margin:0 0 18px; text-wrap:pretty;">' + b.source.split('\n').map((line) => this.inlineHTML(line)).join('<br>') + '</p>'; }
+
+  renderImage(b) {
+    const m = b.source.match(/^\s*!\[([^\]]*)\]\(([^)]+)\)/);
+    const alt = m ? m[1] : '';
+    return '<div style="margin:6px 0 20px;"><div data-ibox="1" style="position:relative; height:184px; border-radius:8px; background:repeating-linear-gradient(45deg,#F5F5F6,#F5F5F6 11px,#EFEFF1 11px,#EFEFF1 22px); box-shadow:inset 0 0 0 1px #E9E9EF; display:flex; align-items:center; justify-content:center;"><span style="font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:#8e8e93; background:#fff; padding:5px 11px; border-radius:6px; box-shadow:0 0 0 1px rgba(0,0,0,0.05);">图片占位 · ' + this.esc(alt || 'image') + '</span></div></div>';
+  }
+
+  // ---- 语法高亮(1B 鲜明 · GitHub Light 风格调色板) ----
+  CODE_PAL = { def: '#24292f', comment: '#6e7781', keyword: '#cf222e', string: '#0a3069', number: '#0550ae', func: '#8250df', key: '#0550ae', flag: '#8250df' };
+  JS_KW = /\b(function|return|const|let|var|if|else|for|while|do|switch|case|break|continue|new|typeof|instanceof|await|async|class|extends|super|import|export|from|default|try|catch|finally|throw|delete|in|of|void|yield|this)\b/g;
+  PY_KW = /\b(def|return|if|elif|else|for|while|break|continue|import|from|as|class|try|except|finally|raise|with|lambda|yield|pass|global|and|or|not|in|is)\b/g;
+
+  codeHTML(code, lang) { return this.hlCode(code, lang); }
+
+  hlCode(code, lang) {
+    lang = (lang || '').toLowerCase();
+    if (/^(bash|sh|shell|zsh|console)$/.test(lang)) return this._hl(code, { hash: true, flags: true, cmds: true });
+    if (/^(ya?ml)$/.test(lang)) return this._hl(code, { hash: true, yamlKeys: true, bools: true });
+    if (/^(jsonc?|json5)$/.test(lang)) return this._hl(code, { slash: true, jsonKeys: true, bools: true });
+    if (/^(js|javascript|jsx|ts|typescript|tsx|mjs|cjs)$/.test(lang)) return this._hl(code, { slash: true, keywords: this.JS_KW, bools: true, funcs: true });
+    if (/^(py|python|rb|ruby)$/.test(lang)) return this._hl(code, { hash: true, keywords: this.PY_KW, bools: true, funcs: true });
+    return this.esc(code);
+  }
+
+  // 占位符用私有区字符编码索引,避免被后续 \d / \w 正则重新匹配。
+  _hl(code, opts) {
+    const P = this.CODE_PAL;
+    const store = [];
+    const mark = (color, raw) => { const i = store.length; store.push('<span style="color:' + color + ';">' + this.esc(raw) + '</span>'); return '\uE000' + String.fromCharCode(0xE100 + i) + '\uE000'; };
+    let t = code;
+    // 字符串先于注释:保护 URL 里的 "//" 不被当作行注释(否则字符串会跨行吞并)。
+    if (opts.jsonKeys) t = t.replace(/"(?:[^"\\]|\\.)*"(?=\s*:)/g, (m) => mark(P.key, m));
+    t = t.replace(/`(?:[^`\\]|\\.)*`|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, (m) => mark(P.string, m));
+    if (opts.hash) t = t.replace(/#[^\n]*/g, (m) => mark(P.comment, m));
+    if (opts.slash) { t = t.replace(/\/\/[^\n]*/g, (m) => mark(P.comment, m)); t = t.replace(/\/\*[\s\S]*?\*\//g, (m) => mark(P.comment, m)); }
+    if (opts.yamlKeys) t = t.replace(/^(\s*(?:-\s+)?)([\w.$-]+)(?=\s*:)/gm, (m, pre, k) => pre + mark(P.key, k));
+    if (opts.keywords) t = t.replace(opts.keywords, (m) => mark(P.keyword, m));
+    if (opts.cmds) t = t.replace(/^(\s*)(npm|npx|node|git|cd|ls|echo|cat|mkdir|rm|cp|mv|curl|wget|sudo|brew|python|pip|yarn|pnpm|docker|make|export|source)\b/gm, (m, sp, c) => sp + mark(P.func, c));
+    if (opts.bools) t = t.replace(/\b(true|false|null|nil|None|True|False|yes|no|on|off)\b/g, (m) => mark(P.number, m));
+    t = t.replace(/\b\d+(?:\.\d+)?\b/g, (m) => mark(P.number, m));
+    if (opts.funcs) t = t.replace(/[A-Za-z_$][\w$]*(?=\s*\()/g, (m) => mark(P.func, m));
+    if (opts.flags) t = t.replace(/(^|\s)(--?[A-Za-z][\w-]*)/g, (m, sp, f) => sp + mark(P.flag, f));
+    t = this.esc(t);
+    t = t.replace(/\uE000([\uE100-\uE1FF])\uE000/g, (m, ch) => store[ch.charCodeAt(0) - 0xE100]);
+    return t;
+  }
+
+  renderCode(b) {
+    const lines = b.source.split('\n');
+    let lang = ((lines[0] || '').match(/^\s*(?:```|~~~)(.*)$/) || [])[1] || '';
+    lang = lang.trim() || 'text';
+    let body = lines.slice(1);
+    if (body.length && /^\s*(```|~~~)/.test(body[body.length - 1])) body = body.slice(0, -1);
+    const code = body.join('\n');
+    return '<div data-code="1" style="margin:0 0 20px; background:#F6F6F9; border-radius:6px; overflow:hidden; box-shadow:0 0 0 1px #E9E9EF;">' +
+      '<div style="display:flex; align-items:center; justify-content:space-between; padding:9px 14px 2px;"><span style="font-family:ui-monospace,\'SF Mono\',Menlo,monospace; font-size:10.5px; letter-spacing:0.6px; color:#b3b3b8; text-transform:uppercase;">' + this.esc(lang) + '</span><span data-copy="1" title="复制代码" style="font-size:11px;">复制</span></div>' +
+      '<div style="position:relative;">' +
+      '<pre data-codebody="1" style="margin:0; padding:4px 16px 16px; font-family:ui-monospace,\'SF Mono\',Menlo,monospace; font-size:12.5px; line-height:1.7; color:#24292f; overflow-x:auto; background:transparent;">' + this.codeHTML(code, lang) + '</pre>' +
+      '<div data-codefade="1" style="position:absolute; top:0; right:0; bottom:0; width:44px; background:linear-gradient(90deg, rgba(246,246,249,0), #F6F6F9); opacity:0; transition:opacity 0.18s; pointer-events:none;"></div>' +
+      '</div></div>';
+  }
+
+  renderTable(b) {
+    const lines = b.source.split('\n').filter((l) => l.trim().length);
+    if (lines.length < 2) return this.renderPara(b);
+    const parse = (l) => { let s = l.trim(); if (s.startsWith('|')) s = s.slice(1); if (s.endsWith('|')) s = s.slice(0, -1); return s.split('|').map((c) => c.trim()); };
+    const header = parse(lines[0]);
+    const aligns = parse(lines[1]).map((c) => { const l = c.startsWith(':'), r = c.endsWith(':'); return l && r ? 'center' : r ? 'right' : 'left'; });
+    const rows = lines.slice(2).map(parse);
+    let h = '<div data-tbox="1" style="margin:0 0 20px; border-radius:10px; box-shadow:inset 0 0 0 1px #E9E9EF; overflow:hidden;"><div data-tablescroll="1" style="overflow-x:auto;"><table style="min-width:100%; width:max-content; border-collapse:collapse; font-size:13.5px;"><thead><tr>';
+    header.forEach((c, ci) => { h += '<th data-r="-1" data-c="' + ci + '" style="text-align:' + (aligns[ci] || 'left') + '; padding:9px 14px; font-size:12px; font-weight:700; letter-spacing:0.4px; text-transform:uppercase; white-space:nowrap; color:#1d1d1f; background:#F6F6F9;">' + this.inlineHTML(c) + '</th>'; });
+    h += '</tr></thead><tbody>';
+    rows.forEach((r, ri) => { const last = ri === rows.length - 1; h += '<tr>'; header.forEach((_, ci) => { h += '<td data-r="' + ri + '" data-c="' + ci + '" style="text-align:' + (aligns[ci] || 'left') + '; padding:9px 14px; white-space:nowrap; background:#FBFBFC; color:#333336;' + (last ? '' : ' border-bottom:1px solid #F0F0F1;') + '">' + this.inlineHTML(r[ci] != null ? r[ci] : '') + '</td>'; }); h += '</tr>'; });
+    return h + '</tbody></table></div></div>';
+  }
+
+  renderQuote(b) {
+    const inner = b.source.split('\n').map((l) => {
+      const stripped = l.replace(/^\s*>\s?/, '');
+      return stripped.replace(/^(\s*)((?:>\s*)+)/, (m, sp, marks) => sp + marks.replace(/>/g, '\\>'));
+    }).join('\n');
+    const parts = this.splitBlocks(inner);
+    const html = parts.map((ib, k) => ib.type === 'paragraph' ? this.renderQuotePara(ib) : this.renderBlockHTML(ib, 100 + k)).join('');
+    return '<blockquote style="margin:0 0 18px; padding:1px 0 1px 16px; border-left:2px solid #E9E9EF; color:#6e6e73;">' + html + '</blockquote>';
+  }
+
+  orderedMarker(n, lvl) {
+    const mode = lvl % 3;
+    if (mode === 1) { let s = '', x = n; while (x > 0) { x--; s = String.fromCharCode(97 + (x % 26)) + s; x = Math.floor(x / 26); } return s; }
+    if (mode === 2) { const map = [[1000,'m'],[900,'cm'],[500,'d'],[400,'cd'],[100,'c'],[90,'xc'],[50,'l'],[40,'xl'],[10,'x'],[9,'ix'],[5,'v'],[4,'iv'],[1,'i']]; let r = '', x = n; for (const pair of map) { while (x >= pair[0]) { r += pair[1]; x -= pair[0]; } } return r; }
+    return '' + n;
+  }
+  isListStartLine(line) {
+    return /^\s*(?:[-*+]|\d+[.)])\s+/.test(line) || /^\s{2,}[A-Za-z]+[.)]\s+/.test(line);
+  }
+  listLevelOf(indent, ordered) {
+    if (!ordered) return Math.max(0, Math.floor(indent / 2));
+    if (indent > 0 && indent % 3 === 0) return indent / 3;
+    return Math.max(0, Math.floor(indent / 2));
+  }
+  alphaNumber(raw) {
+    let n = 0;
+    const s = (raw || '').toLowerCase();
+    for (let i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 96);
+    return n > 0 ? n : 1;
+  }
+  romanNumber(raw) {
+    const vals = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 };
+    const s = (raw || '').toLowerCase();
+    let sum = 0;
+    for (let i = 0; i < s.length; i++) {
+      const cur = vals[s[i]] || 0;
+      const next = vals[s[i + 1]] || 0;
+      sum += cur < next ? -cur : cur;
+    }
+    return sum > 0 ? sum : 1;
+  }
+  orderedValue(marker, lvl) {
+    const body = (marker || '').replace(/[.)]$/, '').toLowerCase();
+    if (/^\d+$/.test(body)) return parseInt(body, 10);
+    if (/^[ivxlcdm]+$/.test(body) && lvl % 3 === 2) return this.romanNumber(body);
+    if (/^[a-z]+$/.test(body)) return this.alphaNumber(body);
+    return 1;
+  }
+  orderedSuffix(marker) { return /\)$/.test(marker || '') ? ')' : '.'; }
+  displayOrderedMarker(marker, indent) {
+    const lvl = this.listLevelOf(indent, true);
+    return this.orderedMarker(this.orderedValue(marker, lvl), lvl) + this.orderedSuffix(marker);
+  }
+  nextOrderedMarker(marker, indent) {
+    const lvl = this.listLevelOf(indent, true);
+    return this.orderedMarker(this.orderedValue(marker, lvl) + 1, lvl) + this.orderedSuffix(marker);
+  }
+
+  renderList(b, index) {
+    const srcLines = b.source.split('\n');
+    const markerRe = /^(\s*)([-*+]|\d+[.)]|[A-Za-z]+[.)])(\s+)(\[[ xX]\]\s+)?([\s\S]*)$/;
+    // 先把源行分组为「项」:标记行开启新项,更深缩进的非标记行归入该项的子块。
+    const items = [];
+    let cur = null;
+    srcLines.forEach((line, li) => {
+      const m = line.match(markerRe);
+      if (m) {
+        const indent = m[1].replace(/\t/g, '  ').length;
+        const task = m[4] ? /x/i.test(m[4]) : null;
+        const ordered = !/^[-*+]$/.test(m[2]);
+        cur = { indent, ordered, markerRaw: m[2], content: m[5], task, li, children: [] };
+        items.push(cur);
+      } else if (cur) {
+        cur.children.push(line);
+      } else {
+        cur = { indent: 0, ordered: false, content: line.trim(), task: null, li, children: [] };
+        items.push(cur);
+      }
+    });
+    const dedent = (lines) => {
+      const ne = lines.filter((l) => l.trim());
+      if (!ne.length) return [];
+      const min = Math.min(...ne.map((l) => (l.match(/^[ \t]*/)[0].replace(/\t/g, '  ')).length));
+      return lines.map((l) => { const ws = (l.match(/^[ \t]*/)[0].replace(/\t/g, '  ')); return ws.slice(min) + l.replace(/^[ \t]*/, ''); });
+    };
+    const counters = {}; let prev = -1; const out = [];
+    items.forEach((p) => {
+      const lvl = this.listLevelOf(p.indent, p.ordered);
+      if (lvl > prev) counters[lvl] = 0;
+      Object.keys(counters).forEach((k) => { if (+k > lvl) delete counters[k]; });
+      let marker;
+      if (p.ordered) {
+        const n = p.markerRaw ? this.orderedValue(p.markerRaw, lvl) : ((counters[lvl] || 0) + 1);
+        counters[lvl] = n;
+        marker = this.orderedMarker(n, lvl) + this.orderedSuffix(p.markerRaw);
+      }
+      else { counters[lvl] = 0; marker = ['•', '◦', '▪'][lvl % 3]; }
+      prev = lvl;
+      const pad = lvl * 22;
+      // 5D: 子块(更深缩进的非标记行)去缩进后递归渲染为嵌套块
+      let childHTML = '';
+      const kids = p.children.filter((l, i, arr) => !(l.trim() === '' && i === arr.length - 1));
+      if (kids.some((l) => l.trim())) {
+        const parts = this.splitBlocks(dedent(kids).join('\n'));
+        childHTML = '<div style="margin:5px 0 3px;">' + parts.map((pb, k) => this.renderBlockHTML(pb, 900 + k)).join('') + '</div>';
+      }
+      const strike = p.task ? ' color:#a1a1a6; text-decoration:line-through; text-decoration-color:#d3d3d6;' : '';
+      const contentCol = '<div style="flex:1; min-width:0;"><span style="' + strike + '">' + this.inlineHTML(p.content) + '</span>' + childHTML + '</div>';
+      if (p.task !== null) {
+        const box = p.task
+          ? '<span data-task="' + p.li + '" style="flex:none; width:16px; height:16px; border-radius:5px; background:#E8A33D; box-shadow:inset 0 0 0 1px rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; margin-top:2px;"><svg width="10" height="8" viewBox="0 0 10 8"><path d="M1 4 L3.6 6.4 L9 1" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>'
+          : '<span data-task="' + p.li + '" style="flex:none; width:16px; height:16px; border-radius:5px; background:#fff; box-shadow:inset 0 0 0 1.4px #d0d0d5; cursor:pointer; margin-top:2px;"></span>';
+        out.push('<div style="padding-left:' + pad + 'px; margin:3px 0;"><div style="display:flex; gap:9px; align-items:flex-start;">' + box + contentCol + '</div></div>');
+      } else {
+        out.push('<div style="padding-left:' + pad + 'px; margin:3px 0;"><div style="display:flex; gap:9px; align-items:flex-start;"><span style="flex:none; min-width:1.3em; text-align:right; color:#aeaeb2; font-variant-numeric:tabular-nums;">' + marker + '</span>' + contentCol + '</div></div>');
+      }
+    });
+    return '<div style="margin:0 0 18px;">' + out.join('') + '</div>';
+  }
+
+  renderFootnotes(b) {
+    const items = b.source.split('\n').filter((l) => l.trim());
+    let h = '<div data-fnbox="1" style="margin:24px 0 20px; padding:11px 15px 13px; background:#fff; border:1px dashed #C7C7CC; border-radius:8px; font-size:13px; color:#6e6e73; display:flex; flex-direction:column; gap:7px;">';
+    h += '<div style="font-size:10.5px; letter-spacing:0.6px; text-transform:uppercase; color:#aeaeb2; margin-bottom:1px;">脚注</div>';
+    items.forEach((l) => { const m = l.match(/^\s*\[\^([^\]]+)\]:\s*([\s\S]*)$/); if (m) { const id = this.esc(m[1]); h += '<div data-fndef="' + id + '" style="display:flex; gap:9px; align-items:baseline; border-radius:4px; margin:0 -6px; padding:2px 6px;"><span style="color:#E8A33D; font-weight:700; font-variant-numeric:tabular-nums; flex:none;">' + id + '</span><span style="flex:1; min-width:0; overflow-wrap:break-word; word-break:break-word;">' + this.inlineHTML(m[2]) + '</span><span data-fnback="' + id + '" title="回到引用" style="color:#E8A33D; cursor:pointer; flex:none; user-select:none;">↩</span></div>'; } });
+    return h + '</div>';
+  }
+
+  // ============ 源码语法高亮（编辑态，保持字符不变） ============
+  hlDim(s) { return '<span style="color:#c1c1c6;">' + s + '</span>'; }
+  hlSpan(css, s) { return '<span style="' + css + '">' + s + '</span>'; }
+
+  highlightInline(escaped) {
+    let h = escaped;
+    h = h.replace(/`([^`]+)`/g, (m, c) => this.hlDim('`') + this.hlSpan('font-family:ui-monospace,Menlo,monospace; background:#F6F6F9; border-radius:3px; color:#1d1d1f;', c) + this.hlDim('`'));
+    h = h.replace(/\*\*\*([^*]+)\*\*\*/g, (m, c) => this.hlDim('***') + this.hlSpan('font-weight:650; font-style:italic;', c) + this.hlDim('***'));
+    h = h.replace(/\*\*([^*]+)\*\*/g, (m, c) => this.hlDim('**') + this.hlSpan('font-weight:650;', c) + this.hlDim('**'));
+    h = h.replace(/(^|[^*\w])\*(?=\S)([^\n*]+?)(?<=\S)\*(?!\w)/g, (m, p, c) => p + this.hlDim('*') + this.hlSpan('font-style:italic;', c) + this.hlDim('*'));
+    h = h.replace(/~~([^~]+)~~/g, (m, c) => this.hlDim('~~') + this.hlSpan('text-decoration:line-through; text-decoration-color:#c7c7cc;', c) + this.hlDim('~~'));
+    h = h.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, a, u) => this.hlDim('![') + this.hlSpan('color:#6e6e73;', a) + this.hlDim('](') + this.hlSpan('color:#2A6FDB;', u) + this.hlDim(')'));
+    h = h.replace(/\[([^\]^]+)\]\(([^)]+)\)/g, (m, tx, u) => this.hlDim('[') + this.hlSpan('color:#2A6FDB;', tx) + this.hlDim('](') + this.hlSpan('color:#2A6FDB;', u) + this.hlDim(')'));
+    h = h.replace(/(\[\^[^\]]+\])/g, (m) => this.hlSpan('color:#2A6FDB;', m));
+    return h;
+  }
+
+  highlightSource(b) {
+    const src = b.source;
+    const type = this.detectType(src);
+    if (type === 'code') {
+      const clines = src.split('\n');
+      let clang = ((clines[0] || '').match(/^\s*(?:```|~~~)(.*)$/) || [])[1] || '';
+      clang = clang.trim();
+      return clines.map((l) => /^\s*(```|~~~)/.test(l) ? this.hlDim(this.esc(l)) : this.hlCode(l, clang)).join('\n');
+    }
+    if (type === 'table') {
+      return src.split('\n').map((l) => this.esc(l).replace(/\|/g, this.hlDim('|'))).join('\n');
+    }
+    if (type === 'heading') {
+      return src.split('\n').map((line) => {
+        const m = line.match(/^(\s*)(#{1,6})(\s+)([\s\S]*)$/);
+        if (!m) return this.highlightInline(this.esc(line));
+        const sizes = { 1: 24, 2: 19, 3: 16.5, 4: 15.5, 5: 14, 6: 13 };
+        return this.esc(m[1]) + this.hlDim(m[2] + this.esc(m[3])) + this.hlSpan('font-weight:600; font-size:' + sizes[m[2].length] + 'px; color:#111;', this.highlightInline(this.esc(m[4])));
+      }).join('\n');
+    }
+    if (type === 'quote') {
+      return src.split('\n').map((l) => { const m = l.match(/^(\s*>+\s?)([\s\S]*)$/); return m ? this.hlDim(this.esc(m[1])) + this.hlSpan('color:#6e6e73;', this.highlightInline(this.esc(m[2]))) : this.highlightInline(this.esc(l)); }).join('\n');
+    }
+    if (type === 'list') {
+      return src.split('\n').map((l) => {
+        const m = l.match(/^(\s*)([-*+]|\d+[.)]|[A-Za-z]+[.)])(\s+)(\[[ xX]\]\s+)?([\s\S]*)$/);
+        if (!m) return this.highlightInline(this.esc(l));
+        const indent = m[1].replace(/\t/g, '  ').length;
+        const marker = /^[-*+]$/.test(m[2]) ? m[2] : this.displayOrderedMarker(m[2], indent);
+        return this.esc(m[1]) + this.hlDim(this.esc(marker + m[3])) + (m[4] ? this.hlSpan('color:#E8A33D; font-weight:600;', this.esc(m[4])) : '') + this.highlightInline(this.esc(m[5]));
+      }).join('\n');
+    }
+    if (type === 'hr') return this.hlDim(this.esc(src));
+    if (type === 'footnotes') return src.split('\n').map((l) => { const m = l.match(/^(\s*\[\^[^\]]+\]:)([\s\S]*)$/); return m ? this.hlSpan('color:#2A6FDB;', this.esc(m[1])) + this.highlightInline(this.esc(m[2])) : this.highlightInline(this.esc(l)); }).join('\n');
+    if (type === 'image') return this.highlightInline(this.esc(src));
+    return this.highlightInline(this.esc(src));
+  }
+
+  editMarginFor(b, index) {
+    const t = this.detectType(b.source);
+    const i = index == null ? this.blockIndexById(this.state.activeId) : index;
+    if (t === 'heading') {
+      const m = b.source.match(/^\s*(#{1,6})\s+/);
+      const lv = m ? m[1].length : 1;
+      const mt = { 1: 34, 2: 32, 3: 26, 4: 22, 5: 20, 6: 18 };
+      const mb = { 1: 16, 2: 14, 3: 10, 4: 8, 5: 6, 6: 6 };
+      return (i === 0 ? 0 : mt[lv]) + 'px 0 ' + mb[lv] + 'px -14px';
+    }
+    if (t === 'code' || t === 'table') return '0 0 20px';
+    if (t === 'image') return '6px 0 20px -14px';
+    if (t === 'footnotes') return '24px 0 20px -14px';
+    if (t === 'hr') return '16px 0 16px -14px';
+    return '0 0 18px -14px';
+  }
+
+  editStyleFor(b, index) {
+    const base = 'outline:none; overflow-wrap:break-word; word-break:break-word; caret-color:#E8A33D;';
+    const t = this.detectType(b.source);
+    if (t === 'code') {
+      return base + ' white-space:pre; overflow-x:auto; font-family:ui-monospace,\'SF Mono\',Menlo,monospace; font-size:12.5px; line-height:1.7; color:#444; background:#F6F6F9; box-shadow:inset 0 0 0 1px #E9E9EF; padding:12px 14px; border-radius:6px; margin:0;';
+    }
+    if (t === 'table') {
+      return base + ' white-space:pre; overflow-x:auto; font-family:ui-monospace,\'SF Mono\',Menlo,monospace; font-size:12.5px; line-height:1.7; color:#444; background:#F6F6F9; box-shadow:inset 3px 0 0 #E8A33D, inset 0 0 0 1px #E9E9EF; padding:12px 14px; border-radius:6px; margin:' + this.editMarginFor(b, index) + ';';
+    }
+    return base + ' white-space:pre-wrap; padding:1px 0 1px 14px; margin:' + this.editMarginFor(b, index) + '; box-shadow:inset 3px 0 0 #E8A33D; border-radius:2px;';
+  }
+  editWrapStyleFor(b, index) {
+    const t = this.detectType(b.source);
+    if (t === 'code') return 'margin:0 0 20px -14px; padding-left:14px; box-shadow:inset 3px 0 0 #E8A33D; border-radius:2px;';
+    return '';
+  }
+
+  // ============ 编辑态：caret 工具 ============
+  caretOffset(el) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    const r = sel.getRangeAt(0);
+    if (!el.contains(r.endContainer)) return null;
+    const pre = document.createRange();
+    pre.selectNodeContents(el);
+    pre.setEnd(r.endContainer, r.endOffset);
+    return pre.toString().length;
+  }
+  selRange(el) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    const r = sel.getRangeAt(0);
+    if (!el.contains(r.startContainer) || !el.contains(r.endContainer)) return null;
+    const a = document.createRange(); a.selectNodeContents(el); a.setEnd(r.startContainer, r.startOffset);
+    const b = document.createRange(); b.selectNodeContents(el); b.setEnd(r.endContainer, r.endOffset);
+    return { start: a.toString().length, end: b.toString().length };
+  }
+  textLen(el) { return (el.textContent || '').length; }
+  setCaret(el, off, off2) {
+    const locate = (target) => {
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+      let n, acc = 0, res = null;
+      while ((n = w.nextNode())) { const len = n.nodeValue.length; if (acc + len >= target) { res = [n, target - acc]; break; } acc += len; }
+      if (!res) { const last = el.lastChild; res = last && last.nodeType === 3 ? [last, last.nodeValue.length] : [el, el.childNodes.length]; }
+      return res;
+    };
+    try {
+      const r = document.createRange();
+      const s = locate(off);
+      r.setStart(s[0], Math.min(s[1], s[0].nodeType === 3 ? s[0].nodeValue.length : s[0].childNodes.length));
+      if (off2 != null && off2 !== off) { const e = locate(off2); r.setEnd(e[0], Math.min(e[1], e[0].nodeType === 3 ? e[0].nodeValue.length : e[0].childNodes.length)); }
+      else r.collapse(true);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    } catch (_) {}
+  }
+  readSource(el) { return (el.innerText || '').replace(/\u00a0/g, ' ').replace(/\r\n?/g, '\n').replace(/\n$/, ''); }
+
+  // ============ 编辑态：挂载/事件 ============
+  editRef = (el) => {
+    if (this.editEl && this.editEl !== el) this.detachEdit(this.editEl);
+    if (!el) { if (this.editEl) this.detachEdit(this.editEl); this.editEl = null; return; }
+    this.editEl = el;
+    const b = this.activeBlock();
+    if (!b) return;
+    el.innerHTML = this.highlightSource(b);
+    this.attachEdit(el);
+    el.focus();
+    const off = this._pendingCaret == null ? this.textLen(el) : Math.min(this._pendingCaret, this.textLen(el));
+    this._pendingCaret = null;
+    this.setCaret(el, off);
+  };
+  attachEdit(el) {
+    if (el._wired) return;
+    el._wired = true;
+    el._h = {
+      input: () => this.onEditInput(),
+      keydown: (e) => this.onEditKeyDown(e),
+      blur: () => this.onEditBlur(),
+      cs: () => { this._composing = true; },
+      ce: () => { this._composing = false; this.onEditInput(); },
+    };
+    el.addEventListener('input', el._h.input);
+    el.addEventListener('keydown', el._h.keydown);
+    el.addEventListener('blur', el._h.blur);
+    el.addEventListener('compositionstart', el._h.cs);
+    el.addEventListener('compositionend', el._h.ce);
+  }
+  detachEdit(el) { if (el && el._h) { el.removeEventListener('input', el._h.input); el.removeEventListener('keydown', el._h.keydown); el.removeEventListener('blur', el._h.blur); el.removeEventListener('compositionstart', el._h.cs); el.removeEventListener('compositionend', el._h.ce); el._h = null; el._wired = false; } }
+
+  onEditInput() {
+    const el = this.editEl;
+    if (!el || this._composing) return;
+    const off = this.caretOffset(el);
+    const src = this.readSource(el);
+    const b = this.activeBlock();
+    if (!b) return;
+    const typeBefore = this.detectType(b.source);
+    b.source = src;
+    el.innerHTML = this.highlightSource(b);
+    if (off != null) this.setCaret(el, off);
+    if (this.detectType(src) !== typeBefore) el.setAttribute('style', this.editStyleFor(b));
+    this.markDirty();
+  }
+
+  writeEditSource(src, start, end) {
+    const el = this.editEl; const b = this.activeBlock(); if (!el || !b) return;
+    b.source = src;
+    el.innerHTML = this.highlightSource(b);
+    el.setAttribute('style', this.editStyleFor(b));
+    this.setCaret(el, start, end);
+    this.markDirty();
+  }
+  lineStart(src, off) { return src.lastIndexOf('\n', Math.max(0, off - 1)) + 1; }
+  lineEnd(src, off) { const i = src.indexOf('\n', off); return i < 0 ? src.length : i; }
+  lineStartsForRange(src, start, end) {
+    const anchor = end > start && src[end - 1] === '\n' ? end - 1 : end;
+    const first = this.lineStart(src, start);
+    const last = this.lineStart(src, Math.max(first, anchor));
+    const out = [];
+    let pos = first;
+    while (pos <= last) {
+      out.push(pos);
+      const next = src.indexOf('\n', pos);
+      if (next < 0 || next >= last) break;
+      pos = next + 1;
+    }
+    return out;
+  }
+  onEditTab(e, type) {
+    const el = this.editEl;
+    const rng = this.selRange(el);
+    const caret = this.caretOffset(el);
+    const start = rng ? rng.start : (caret == null ? this.textLen(el) : caret);
+    const end = rng ? rng.end : start;
+    const src = this.readSource(el);
+    const unit = '  ';
+    if (!e.shiftKey && start === end) {
+      const ls = this.lineStart(src, start);
+      const le = this.lineEnd(src, start);
+      const line = src.slice(ls, le);
+      const leading = (line.match(/^\s*/) || [''])[0].length;
+      const lineIndent = type === 'list' || type === 'quote' || start <= ls + leading;
+      if (!lineIndent) { this.writeEditSource(src.slice(0, start) + unit + src.slice(end), start + unit.length); return; }
+    }
+    const starts = this.lineStartsForRange(src, start, end);
+    if (e.shiftKey) {
+      const removals = starts.map((p) => {
+        const line = src.slice(p, this.lineEnd(src, p));
+        const lm = line.match(/^(\s*)([-*+]|\d+[.)]|[A-Za-z]+[.)])\s+/);
+        const ordered = type === 'list' && lm && !/^[-*+]$/.test(lm[2]);
+        const unitLen = ordered && lm[1].replace(/\t/g, '  ').length >= 3 && lm[1].replace(/\t/g, '  ').length % 3 === 0 ? 3 : unit.length;
+        if (src[p] === '\t') return { p, n: 1 };
+        let n = 0;
+        while (n < unitLen && src[p + n] === ' ') n++;
+        return { p, n };
+      }).filter((x) => x.n > 0);
+      if (!removals.length) { this.setCaret(el, start, end); return; }
+      let next = src;
+      removals.slice().reverse().forEach(({ p, n }) => { next = next.slice(0, p) + next.slice(p + n); });
+      const adjust = (off) => {
+        let v = off;
+        removals.forEach(({ p, n }) => {
+          if (off > p + n) v -= n;
+          else if (off > p) v -= off - p;
+        });
+        return v;
+      };
+      this.writeEditSource(next, adjust(start), start === end ? null : adjust(end));
+      return;
+    }
+    let next = src;
+    starts.slice().reverse().forEach((p) => { next = next.slice(0, p) + unit + next.slice(p); });
+    const adjust = (off) => off + starts.reduce((n, p) => n + (off >= p ? unit.length : 0), 0);
+    this.writeEditSource(next, adjust(start), start === end ? null : adjust(end));
+  }
+
+  onEditKeyDown(e) {
+    const el = this.editEl;
+    if (!el) return;
+    const meta = e.metaKey || e.ctrlKey;
+    if (meta && !e.shiftKey && !this._composing) {
+      const k = e.key.toLowerCase();
+      if (k === 'b') { e.preventDefault(); this.wrapSel('**'); return; }
+      if (k === 'i') { e.preventDefault(); this.wrapSel('*'); return; }
+      if (k === 'e') { e.preventDefault(); this.wrapSel('`'); return; }
+    }
+    if (this._composing) return;
+    const b = this.activeBlock();
+    if (!b) return;
+    const type = this.detectType(b.source);
+    if (e.key === 'Tab' && !meta) { e.preventDefault(); this.onEditTab(e, type); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const off = this.caretOffset(el);
+      const src = this.readSource(el);
+      if (type === 'code' || type === 'table') { this.replaceActiveSource(src.slice(0, off) + '\n' + src.slice(off), off + 1); return; }
+      if (type === 'list') {
+        const lineStart = src.lastIndexOf('\n', off - 1) + 1;
+        const curLine = src.slice(lineStart, off);
+        const lm = curLine.match(/^(\s*)([-*+]|\d+[.)]|[A-Za-z]+[.)])(\s+)(\[[ xX]\]\s+)?(.*)$/);
+        if (e.shiftKey) { this.replaceActiveSource(src.slice(0, off) + '\n' + src.slice(off), off + 1); return; }
+        if (lm && !lm[5].trim()) { this.splitBlockWithNext(off - curLine.length, off, '', 0); return; }
+        let prefix = '';
+        if (lm) {
+          const marker = /^[-*+]$/.test(lm[2]) ? lm[2] : this.nextOrderedMarker(lm[2], lm[1].replace(/\t/g, '  ').length);
+          prefix = lm[1] + marker + lm[3] + (lm[4] ? '[ ] ' : '');
+        }
+        this.splitBlockWithNext(off, off, prefix, prefix.length);
+        return;
+      }
+      if (type === 'quote') {
+        const lineStart = src.lastIndexOf('\n', off - 1) + 1;
+        const curLine = src.slice(lineStart, off);
+        const qm = curLine.match(/^(\s*>+\s?)(.*)$/);
+        if (qm && !qm[2].trim() && !e.shiftKey) { this.splitBlock(off - curLine.length, off, '\n'); return; }
+        let prefix = '';
+        if (qm) prefix = qm[1];
+        this.replaceActiveSource(src.slice(0, off) + '\n' + prefix + src.slice(off), off + 1 + prefix.length);
+        return;
+      }
+      this.splitBlock(off, off, '');
+      return;
+    }
+    if (e.key === 'Backspace') {
+      const rng = this.selRange(el);
+      if (rng && rng.start === 0 && rng.end === 0) {
+        const idx = this.blockIndexById(this.state.activeId);
+        if (idx > 0) { e.preventDefault(); this.mergeWithPrev(idx); return; }
+      }
+    }
+    if (e.key === 'ArrowUp') {
+      const off = this.caretOffset(el);
+      const src = this.readSource(el);
+      if (off != null && !src.slice(0, off).includes('\n')) { const idx = this.blockIndexById(this.state.activeId); if (idx > 0) { e.preventDefault(); this.gotoBlock(idx - 1, 'end'); } }
+    }
+    if (e.key === 'ArrowDown') {
+      const off = this.caretOffset(el);
+      const src = this.readSource(el);
+      if (off != null && !src.slice(off).includes('\n')) { const idx = this.blockIndexById(this.state.activeId); if (idx < this.currentBlocks().length - 1) { e.preventDefault(); this.gotoBlock(idx + 1, 'start'); } }
+    }
+  }
+
+  onEditBlur() {
+    const el = this.editEl;
+    if (!el) return;
+    const b = this.activeBlock();
+    if (b) { b.source = this.readSource(el); this.resplitActive(); }
+    this.setState({ activeId: '' }, () => { this.saveSession(); if (this.state.findOpen) this.recomputeFind(); });
+  }
+
+  // ============ 编辑操作 ============
+  wrapSel(mk) {
+    const el = this.editEl; const b = this.activeBlock(); if (!el || !b) return;
+    const rng = this.selRange(el) || { start: this.textLen(el), end: this.textLen(el) };
+    const src = this.readSource(el);
+    const mid = src.slice(rng.start, rng.end);
+    b.source = src.slice(0, rng.start) + mk + mid + mk + src.slice(rng.end);
+    el.innerHTML = this.highlightSource(b);
+    if (mid) this.setCaret(el, rng.start + mk.length, rng.end + mk.length);
+    else this.setCaret(el, rng.start + mk.length);
+    this.markDirty();
+  }
+  replaceActiveSource(src, caret) {
+    const el = this.editEl; const b = this.activeBlock(); if (!el || !b) return;
+    b.source = src;
+    el.innerHTML = this.highlightSource(b);
+    el.setAttribute('style', this.editStyleFor(b));
+    this.setCaret(el, caret);
+    this.markDirty();
+  }
+  splitBlock(cut1, cut2, joiner) {
+    const el = this.editEl; const idx = this.blockIndexById(this.state.activeId); const blocks = this.currentBlocks();
+    if (idx < 0) return;
+    const src = this.readSource(el);
+    const before = src.slice(0, cut1);
+    const after = src.slice(cut2);
+    blocks[idx].source = before;
+    const nb = { id: 'b' + (this._bid++), type: 'paragraph', source: after };
+    blocks.splice(idx + 1, 0, nb);
+    this._pendingCaret = 0;
+    this.setState({ activeId: nb.id, dirtyTick: this.state.dirtyTick + 1 }, () => this.markDocDirty());
+  }
+  splitBlockWithNext(cut1, cut2, nextPrefix, caret) {
+    const el = this.editEl; const idx = this.blockIndexById(this.state.activeId); const blocks = this.currentBlocks();
+    if (idx < 0) return;
+    const src = this.readSource(el);
+    const before = src.slice(0, cut1);
+    const after = src.slice(cut2);
+    blocks[idx].source = before;
+    const prefix = nextPrefix || '';
+    const nb = { id: 'b' + (this._bid++), type: 'paragraph', source: prefix + after };
+    blocks.splice(idx + 1, 0, nb);
+    this._pendingCaret = caret == null ? prefix.length : caret;
+    this.setState({ activeId: nb.id, dirtyTick: this.state.dirtyTick + 1 }, () => this.markDocDirty());
+  }
+  mergeWithPrev(idx) {
+    const blocks = this.currentBlocks();
+    const prev = blocks[idx - 1]; const cur = blocks[idx];
+    const at = prev.source.length;
+    prev.source = prev.source + cur.source;
+    blocks.splice(idx, 1);
+    this._pendingCaret = at;
+    this.setState({ activeId: prev.id, dirtyTick: this.state.dirtyTick + 1 }, () => this.markDocDirty());
+  }
+  gotoBlock(idx, where) {
+    const el = this.editEl; const b = this.activeBlock();
+    if (el && b) { b.source = this.readSource(el); }
+    const blocks = this.currentBlocks();
+    const target = blocks[idx];
+    if (!target) return;
+    this._pendingCaret = where === 'end' ? null : 0;
+    this.setState({ activeId: target.id });
+  }
+  resplitActive() {
+    const idx = this.blockIndexById(this.state.activeId);
+    if (idx < 0) return;
+    const blocks = this.currentBlocks();
+    const parts = this.splitBlocks(blocks[idx].source);
+    const mapped = (parts.length ? parts : [{ type: 'paragraph', source: '' }]).map((p) => ({ id: 'b' + (this._bid++), type: p.type, source: p.source }));
+    blocks.splice(idx, 1, ...mapped);
+  }
+
+  // ============ 2D 表格单元格编辑 ============
+  parseTableGrid(src) {
+    const lines = src.split('\n').filter((l) => l.trim().length);
+    const parse = (l) => { let s = l.trim(); if (s.startsWith('|')) s = s.slice(1); if (s.endsWith('|')) s = s.slice(0, -1); return s.split('|').map((c) => c.trim()); };
+    const headers = lines[0] ? parse(lines[0]) : [''];
+    const cols = headers.length;
+    let aligns = lines[1] ? parse(lines[1]).map((c) => { const l = c.startsWith(':'), r = c.endsWith(':'); return l && r ? 'center' : r ? 'right' : 'left'; }) : [];
+    aligns = aligns.slice(0, cols); while (aligns.length < cols) aligns.push('left');
+    const fix = (a) => { const x = a.slice(0, cols); while (x.length < cols) x.push(''); return x; };
+    return { headers: fix(headers), aligns, rows: lines.slice(2).map((l) => fix(parse(l))) };
+  }
+  serializeTableGrid(g) {
+    const clean = (s) => String(s == null ? '' : s).trim();
+    const line = (arr) => '| ' + arr.map(clean).join(' | ') + ' |';
+    const sep = g.aligns.map((a) => a === 'center' ? ':---:' : a === 'right' ? '---:' : '---');
+    return [line(g.headers), '| ' + sep.join(' | ') + ' |', ...g.rows.map(line)].join('\n');
+  }
+  writeTbl(g, cb) { const b = this.activeBlock(); if (b) b.source = this.serializeTableGrid(g); this.markDocDirty(); this.setState((st) => ({ tblDraft: g, dirtyTick: st.dirtyTick + 1 }), cb); }
+  setTblCell(r, c, val) {
+    const g = this.state.tblDraft; if (!g) return;
+    let ng;
+    if (r === -1) { const headers = g.headers.slice(); headers[c] = val; ng = { headers, aligns: g.aligns, rows: g.rows }; }
+    else { const rows = g.rows.map((x) => x.slice()); if (rows[r]) rows[r][c] = val; ng = { headers: g.headers, aligns: g.aligns, rows }; }
+    this.writeTbl(ng);
+  }
+  setTblFocus(r, c) { const f = this.state.tblFocus; if (!f || f.r !== r || f.c !== c) this.setState({ tblFocus: { r, c } }); }
+  addTblRow(cb) { const g = this.state.tblDraft; if (!g) return; const rows = g.rows.map((x) => x.slice()); rows.push(g.headers.map(() => '')); this.writeTbl({ headers: g.headers, aligns: g.aligns, rows }, cb); }
+  addTblCol() { const g = this.state.tblDraft; if (!g) return; this.writeTbl({ headers: [...g.headers, ''], aligns: [...g.aligns, 'left'], rows: g.rows.map((x) => [...x, '']) }); }
+  delTblRow() { const g = this.state.tblDraft; if (!g) return; const f = this.state.tblFocus || { r: g.rows.length - 1 }; if (f.r < 0 || !g.rows.length) return; this.writeTbl({ headers: g.headers, aligns: g.aligns, rows: g.rows.filter((_, i) => i !== f.r) }); }
+  delTblCol() { const g = this.state.tblDraft; if (!g || g.headers.length <= 1) return; const c = (this.state.tblFocus && this.state.tblFocus.c) || 0; this.writeTbl({ headers: g.headers.filter((_, i) => i !== c), aligns: g.aligns.filter((_, i) => i !== c), rows: g.rows.map((x) => x.filter((_, i) => i !== c)) }); }
+  cycleAlign() { const g = this.state.tblDraft; if (!g) return; const c = (this.state.tblFocus && this.state.tblFocus.c) || 0; const order = ['left', 'center', 'right']; const aligns = g.aligns.slice(); aligns[c] = order[(order.indexOf(aligns[c] || 'left') + 1) % 3]; this.writeTbl({ headers: g.headers, aligns, rows: g.rows }); }
+  focusCell(r, c) { if (!this.tblEl) return; const el = this.tblEl.querySelector('[data-r="' + r + '"][data-c="' + c + '"]'); if (el) { el.focus(); if (el.select) el.select(); } }
+  moveTblFocus(r, c, backward) {
+    const g = this.state.tblDraft; if (!g) return;
+    const cols = Math.max(1, g.headers.length);
+    let nr = r, nc = c + (backward ? -1 : 1);
+    if (backward && nc < 0) {
+      if (r > 0) { nr = r - 1; nc = cols - 1; }
+      else if (r === 0) { nr = -1; nc = cols - 1; }
+      else { nr = -1; nc = 0; }
+    } else if (!backward && nc >= cols) {
+      nc = 0;
+      if (r === -1) {
+        if (g.rows.length) nr = 0;
+        else { this.addTblRow(() => this.focusCell(0, 0)); return; }
+      } else if (r >= g.rows.length - 1) {
+        this.addTblRow(() => this.focusCell(r + 1, 0));
+        return;
+      } else nr = r + 1;
+    }
+    this.focusCell(nr, nc);
+  }
+  onCellKey(r, c, e) {
+    if (e.key === 'Escape') { e.preventDefault(); this.deactivate(); return; }
+    if (e.key === 'Tab') { e.preventDefault(); this.moveTblFocus(r, c, !!e.shiftKey); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const g = this.state.tblDraft; if (!g) return;
+      if (r === -1) { if (!g.rows.length) this.addTblRow(() => this.focusCell(0, c)); else this.focusCell(0, c); }
+      else if (r >= g.rows.length - 1) this.addTblRow(() => this.focusCell(r + 1, c));
+      else this.focusCell(r + 1, c);
+    }
+  }
+  tblRef = (el) => { this.tblEl = el; if (el && !el._tblFocused) { el._tblFocused = true; requestAnimationFrame(() => { const f = this.state.tblFocus; let inp = f ? el.querySelector('[data-r="' + f.r + '"][data-c="' + f.c + '"]') : null; if (!inp) inp = el.querySelector('input'); if (inp) { inp.focus(); if (inp.select) inp.select(); } }); } };
+
+  markDirty() { this.markDocDirty(); this.setState((st) => ({ dirtyTick: st.dirtyTick + 1 })); }
+  markDocDirty() { const a = this.state.active; if (a && !this.dirtyDocs[a]) this.dirtyDocs[a] = true; }
+
+  deactivate() { if (this.editEl) this.editEl.blur(); else this.setState({ activeId: '', tblDraft: null, tblFocus: null }); }
+
+  activateBlock(id, caret) {
+    if (this.state.activeId === id) return;
+    this._pendingCaret = caret == null ? null : caret;
+    this.setState({ activeId: id, tblDraft: null, tblFocus: null });
+  }
+  onBlockDown = (id, e) => {
+    const t = e.target;
+    const copy = t && t.closest ? t.closest('[data-copy]') : null;
+    if (copy) { e.preventDefault(); this.copyCode(copy); return; }
+    const task = t && t.closest ? t.closest('[data-task]') : null;
+    if (task) { e.preventDefault(); this.toggleTask(id, +task.getAttribute('data-task')); return; }
+    const fnref = t && t.closest ? t.closest('[data-fnref]') : null;
+    if (fnref) { e.preventDefault(); this.scrollToFootnote('def', fnref.getAttribute('data-fnref')); return; }
+    const fnback = t && t.closest ? t.closest('[data-fnback]') : null;
+    if (fnback) { e.preventDefault(); this.scrollToFootnote('ref', fnback.getAttribute('data-fnback')); return; }
+    const link = t && t.closest ? t.closest('a[href]') : null;
+    if (link) e.preventDefault();
+    const idx = this.blockIndexById(id);
+    const blk = idx >= 0 ? this.currentBlocks()[idx] : null;
+    if (blk && blk.type === 'table' && !this.state.forcePreview) {
+      e.preventDefault();
+      this.persistActive();
+      this._pendingCaret = null;
+      const cellEl = t && t.closest ? t.closest('[data-r][data-c]') : null;
+      const fr = cellEl ? { r: parseInt(cellEl.getAttribute('data-r'), 10), c: parseInt(cellEl.getAttribute('data-c'), 10) } : { r: -1, c: 0 };
+      this.setState({ activeId: id, tblDraft: this.parseTableGrid(blk.source), tblFocus: fr });
+      return;
+    }
+    e.preventDefault();
+    this.persistActive();
+    this.activateBlock(id, null);
+  };
+
+  copyCode(btn) {
+    const wrap = btn.closest('[data-code]');
+    const pre = wrap && wrap.querySelector('[data-codebody]');
+    if (!pre) return;
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(pre.innerText); } catch (_) {}
+    this.flash('已复制代码');
+  }
+  toggleTask(id, li) {
+    const idx = this.blockIndexById(id);
+    if (idx < 0) return;
+    const b = this.currentBlocks()[idx];
+    const lines = b.source.split('\n');
+    if (lines[li] == null) return;
+    lines[li] = lines[li].replace(/\[([ xX])\]/, (m, c) => (c.toLowerCase() === 'x' ? '[ ]' : '[x]'));
+    b.source = lines.join('\n');
+    this.markDocDirty();
+    this.setState((st) => ({ dirtyTick: st.dirtyTick + 1 }));
+    this.flash('已更新任务');
+  }
+
+  // ============ 文档/标签 ============
+  buildDefs() {
+    const defs = [
+      { name: 'docs', folder: true, indent: 0 },
+      { name: 'config.yaml', path: 'docs/config.yaml', indent: 1 },
+      { name: '格式示例.md', path: 'docs/格式示例.md', indent: 1 },
+      { name: 'README.md', path: './README.md', indent: 0 },
+      { name: '更新日志.md', path: './更新日志.md', indent: 0 },
+    ];
+    this.extraOrder.forEach((n) => defs.push({ name: n, path: './' + n, indent: 0 }));
+    for (let i = 1; i <= this.state.untitledCount; i++) { const nm = i === 1 ? '未命名.md' : '未命名 ' + i + '.md'; if (this.SEED[nm]) defs.push({ name: nm, path: './' + nm, indent: 0 }); }
+    return defs;
+  }
+  sideMatchText(d) { return (d.name + ' ' + (d.path || d.name)).toLowerCase(); }
+  sideVisibleDefs() { const sf = this.state.sideFilter.trim().toLowerCase(); return this.buildDefs().filter((d) => !d.folder && this.sideMatchText(d).includes(sf)); }
+  sideVisibleFiles() { return this.sideVisibleDefs().map((d) => d.name); }
+  toggleFolder(name) { this.setState((st) => ({ folderCollapsed: { ...st.folderCollapsed, [name]: !st.folderCollapsed[name] } })); }
+
+  persistActive() { if (this.state.tblDraft) return; const el = this.editEl; const b = this.activeBlock(); if (el && b && el.isConnected) b.source = this.readSource(el); }
+
+  openFile(name, opts) {
+    this.persistActive();
     this.setState({ paletteOpen: false, filter: '', palSel: 0 });
-    if (name === this.state.active) return;
+    if (name === this.state.active && !opts) return;
     if (this.contentEl) this.scrollPos[this.state.active] = this.contentEl.scrollTop;
+    this.ensureBlocks(name);
     const tabs = this.state.tabs.includes(name) ? this.state.tabs : [...this.state.tabs, name];
-    this.setState({ tabs, active: name }, () => {
-      this.restoreScroll(name);
+    const first = opts && opts.activateFirst ? (this.blocksByDoc[name][0] || {}).id : '';
+    if (first) this._pendingCaret = 0;
+    this.setState({ tabs, active: name, activeId: first || '', tblDraft: null, tblFocus: null }, () => {
+      if (!first) this.restoreScroll(name);
       if (this.state.findOpen) requestAnimationFrame(() => this.recomputeFind());
       this.pulseRail();
       this.saveSession();
@@ -699,197 +1555,173 @@ class Component extends DCLogic {
 
   requestClose(name, e) {
     if (e && e.stopPropagation) e.stopPropagation();
-    if (this.state.dirty[name] && this.state.confirmClose !== name) {
-      this.setState({ confirmClose: name });
-      clearTimeout(this._ccT);
-      this._ccT = setTimeout(() => this.setState({ confirmClose: '' }), 2600);
-      return;
-    }
+    if (this.dirtyDocs[name] && this.state.confirmClose !== name) { this.setState({ confirmClose: name }); clearTimeout(this._ccT); this._ccT = setTimeout(() => this.setState({ confirmClose: '' }), 2600); return; }
     this.doClose(name);
   }
-
   doClose(name) {
-    const old = this.state.tabs;
-    const idx = old.indexOf(name);
-    const tabs = old.filter((t) => t !== name);
+    const old = this.state.tabs; const idx = old.indexOf(name); const tabs = old.filter((t) => t !== name);
     let active = this.state.active;
-    if (active === name) active = tabs[Math.min(idx, tabs.length - 1)] || '';
+    let activeId = this.state.activeId;
+    if (active === name) { active = tabs[Math.min(idx, tabs.length - 1)] || ''; activeId = ''; this.ensureBlocks(active); }
     delete this.scrollPos[name];
-    this.setState({ tabs, active, confirmClose: '', lastClosed: name }, () => {
-      if (active) this.restoreScroll(active);
-      if (this.state.findOpen) requestAnimationFrame(() => this.recomputeFind());
-      this.saveSession();
-    });
+    this.setState({ tabs, active, activeId, confirmClose: '', lastClosed: name }, () => { if (active) this.restoreScroll(active); if (this.state.findOpen) requestAnimationFrame(() => this.recomputeFind()); this.saveSession(); });
   }
+  reopenClosed = () => { const n = this.state.lastClosed; if (n && this.SEED[n]) { this.setState({ lastClosed: '' }); this.openFile(n); } };
 
-  reopenClosed = () => {
-    const n = this.state.lastClosed;
-    if (n && this.DOCS[n]) { this.setState({ lastClosed: '' }); this.openFile(n); }
+  newDoc = () => {
+    const n = this.state.untitledCount + 1;
+    const name = n === 1 ? '未命名.md' : '未命名 ' + n + '.md';
+    this.SEED[name] = '';
+    this.blocksByDoc[name] = [{ id: 'b' + (this._bid++), type: 'paragraph', source: '' }];
+    this.dirtyDocs[name] = true;
+    this.setState({ untitledCount: n }, () => this.openFile(name, { activateFirst: true }));
+  };
+  saveDoc = () => {
+    const a = this.state.active; if (!a) return;
+    this.persistActive();
+    this.SEED[a] = this.docSource(a);
+    this.dirtyDocs[a] = false;
+    this.setState((st) => ({ confirmClose: '', dirtyTick: st.dirtyTick + 1 }));
+    this.flash('已保存 ' + a);
+  };
+  openSystem = () => { this.setState({ paletteOpen: false }); this.flash('正式应用中将唤起系统访达'); };
+
+  togglePreviewAll = () => { this.persistActive(); this.setState((s) => ({ forcePreview: !s.forcePreview, activeId: '', tblDraft: null, tblFocus: null }), () => this.flash(this.state.forcePreview ? '纯预览 · 点击笔重新编辑' : '编辑模式')); };
+
+  // ============ 拖入 ============
+  onDragOver = (e) => { e.preventDefault(); if (!this.state.dragging) this.setState({ dragging: true }); clearTimeout(this._dragT); this._dragT = setTimeout(() => this.setState({ dragging: false }), 250); };
+  onDrop = (e) => {
+    e.preventDefault(); clearTimeout(this._dragT); this.setState({ dragging: false });
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!f) return;
+    if (!/\.(md|markdown|txt|mdx)$/i.test(f.name)) { this.flash('仅支持 Markdown / 文本文件'); return; }
+    const reader = new FileReader();
+    reader.onload = () => { const name = f.name; this.SEED[name] = String(reader.result || ''); this.blocksByDoc[name] = null; if (!this.extraOrder.includes(name) && !['格式示例.md', 'README.md', '更新日志.md', 'config.yaml'].includes(name)) this.extraOrder.push(name); this.openFile(name); this.flash('已打开 ' + name); };
+    reader.readAsText(f);
   };
 
-  washHeading(id) {
-    const sc = this.contentEl;
-    const el = sc && sc.querySelector('#' + id);
-    if (el && el.animate) {
-      el.animate(
-        [{ backgroundColor: 'rgba(232,163,61,0.30)' }, { backgroundColor: 'rgba(232,163,61,0)' }],
-        { duration: 900, easing: 'ease-out' }
-      );
-    }
+  // ============ 滚动 / 大纲 / 状态 ============
+  syncScroll() {
+    const el = this.contentEl; if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    const progress = max > 0 ? Math.min(1, Math.max(0, el.scrollTop / max)) : 0;
+    let activeHeading = '';
+    const hs = el.querySelectorAll('[data-h]');
+    hs.forEach((h) => { if (h.offsetTop <= el.scrollTop + 140) activeHeading = h.getAttribute('data-h'); });
+    if (!activeHeading && hs.length) activeHeading = hs[0].getAttribute('data-h');
+    if (progress !== this.state.progress || activeHeading !== this.state.activeHeading) this.setState({ progress, activeHeading });
+  }
+  onScroll = () => {
+    if (this.contentEl) this.scrollPos[this.state.active] = this.contentEl.scrollTop;
+    if (!this.state.statusFaded) this.setState({ statusFaded: true });
+    clearTimeout(this._statusT); this._statusT = setTimeout(() => this.setState({ statusFaded: false }), 800);
+    clearTimeout(this._sessT); this._sessT = setTimeout(() => this.saveSession(), 400);
+    this.syncScroll();
+  };
+  restoreScroll(name) { requestAnimationFrame(() => { if (!this.contentEl) return; this.contentEl.scrollTop = this.scrollPos[name] || 0; this.syncScroll(); }); }
+
+  computeStats(name) {
+    const src = this.docSource(name);
+    const chars = [...src.replace(/\s/g, '')].length;
+    const lines = src.split('\n').length;
+    return chars.toLocaleString() + ' 字 · ' + lines + ' 行';
+  }
+  computeOutline(name) {
+    const blocks = this.blocksByDoc[name] || [];
+    const out = [];
+    blocks.forEach((b, i) => { if (b.type === 'heading') { const m = b.source.match(/^\s*(#{1,6})\s+([\s\S]*)$/); if (m) out.push({ id: this.headingId(i, m[2].replace(/\s+#*\s*$/, '').trim()), label: m[2].replace(/\s+#*\s*$/, '').trim(), lv: m[1].length }); } });
+    return out;
   }
 
+  washHeading(id) { const el = this.contentEl && this.contentEl.querySelector('#' + CSS.escape(id)); if (el && el.animate) el.animate([{ backgroundColor: 'rgba(232,163,61,0.30)' }, { backgroundColor: 'rgba(232,163,61,0)' }], { duration: 900, easing: 'ease-out' }); }
   jump(id) {
-    const sc = this.contentEl;
-    const el = sc && sc.querySelector('#' + id);
+    const sc = this.contentEl; const el = sc && sc.querySelector('#' + CSS.escape(id));
     if (!el || !sc) return;
     const target = Math.min(Math.max(0, el.offsetTop - 40), sc.scrollHeight - sc.clientHeight);
-    const start = sc.scrollTop;
-    const dist = target - start;
+    const start = sc.scrollTop; const dist = target - start;
     if (dist === 0) { this.washHeading(id); return; }
-    const dur = 300;
     const t0 = performance.now();
     cancelAnimationFrame(this._jumpRaf);
-    const step = (now) => {
-      const t = Math.min(1, (now - t0) / dur);
-      const ease = 1 - Math.pow(1 - t, 3);
-      sc.scrollTop = start + dist * ease;
-      if (t < 1) this._jumpRaf = requestAnimationFrame(step);
-      else this.washHeading(id);
-    };
+    const step = (now) => { const t = Math.min(1, (now - t0) / 300); const e = 1 - Math.pow(1 - t, 3); sc.scrollTop = start + dist * e; if (t < 1) this._jumpRaf = requestAnimationFrame(step); else this.washHeading(id); };
     this._jumpRaf = requestAnimationFrame(step);
   }
 
-  togglePalette() { this.setState((s) => ({ paletteOpen: !s.paletteOpen, filter: '', palSel: 0 })); }
-  closePalette = () => this.setState({ paletteOpen: false });
+  pulseRail() {
+    const out = this.computeOutline(this.state.active);
+    clearTimeout(this._pulseT); clearTimeout(this._pulseOnT);
+    if (!out.length) { if (this.state.railPulse) this.setState({ railPulse: false }); return; }
+    this.setState({ railPulse: false });
+    this._pulseOnT = setTimeout(() => { this.setState({ railPulse: true }); this._pulseT = setTimeout(() => this.setState({ railPulse: false }), 1400); }, 30);
+  }
+  maybeHintRail() {
+    if (this._railHintDone) return;
+    try { if (localStorage.getItem('mdeditor.railCoach')) { this._railHintDone = true; return; } } catch (_) {}
+    if (!this.computeOutline(this.state.active).length) return;
+    this._railHintDone = true;
+    this._railHintT1 = setTimeout(() => { this.setState({ railPulse: true, coachShow: true }); try { localStorage.setItem('mdeditor.railCoach', '1'); } catch (_) {} }, 900);
+    this._railHintT2 = setTimeout(() => this.setState({ railPulse: false }), 4100);
+    this._railHintT3 = setTimeout(() => this.setState({ coachShow: false }), 7200);
+  }
+  markRailSeen() { clearTimeout(this._railHintT1); clearTimeout(this._railHintT2); clearTimeout(this._railHintT3); this._railHintDone = true; if (this.state.railPulse || this.state.coachShow) this.setState({ railPulse: false, coachShow: false }); try { localStorage.setItem('mdeditor.railCoach', '1'); } catch (_) {} }
 
-  openSystem = () => {
-    this.setState({ paletteOpen: false });
-    this.flash('正式应用中将唤起系统访达');
+  saveSession() { try { localStorage.setItem('mdeditor.v1.session', JSON.stringify({ tabs: this.state.tabs, active: this.state.active, fontIdx: this.state.fontIdx, sideW: this.state.sideW, scrollPos: this.scrollPos })); } catch (_) {} }
+
+  onResizeStart = (e) => {
+    e.preventDefault(); const startX = e.clientX; const startW = this.state.sideW;
+    this.setState({ resizing: true }); document.body.style.userSelect = 'none'; document.body.style.cursor = 'col-resize';
+    const move = (ev) => { const w = Math.max(176, Math.min(440, startW + (ev.clientX - startX))); if (w !== this.state.sideW) this.setState({ sideW: w }); };
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); document.body.style.userSelect = ''; document.body.style.cursor = ''; this.setState({ resizing: false }); this.saveSession(); };
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
   };
 
-  flash(msg) {
-    this.setState({ toast: msg });
-    clearTimeout(this._tt);
-    this._tt = setTimeout(() => this.setState({ toast: '' }), 1600);
-  }
+  togglePalette() { this.setState((s) => ({ paletteOpen: !s.paletteOpen, filter: '', palSel: 0 })); }
+  closePalette = () => this.setState({ paletteOpen: false });
+  toggleSidebar = () => this.setState((st) => ({ sidebarOpen: !st.sidebarOpen }));
+  flash(msg) { this.setState({ toast: msg }); clearTimeout(this._tt); this._tt = setTimeout(() => this.setState({ toast: '' }), 1600); }
 
   fontUp = () => this.applyFont(this.state.fontIdx + 1);
   fontDown = () => this.applyFont(this.state.fontIdx - 1);
   fontReset = () => this.applyFont(1);
-  applyFont(i) {
-    const idx = Math.max(0, Math.min(this.FONT_SIZES.length - 1, i));
-    this.setState({ fontIdx: idx }, () => this.saveSession());
-    this.flash('正文字号 ' + this.FONT_SIZES[idx] + 'px');
-  }
+  applyFont(i) { const idx = Math.max(0, Math.min(this.FONT_SIZES.length - 1, i)); this.setState({ fontIdx: idx }, () => this.saveSession()); this.flash('正文字号 ' + this.FONT_SIZES[idx] + 'px'); }
 
   onContentOver = (e) => {
-    const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    const tt = e.target;
+    const a = tt && tt.closest ? tt.closest('a[href]') : null;
     const url = a ? a.getAttribute('href') : '';
     if (url !== this.state.hoverUrl) this.setState({ hoverUrl: url });
-  };
-  onContentLeave = () => { if (this.state.hoverUrl) this.setState({ hoverUrl: '' }); };
-
-  onContentClick = (e) => {
-    const lang = e.target && e.target.closest ? e.target.closest('[data-lang]') : null;
-    if (lang) {
-      lang.setAttribute('contenteditable', 'true');
-      lang.focus();
-      try {
-        const range = document.createRange();
-        range.selectNodeContents(lang);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-      } catch (_) {}
-      return;
-    }
-    const c = e.target && e.target.closest ? e.target.closest('[data-copy]') : null;
-    if (!c) return;
-    const wrap = c.closest('[data-code]');
-    const pre = wrap && wrap.querySelector('pre');
-    if (!pre) return;
-    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(pre.innerText); } catch (_) {}
-    this.flash('已复制代码');
-  };
-
-  onContentKeyDown = (e) => {
-    const lang = e.target && e.target.closest ? e.target.closest('[data-lang]') : null;
-    if (lang && e.key === 'Enter') { e.preventDefault(); lang.blur(); }
-  };
-
-  onContentBlur = (e) => {
-    const lang = e.target && e.target.closest ? e.target.closest('[data-lang]') : null;
-    if (!lang) return;
-    lang.removeAttribute('contenteditable');
-    const txt = (lang.textContent || '').trim().replace(/\s+/g, ' ');
-    lang.textContent = txt || 'text';
-    this.afterEdit('语言已更新');
-  };
-
-  newDoc = () => {
-    const name = '未命名.md';
-    if (!this.DOCS[name]) this.DOCS[name] = { stats: '0 字 · 0 行', outline: [], html: '' };
-    this.setState((st) => ({ hasUntitled: true, dirty: { ...st.dirty, [name]: true } }));
-    this.openFile(name);
-  };
-
-  saveDoc = () => {
-    const a = this.state.active;
-    if (!a) return;
-    this.setState((st) => ({ dirty: { ...st.dirty, [a]: false }, confirmClose: '' }));
-    this.flash('已保存 ' + a);
-  };
-
-  // ===== 拖入文件 =====
-  onDragOver = (e) => {
-    e.preventDefault();
-    if (!this.state.dragging) this.setState({ dragging: true });
-    clearTimeout(this._dragT);
-    this._dragT = setTimeout(() => this.setState({ dragging: false }), 250);
-  };
-
-  onDrop = (e) => {
-    e.preventDefault();
-    clearTimeout(this._dragT);
-    this.setState({ dragging: false });
-    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (!f) return;
-    if (!/\.(md|markdown|txt)$/i.test(f.name)) { this.flash('仅支持 Markdown / 文本文件'); return; }
-    const reader = new FileReader();
-    reader.onload = () => this.addDroppedDoc(f.name, String(reader.result || ''));
-    reader.readAsText(f);
-  };
-
-  addDroppedDoc(name, text) {
-    const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const lines = text.split('\n').length;
-    const blocks = text.split(/\n{2,}/).slice(0, 400);
-    const outline = [];
-    let hi = 0;
-    const html = blocks.map((b) => {
-      const t = b.trim();
-      if (!t) return '';
-      if (/^#\s+/.test(t)) {
-        const id = 'dh-' + (hi++);
-        const label = t.replace(/^#\s+/, '');
-        outline.push({ id, label, lv: 1 });
-        return '<h1 id="' + id + '" data-h="' + id + '" style="margin: 40px 0 24px; font-size: 26px; font-weight: 600; letter-spacing: -0.2px; color: #111;">' + esc(label) + '</h1>';
+    const fn = tt && tt.closest ? tt.closest('[data-fnref]') : null;
+    if (fn) {
+      const id = fn.getAttribute('data-fnref');
+      const text = this.fnMap && this.fnMap[id];
+      if (text != null) {
+        const r = fn.getBoundingClientRect();
+        const x = Math.round(r.left + r.width / 2);
+        const y = Math.round(r.top);
+        if (!this.state.fnPopShow || this.state.fnPopText !== text || this.state.fnPopX !== x || this.state.fnPopY !== y) {
+          this.setState({ fnPopShow: true, fnPopText: text, fnPopX: x, fnPopY: y });
+        }
+      } else if (this.state.fnPopShow) {
+        this.setState({ fnPopShow: false });
       }
-      if (/^##\s+/.test(t)) {
-        const id = 'dh-' + (hi++);
-        const label = t.replace(/^##\s+/, '');
-        outline.push({ id, label, lv: 2 });
-        return '<h2 id="' + id + '" data-h="' + id + '" style="margin: 40px 0 16px; font-size: 18px; font-weight: 600; color: #111;">' + esc(label) + '</h2>';
-      }
-      return '<p style="margin: 0 0 22px; text-wrap: pretty;">' + esc(t).replace(/\n/g, '<br>') + '</p>';
-    }).join('');
-    this.DOCS[name] = { stats: text.length.toLocaleString() + ' 字 · ' + lines + ' 行', outline: outline.slice(0, 30), html };
-    if (!this.extraOrder.includes(name) && !['SKILL.md', 'README.md', '更新日志.md', 'openai.yaml'].includes(name)) this.extraOrder.push(name);
-    this.openFile(name);
-    this.flash('已打开 ' + name);
+    } else if (this.state.fnPopShow) { this.setState({ fnPopShow: false }); }
+  };
+  onContentLeave = () => { const patch = {}; if (this.state.hoverUrl) patch.hoverUrl = ''; if (this.state.fnPopShow) patch.fnPopShow = false; if (Object.keys(patch).length) this.setState(patch); };
+
+  scrollToFootnote(kind, id) {
+    const sc = this.contentEl; if (!sc || id == null) return;
+    const key = window.CSS && CSS.escape ? CSS.escape(id) : id;
+    const el = sc.querySelector(kind === 'def' ? '[data-fndef="' + key + '"]' : '[data-fnref="' + key + '"]');
+    if (!el) return;
+    const cb = sc.getBoundingClientRect(); const rb = el.getBoundingClientRect();
+    const target = Math.min(Math.max(0, sc.scrollTop + (rb.top - cb.top) - 90), sc.scrollHeight - sc.clientHeight);
+    const start = sc.scrollTop; const dist = target - start; const t0 = performance.now();
+    cancelAnimationFrame(this._fnRaf);
+    const flash = () => { if (el.animate) el.animate([{ backgroundColor: 'rgba(232,163,61,0.30)' }, { backgroundColor: 'rgba(232,163,61,0)' }], { duration: 900, easing: 'ease-out' }); };
+    if (Math.abs(dist) < 1) { flash(); return; }
+    const step = (now) => { const p = Math.min(1, (now - t0) / 320); const e = 1 - Math.pow(1 - p, 3); sc.scrollTop = start + dist * e; if (p < 1) this._fnRaf = requestAnimationFrame(step); else flash(); };
+    this._fnRaf = requestAnimationFrame(step);
   }
 
-  // ===== 侧栏键盘导航 =====
   onSideFilterKey = (e) => {
     const vis = this.sideVisibleFiles();
     if (e.key === 'ArrowDown') { e.preventDefault(); this.setState((st) => ({ kbSel: Math.min(st.kbSel + 1, Math.max(0, vis.length - 1)) })); }
@@ -897,93 +1729,37 @@ class Component extends DCLogic {
     else if (e.key === 'Enter') { e.preventDefault(); const n = vis[this.state.kbSel]; if (n) this.openFile(n); }
   };
 
-  // ===== 查找 / 替换 =====
-  openFind = () => {
-    this.setState({ findOpen: true });
-    requestAnimationFrame(() => { if (this.findInput) { this.findInput.focus(); this.findInput.select(); } });
-    if (this.state.findQuery) this.recomputeFind();
-  };
-
-  closeFind = () => {
-    this.clearHighlights();
-    this.ranges = [];
-    this.setState({ findOpen: false, findQuery: '', findTotal: 0, findIndex: 0, findError: false, replaceOpen: false });
-  };
-
+  // ============ 查找 / 替换 ============
+  openFind = () => { this.setState({ findOpen: true }); requestAnimationFrame(() => { if (this.findInput) { this.findInput.focus(); this.findInput.select(); } }); if (this.state.findQuery) this.recomputeFind(); };
+  closeFind = () => { this.clearHighlights(); this.ranges = []; this.setState({ findOpen: false, findQuery: '', findTotal: 0, findIndex: 0, findError: false, replaceOpen: false }); };
   toggleReplace = () => this.setState((s) => ({ replaceOpen: !s.replaceOpen }));
-
-  onFindChange = (e) => {
-    this.setState({ findQuery: e.target.value, findIndex: 0 }, () => this.recomputeFind());
-  };
-
-  onFindKey = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) this.findPrev(); else this.findNext(); }
-    else if (e.key === 'Escape') { e.preventDefault(); this.closeFind(); }
-  };
-
+  onFindChange = (e) => this.setState({ findQuery: e.target.value, findIndex: 0 }, () => this.recomputeFind());
+  onFindKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) this.findPrev(); else this.findNext(); } else if (e.key === 'Escape') { e.preventDefault(); this.closeFind(); } };
   onReplaceChange = (e) => this.setState({ replaceText: e.target.value });
-  onReplaceKey = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); this.replaceCurrent(); }
-    else if (e.key === 'Escape') { e.preventDefault(); this.closeFind(); }
-  };
-
+  onReplaceKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); this.replaceCurrent(); } else if (e.key === 'Escape') { e.preventDefault(); this.closeFind(); } };
   escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-
   buildRegex(global) {
-    const q = this.state.findQuery;
-    if (!q) return null;
+    const q = this.state.findQuery; if (!q) return null;
     let pattern;
-    if (this.state.useRegex) pattern = q;
-    else {
-      pattern = this.escapeRe(q);
-      if (this.state.wholeWord) pattern = '\\b' + pattern + '\\b';
-    }
+    if (this.state.useRegex) pattern = q; else { pattern = this.escapeRe(q); if (this.state.wholeWord) pattern = '\\b' + pattern + '\\b'; }
     const flags = (global ? 'g' : '') + (this.state.caseSensitive ? '' : 'i');
     try { return new RegExp(pattern, flags); } catch (_) { return false; }
   }
-
   collectRanges(root) {
-    const out = [];
-    this._reError = false;
+    const out = []; this._reError = false;
     const re = this.buildRegex(true);
     if (re === false) { this._reError = true; return out; }
     if (!re || !root) return out;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
     let node;
-    while ((node = walker.nextNode())) {
-      const text = node.nodeValue;
-      if (!text) continue;
-      re.lastIndex = 0;
-      let m;
-      while ((m = re.exec(text)) !== null) {
-        const len = m[0].length;
-        if (len === 0) { re.lastIndex++; continue; }
-        try {
-          const r = document.createRange();
-          r.setStart(node, m.index);
-          r.setEnd(node, m.index + len);
-          out.push(r);
-        } catch (_) {}
-      }
-    }
+    while ((node = walker.nextNode())) { const text = node.nodeValue; if (!text) continue; re.lastIndex = 0; let m; while ((m = re.exec(text)) !== null) { const len = m[0].length; if (len === 0) { re.lastIndex++; continue; } try { const r = document.createRange(); r.setStart(node, m.index); r.setEnd(node, m.index + len); out.push(r); } catch (_) {} } }
     return out;
   }
-
-  recomputeFind() {
-    this.ranges = this.collectRanges(this.bodyEl || this.contentEl);
-    const total = this.ranges.length;
-    const idx = total ? Math.min(this.state.findIndex, total - 1) : 0;
-    this.setState({ findTotal: total, findIndex: idx, findError: !!this._reError }, () => { this.applyHighlights(); this.scrollToCurrent(); });
-  }
-
+  recomputeFind() { this.ranges = this.collectRanges(this.contentEl); const total = this.ranges.length; const idx = total ? Math.min(this.state.findIndex, total - 1) : 0; this.setState({ findTotal: total, findIndex: idx, findError: !!this._reError }, () => { this.applyHighlights(); this.scrollToCurrent(); }); }
   toggleCase = () => this.setState((s) => ({ caseSensitive: !s.caseSensitive }), () => this.recomputeFind());
   toggleWord = () => this.setState((s) => ({ wholeWord: !s.wholeWord }), () => this.recomputeFind());
   toggleRegex = () => this.setState((s) => ({ useRegex: !s.useRegex }), () => this.recomputeFind());
-
-  clearHighlights() {
-    if (window.CSS && CSS.highlights) { CSS.highlights.delete('mdfind'); CSS.highlights.delete('mdfind-current'); }
-  }
-
+  clearHighlights() { if (window.CSS && CSS.highlights) { CSS.highlights.delete('mdfind'); CSS.highlights.delete('mdfind-current'); } }
   applyHighlights() {
     if (typeof Highlight === 'undefined' || !window.CSS || !CSS.highlights) return;
     this.clearHighlights();
@@ -991,128 +1767,69 @@ class Component extends DCLogic {
     const i = this.state.findIndex;
     const others = this.ranges.filter((_, k) => k !== i);
     if (others.length) CSS.highlights.set('mdfind', new Highlight(...others));
-    const cur = this.ranges[i];
-    if (cur) CSS.highlights.set('mdfind-current', new Highlight(cur));
+    const cur = this.ranges[i]; if (cur) CSS.highlights.set('mdfind-current', new Highlight(cur));
   }
-
-  scrollToCurrent() {
-    const sc = this.contentEl;
-    const r = this.ranges[this.state.findIndex];
-    if (!sc || !r) return;
-    const rb = r.getBoundingClientRect();
-    const cb = sc.getBoundingClientRect();
-    if (rb.top < cb.top + 70 || rb.bottom > cb.bottom - 40) {
-      sc.scrollTop += (rb.top - cb.top) - sc.clientHeight * 0.35;
-    }
-  }
-
-  findNext = () => {
-    if (!this.ranges.length) return;
-    this.setState((st) => ({ findIndex: (st.findIndex + 1) % this.ranges.length }), () => { this.applyHighlights(); this.scrollToCurrent(); });
-  };
-  findPrev = () => {
-    if (!this.ranges.length) return;
-    this.setState((st) => ({ findIndex: (st.findIndex - 1 + this.ranges.length) % this.ranges.length }), () => { this.applyHighlights(); this.scrollToCurrent(); });
-  };
-
-  persistBody() {
-    if (this.bodyEl && this.DOCS[this.state.active]) {
-      this.DOCS[this.state.active].html = this.bodyEl.innerHTML;
-    }
-  }
-
-  afterEdit(msg) {
-    this.persistBody();
-    const a = this.state.active;
-    this.setState((st) => ({ dirty: { ...st.dirty, [a]: true } }), () => {
-      requestAnimationFrame(() => { this.recomputeFind(); });
-    });
-    this.flash(msg);
-  }
-
+  scrollToCurrent() { const sc = this.contentEl; const r = this.ranges[this.state.findIndex]; if (!sc || !r) return; const rb = r.getBoundingClientRect(); const cb = sc.getBoundingClientRect(); if (rb.top < cb.top + 70 || rb.bottom > cb.bottom - 40) sc.scrollTop += (rb.top - cb.top) - sc.clientHeight * 0.35; }
+  findNext = () => { if (!this.ranges.length) return; this.setState((st) => ({ findIndex: (st.findIndex + 1) % this.ranges.length }), () => { this.applyHighlights(); this.scrollToCurrent(); }); };
+  findPrev = () => { if (!this.ranges.length) return; this.setState((st) => ({ findIndex: (st.findIndex - 1 + this.ranges.length) % this.ranges.length }), () => { this.applyHighlights(); this.scrollToCurrent(); }); };
   replaceCurrent = () => {
     if (this._reError) { this.flash('正则表达式无效'); return; }
-    if (!this.ranges.length) { this.flash('没有可替换的匹配'); return; }
-    const r = this.ranges[this.state.findIndex];
-    if (!r) return;
-    let out = this.state.replaceText;
-    if (this.state.useRegex) {
-      const re2 = this.buildRegex(false);
-      if (re2 && re2 !== false) { try { out = r.toString().replace(re2, this.state.replaceText); } catch (_) {} }
-    }
-    try {
-      r.deleteContents();
-      r.insertNode(document.createTextNode(out));
-    } catch (_) { return; }
-    this.afterEdit('已替换 1 处');
+    this.persistActive();
+    const re = this.buildRegex(false); if (!re || re === false) { this.flash('没有可替换的匹配'); return; }
+    const blocks = this.currentBlocks(); let done = false;
+    for (const b of blocks) { if (re.test(b.source)) { re.lastIndex = 0; b.source = b.source.replace(re, this.state.replaceText); done = true; break; } }
+    if (!done) { this.flash('没有可替换的匹配'); return; }
+    this.markDocDirty();
+    this.setState((st) => ({ activeId: '', dirtyTick: st.dirtyTick + 1 }), () => requestAnimationFrame(() => this.recomputeFind()));
+    this.flash('已替换 1 处');
   };
-
   replaceAll = () => {
-    const root = this.bodyEl;
-    if (!this.state.findQuery || !root) return;
-    const re = this.buildRegex(true);
-    if (re === false) { this.flash('正则表达式无效'); return; }
-    if (!re) return;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-    const nodes = [];
-    let n;
-    while ((n = walker.nextNode())) nodes.push(n);
-    let count = 0;
-    nodes.forEach((node) => {
-      re.lastIndex = 0;
-      const v = node.nodeValue;
-      const m = v.match(re);
-      if (m) { count += m.length; node.nodeValue = v.replace(re, this.state.useRegex ? this.state.replaceText : () => this.state.replaceText); }
-    });
+    if (this._reError) { this.flash('正则表达式无效'); return; }
+    this.persistActive();
+    const re = this.buildRegex(true); if (!re || re === false) { this.flash('没有可替换的匹配'); return; }
+    const blocks = this.currentBlocks(); let count = 0;
+    blocks.forEach((b) => { re.lastIndex = 0; const mm = b.source.match(re); if (mm) { count += mm.length; b.source = b.source.replace(re, this.state.replaceText); } });
     if (!count) { this.flash('没有可替换的匹配'); return; }
-    this.afterEdit('已替换 ' + count + ' 处');
+    this.markDocDirty();
+    this.setState((st) => ({ activeId: '', dirtyTick: st.dirtyTick + 1 }), () => requestAnimationFrame(() => this.recomputeFind()));
+    this.flash('已替换 ' + count + ' 处');
   };
 
-  // ===== ⌘K 面板 =====
+  // ============ ⌘K ============
   commands() {
     const cmds = [
       { label: '新建文档', kbd: '⌘N', run: () => this.newDoc() },
       { label: '保存', kbd: '⌘S', run: () => this.saveDoc() },
       { label: '查找 / 替换', kbd: '⌘F', run: () => this.openFind() },
+      { label: '切换纯预览 / 编辑', kbd: '⌘⇧P', run: () => this.togglePreviewAll() },
       { label: '打开…', kbd: '⌘O', run: () => this.openSystem() },
       { label: '放大字号', kbd: '⌘ +', run: () => this.fontUp() },
       { label: '缩小字号', kbd: '⌘ -', run: () => this.fontDown() },
       { label: '重置字号', kbd: '⌘ 0', run: () => this.fontReset() },
-      { label: '显示 / 隐藏侧栏', kbd: '', run: () => this.setState((st) => ({ sidebarOpen: !st.sidebarOpen })) },
+      { label: '显示 / 隐藏侧栏', kbd: '⌘\\', run: () => this.toggleSidebar() },
     ];
-    if (this.state.lastClosed && this.DOCS[this.state.lastClosed]) {
-      cmds.push({ label: '恢复刚关闭的标签 · ' + this.state.lastClosed, kbd: '⌘⇧T', run: () => this.reopenClosed() });
-    }
+    if (this.state.lastClosed && this.SEED[this.state.lastClosed]) cmds.push({ label: '恢复刚关闭的标签 · ' + this.state.lastClosed, kbd: '⌘⇧T', run: () => this.reopenClosed() });
     return cmds;
   }
-
-  buildPaletteData() {
-    const q = this.state.filter.trim().toLowerCase();
-    const files = this.buildDefs().filter((d) => !d.folder && d.name.toLowerCase().includes(q)).map((d) => d.name);
-    const cmds = this.commands().filter((c) => c.label.toLowerCase().includes(q));
-    return { files, cmds };
-  }
-
-  runCmd(c) {
-    this.setState({ paletteOpen: false, filter: '', palSel: 0 }, () => c.run());
-  }
-
+  buildPaletteData() { const q = this.state.filter.trim().toLowerCase(); const files = this.buildDefs().filter((d) => !d.folder && d.name.toLowerCase().includes(q)).map((d) => d.name); const cmds = this.commands().filter((c) => c.label.toLowerCase().includes(q)); return { files, cmds }; }
+  runCmd(c) { this.setState({ paletteOpen: false, filter: '', palSel: 0 }, () => c.run()); }
   onPaletteKey = (e) => {
-    const { files, cmds } = this.buildPaletteData();
-    const len = files.length + cmds.length;
+    const { files, cmds } = this.buildPaletteData(); const len = files.length + cmds.length;
     if (e.key === 'ArrowDown') { e.preventDefault(); if (len) this.setState((st) => ({ palSel: (st.palSel + 1) % len })); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (len) this.setState((st) => ({ palSel: (st.palSel - 1 + len) % len })); }
-    else if (e.key === 'Enter') {
-      e.preventDefault();
-      const i = this.state.palSel;
-      if (i < files.length) { if (files[i]) this.openFile(files[i]); }
-      else { const c = cmds[i - files.length]; if (c) this.runCmd(c); }
-    }
+    else if (e.key === 'Enter') { e.preventDefault(); const i = this.state.palSel; if (i < files.length) { if (files[i]) this.openFile(files[i]); } else { const c = cmds[i - files.length]; if (c) this.runCmd(c); } }
   };
 
+  // ============ render ============
   renderVals() {
     const s = this.state;
-    const doc = this.DOCS[s.active];
+    this.ensureBlocks(s.active);
+    const blocks = s.active ? this.currentBlocks() : [];
+    const hasDoc = !!s.active;
+
+    // 5A: 汇总全文脚注定义,供悬停预览查询。
+    this.fnMap = {};
+    blocks.forEach((b) => { if (b.type === 'footnotes') b.source.split('\n').forEach((l) => { const m = l.match(/^\s*\[\^([^\]]+)\]:\s*([\s\S]*)$/); if (m) this.fnMap[m[1]] = m[2].trim(); }); });
 
     const sf = s.sideFilter.trim().toLowerCase();
     const visSide = this.sideVisibleFiles();
@@ -1123,125 +1840,103 @@ class Component extends DCLogic {
       const kb = !d.folder && d.name === kbName && !active;
       const hov = s.hoverFile === d.name;
       return {
-        name: d.name,
-        folder: !!d.folder,
-        file: !d.folder,
-        active,
+        name: d.name, path: d.path || d.name, showPath: filtering && !d.folder, folder: !!d.folder, file: !d.folder, active,
         chev: s.folderCollapsed[d.name] ? '▸' : '▾',
-        pad: 10 + d.indent * 16,
-        cursor: 'pointer',
-        bg: active ? 'rgba(0,0,0,0.06)' : kb ? 'rgba(0,0,0,0.05)' : (hov ? 'rgba(0,0,0,0.045)' : 'transparent'),
-        color: d.folder ? (hov ? '#6e6e73' : '#aeaeb2') : active ? '#1d1d1f' : '#3f3f46',
+        pad: filtering ? 10 : 10 + d.indent * 16, cursor: 'pointer',
+        bg: active ? 'var(--mv-row-active)' : kb ? 'var(--mv-row-kb)' : (hov ? 'var(--mv-row-soft)' : 'transparent'),
+        color: d.folder ? (hov ? 'var(--mv-muted)' : 'var(--mv-muted-2)') : active ? 'var(--mv-fg)' : '#3f3f46',
         weight: active ? 600 : 400,
-        dirty: !d.folder && !!s.dirty[d.name],
+        dirty: !d.folder && !!this.dirtyDocs[d.name],
         onClick: d.folder ? () => this.toggleFolder(d.name) : () => this.openFile(d.name),
         onEnter: () => { if (s.hoverFile !== d.name) this.setState({ hoverFile: d.name }); },
       };
     };
-
     const filtering = sf.length > 0;
-    const sidebarItems = [];
-    let hideUnder = null;
-    this.buildDefs().forEach((d) => {
-      if (!filtering && hideUnder !== null) {
-        if (d.indent > hideUnder) return;
-        hideUnder = null;
-      }
-      if (!d.folder && !d.name.toLowerCase().includes(sf)) return;
-      sidebarItems.push(mapItem(d));
-      if (!filtering && d.folder && s.folderCollapsed[d.name]) hideUnder = d.indent;
-    });
+    const sidebarItems = []; let hideUnder = null;
+    if (filtering) {
+      this.sideVisibleDefs().forEach((d) => sidebarItems.push(mapItem({ ...d, indent: 0 })));
+    } else {
+      this.buildDefs().forEach((d) => {
+        if (hideUnder !== null) { if (d.indent > hideUnder) return; hideUnder = null; }
+        sidebarItems.push(mapItem(d));
+        if (d.folder && s.folderCollapsed[d.name]) hideUnder = d.indent;
+      });
+    }
 
     const tabItems = s.tabs.map((name) => {
-      const active = name === s.active;
-      const confirming = s.confirmClose === name;
+      const active = name === s.active; const confirming = s.confirmClose === name;
+      return { name, confirming, notConfirming: !confirming, showDot: !!this.dirtyDocs[name], bg: active ? 'var(--mv-row-active)' : 'transparent', hoverBg: active ? 'var(--mv-row-active)' : 'var(--mv-row-hover)', color: active ? 'var(--mv-fg)' : 'var(--mv-muted)', weight: active ? 600 : 400, onSelect: () => this.openFile(name), onClose: (e) => this.requestClose(name, e) };
+    });
+
+    const blockViews = blocks.map((b, i) => {
+      const isActive = !s.forcePreview && b.id === s.activeId;
+      const blockType = this.detectType(b.source);
+      const editingGrid = isActive && blockType === 'table' && !!s.tblDraft;
+      const editing = isActive && !editingGrid;
       return {
-        name,
-        confirming,
-        notConfirming: !confirming,
-        showDot: !!s.dirty[name],
-        bg: active ? 'rgba(0,0,0,0.06)' : 'transparent',
-        hoverBg: active ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.05)',
-        color: active ? '#1d1d1f' : '#86868b',
-        weight: active ? 600 : 400,
-        onSelect: () => this.openFile(name),
-        onClose: (e) => this.requestClose(name, e),
+        id: b.id, editing, editingGrid, editingCode: editing && blockType === 'code', editingPlain: editing && blockType !== 'code', viewing: !isActive,
+        boxy: (blockType === 'code' || blockType === 'table' || blockType === 'image' || blockType === 'footnotes') ? '1' : '0',
+        editStyle: this.editStyleFor(b, i),
+        editWrapStyle: this.editWrapStyleFor(b, i),
+        viewStyle: 'cursor:text;',
+        node: isActive ? null : React.createElement('div', { dangerouslySetInnerHTML: { __html: this.renderBlockHTML(b, i) } }),
+        onDown: (e) => this.onBlockDown(b.id, e),
       };
     });
 
-    const n = doc ? doc.outline.length : 0;
-    const outlineRows = (doc ? doc.outline : []).map((o, i) => {
+    // 2D 表格网格编辑数据(同一时刻仅一个表格处于编辑态)
+    let gridHeaderCells = [], gridBodyRows = [], tblAlignLabel = '左对齐', tblGridStyle = '';
+    if (s.tblDraft) {
+      const g = s.tblDraft;
+      const alignOf = (c) => g.aligns[c] || 'left';
+      tblGridStyle = 'display:grid; grid-template-columns:repeat(' + Math.max(1, g.headers.length) + ', minmax(120px, 1fr)); min-width:100%;';
+      gridHeaderCells = g.headers.map((v, c) => ({ c, value: v == null ? '' : v, align: alignOf(c), onInput: (e) => this.setTblCell(-1, c, e.target.value), onFocus: () => this.setTblFocus(-1, c), onKey: (e) => this.onCellKey(-1, c, e) }));
+      gridBodyRows = g.rows.map((row, r) => {
+        const last = r === g.rows.length - 1;
+        return { cells: g.headers.map((_, c) => ({ r, c, value: row[c] == null ? '' : row[c], align: alignOf(c), border: last ? 'transparent' : 'var(--mv-border)', onInput: (e) => this.setTblCell(r, c, e.target.value), onFocus: () => this.setTblFocus(r, c), onKey: (e) => this.onCellKey(r, c, e) })) };
+      });
+      const fa = alignOf((s.tblFocus && s.tblFocus.c) || 0);
+      tblAlignLabel = fa === 'center' ? '居中' : fa === 'right' ? '右对齐' : '左对齐';
+    }
+
+    const TICK_W = [16, 13, 11, 9, 8, 7];
+    const LBL_S = [13.5, 12.5, 12, 11.5, 11, 11];
+    const outline = this.computeOutline(s.active);
+    const outlineRows = outline.map((o, i) => {
       const active = s.activeHeading === o.id;
       const hovered = s.railOpen && s.hoverIdx === i;
       const delay = s.railOpen ? (i * 12) + 'ms' : '0ms';
-      // 打字机·定格（样例 C）：等距错落 + 弹出 → 短暂定格 → 收回
-      const stg = i * 84;
-      const pk = (o.lv === 1 ? 2.05 : 1.7);
-      const dur = 0.44;
+      const lvi = Math.min(Math.max(o.lv, 1), 6) - 1;
       return {
-        label: o.label,
-        size: o.lv === 1 ? 13 : 12,
-        weight: active ? 600 : 400,
-        color: hovered ? '#1d1d1f' : (active ? '#E8A33D' : '#86868b'),
-        // 刻度：静止时显示；展开时横向拉伸 + 模糊 + 淡出，像被融化
-        rowH: s.railOpen ? 26 : 18,
-        tickW: o.lv === 1 ? 22 : 14,
-        tickBg: active ? '#E8A33D' : '#CACACE',
-        tickOp: s.railOpen ? 0 : 1,
-        tickBlur: s.railOpen ? '3px' : '0px',
-        tickTf: s.railOpen ? 'scaleX(2.6)' : 'scaleX(1)',
+        label: o.label, size: LBL_S[lvi], weight: 400,
+        color: hovered ? 'var(--mv-fg)' : (active ? 'var(--mv-accent)' : 'var(--mv-muted)'),
+        rowH: s.railOpen ? 23 : 9, tickW: TICK_W[lvi], tickBg: active ? 'var(--mv-accent)' : '#CACACE',
+        labelLeft: (lvi * 11) + 'px',
+        tickOp: s.railOpen ? 0 : 1, tickBlur: s.railOpen ? '3px' : '0px', tickTf: s.railOpen ? 'scaleX(2.6)' : 'scaleX(1)',
         tickPE: s.railOpen ? 'none' : 'auto',
-        tickAnim: (s.railPulse && !s.railOpen) ? ('railHint ' + dur + 's cubic-bezier(0.85,0,0.15,1) ' + stg + 'ms 1') : 'none',
-        tickPeak: pk,
-        // 标题：展开时从模糊中凝结浮现；hover 放大（无延迟，跟手）
-        labelOp: s.railOpen ? 1 : 0,
-        labelBlur: s.railOpen ? '0px' : '5px',
-        labelTf: hovered ? 'scale(1.14)' : 'scale(1)',
-        labelPE: s.railOpen ? 'auto' : 'none',
-        delay,
-        onJump: () => this.jump(o.id),
-        onEnter: () => { if (s.hoverIdx !== i) this.setState({ hoverIdx: i }); },
+        labelOp: s.railOpen ? 1 : 0, labelBlur: s.railOpen ? '0px' : '5px', labelTf: hovered ? 'scale(1.14)' : 'scale(1)', labelPE: s.railOpen ? 'auto' : 'none', delay,
+        onJump: () => this.jump(o.id), onEnter: () => { if (s.hoverIdx !== i) this.setState({ hoverIdx: i }); },
       };
     });
 
-    // ⌘K 面板
     const { files: palFileNames, cmds: palCmdDefs } = this.buildPaletteData();
-    const paletteFiles = palFileNames.map((name, i) => ({
-      name,
-      active: name === s.active,
-      bg: s.palSel === i ? 'rgba(0,0,0,0.05)' : 'transparent',
-      onClick: () => this.openFile(name),
-      onHover: () => { if (s.palSel !== i) this.setState({ palSel: i }); },
-    }));
-    const paletteCmds = palCmdDefs.map((c, k) => {
-      const i = palFileNames.length + k;
-      return {
-        label: c.label,
-        kbd: c.kbd,
-        bg: s.palSel === i ? 'rgba(0,0,0,0.05)' : 'transparent',
-        onClick: () => this.runCmd(c),
-        onHover: () => { if (s.palSel !== i) this.setState({ palSel: i }); },
-      };
-    });
+    const paletteFiles = palFileNames.map((name, i) => ({ name, active: name === s.active, bg: s.palSel === i ? 'var(--mv-row-hover)' : 'transparent', onClick: () => this.openFile(name), onHover: () => { if (s.palSel !== i) this.setState({ palSel: i }); } }));
+    const paletteCmds = palCmdDefs.map((c, k) => { const i = palFileNames.length + k; return { label: c.label, kbd: c.kbd, bg: s.palSel === i ? 'var(--mv-row-hover)' : 'transparent', onClick: () => this.runCmd(c), onHover: () => { if (s.palSel !== i) this.setState({ palSel: i }); } }; });
 
-    // 查找面板状态
     const canNav = !s.findError && s.findTotal > 0;
     const findCount = s.findError ? '无效正则' : (s.findTotal ? (s.findIndex + 1) + '/' + s.findTotal : (s.findQuery.trim() ? '无结果' : ''));
-    const findCountColor = s.findError ? '#C7482E' : '#767676';
     const tglBg = (on) => (on ? 'rgba(0,0,0,0.10)' : 'transparent');
-    const tglColor = (on) => (on ? '#1d1d1f' : '#aeaeb2');
+    const tglColor = (on) => (on ? 'var(--mv-fg)' : 'var(--mv-muted-2)');
     const tglRing = (on) => (on ? 'inset 0 0 0 1px rgba(0,0,0,0.06)' : 'none');
-
-    const html = doc ? (doc.html || '') : '';
-    const docBody = React.createElement('div', { key: s.active, ref: this.bodyRef, dangerouslySetInnerHTML: { __html: html } });
 
     return {
       sidebarOpen: s.sidebarOpen,
-      toggleSidebar: () => this.setState({ sidebarOpen: !s.sidebarOpen }),
+      toggleSidebar: this.toggleSidebar,
       sideFilter: s.sideFilter,
       onSideFilter: (e) => this.setState({ sideFilter: e.target.value, kbSel: 0 }),
       onSideFilterKey: this.onSideFilterKey,
       sidebarItems,
+      sidebarEmpty: filtering && sidebarItems.length === 0,
       tabPadLeft: s.sidebarOpen ? '12px' : '84px',
       sideW: s.sideW,
       onResizeStart: this.onResizeStart,
@@ -1250,83 +1945,58 @@ class Component extends DCLogic {
       resizeLine: s.resizing ? 'rgba(10,132,255,0.6)' : (s.resizeHover ? 'rgba(0,0,0,0.18)' : 'transparent'),
       openPaletteBtn: () => this.setState({ paletteOpen: true, filter: '', palSel: 0 }),
       tabItems,
-      hasOutline: !!doc && doc.outline.length > 0,
+      previewLabel: s.forcePreview ? '✐ 编辑' : '预览',
+      previewTip: s.forcePreview ? '返回编辑 · ⌘⇧P' : '纯预览（隐藏语法）· ⌘⇧P',
+      previewColor: s.forcePreview ? 'var(--mv-accent)' : 'var(--mv-muted-2)',
+      previewBg: s.forcePreview ? 'rgba(232,163,61,0.12)' : 'transparent',
+      togglePreviewAll: this.togglePreviewAll,
+      hasOutline: outline.length > 0,
       outlineRows,
-      tip: s.tip,
-      tipX: s.tipX,
-      tipY: s.tipY,
-      tipShow: s.tipShow,
-      tipShift: s.tipAbove ? '-100%' : '0%',
+      tip: s.tip, tipX: s.tipX, tipY: s.tipY, tipShow: s.tipShow, tipShift: s.tipAbove ? '-100%' : '0%',
       onRailEnter: () => { clearTimeout(this._railT); this.markRailSeen(); if (!s.railOpen) this.setState({ railOpen: true }); },
       onRailLeave: () => { clearTimeout(this._railT); this._railT = setTimeout(() => this.setState({ railOpen: false, hoverIdx: -1 }), 180); },
       coachShow: s.coachShow,
       onSideLeave: () => { if (s.hoverFile) this.setState({ hoverFile: '' }); },
-      hasDoc: !!doc && !!s.active,
-      noDoc: !s.active,
-      docBody,
+      hasDoc, noDoc: !s.active,
+      blockViews,
+      editRef: this.editRef,
+      tblRef: this.tblRef,
+      gridHeaderCells, gridBodyRows, tblAlignLabel, tblGridStyle,
+      tblAddRow: (e) => { if (e && e.preventDefault) e.preventDefault(); this.addTblRow(); },
+      tblAddCol: (e) => { if (e && e.preventDefault) e.preventDefault(); this.addTblCol(); },
+      tblAlign: (e) => { if (e && e.preventDefault) e.preventDefault(); this.cycleAlign(); },
+      tblDelRow: (e) => { if (e && e.preventDefault) e.preventDefault(); this.delTblRow(); },
+      tblDelCol: (e) => { if (e && e.preventDefault) e.preventDefault(); this.delTblCol(); },
+      editPlaceholder: '输入 Markdown… 试试 # 标题、- 列表、``` 代码',
       bodyFontSize: this.FONT_SIZES[s.fontIdx],
-      statusText: doc ? doc.stats : '',
+      statusText: hasDoc ? this.computeStats(s.active) : '',
       progressPct: Math.round(s.progress * 100),
       statusOpacity: s.statusFaded ? 0 : 1,
-      hoverUrl: s.hoverUrl,
-      showHoverUrl: !!s.hoverUrl,
-      onContentOver: this.onContentOver,
-      onContentLeave: this.onContentLeave,
-      onScroll: this.onScroll,
-      contentRef: this.contentRef,
-      onContentClick: this.onContentClick,
-      onContentKeyDown: this.onContentKeyDown,
-      onContentBlur: this.onContentBlur,
-      onDragOver: this.onDragOver,
-      onDrop: this.onDrop,
-      dragging: s.dragging,
+      hoverUrl: s.hoverUrl, showHoverUrl: !!s.hoverUrl,
+      fnPopShow: !!s.fnPopShow, fnPopText: s.fnPopText || '', fnPopX: s.fnPopX || 0, fnPopY: s.fnPopY || 0,
+      onContentOver: this.onContentOver, onContentLeave: this.onContentLeave,
+      onScroll: this.onScroll, contentRef: this.contentRef,
+      onDragOver: this.onDragOver, onDrop: this.onDrop, dragging: s.dragging,
       openSystem: this.openSystem,
-      findOpen: s.findOpen,
-      openFind: this.openFind,
-      closeFind: this.closeFind,
-      onFindChange: this.onFindChange,
-      onFindKey: this.onFindKey,
-      findInputRef: this.findInputRef,
-      findQuery: s.findQuery,
-      findCount,
-      findCountColor,
+      findOpen: s.findOpen, openFind: this.openFind, closeFind: this.closeFind,
+      onFindChange: this.onFindChange, onFindKey: this.onFindKey, findInputRef: this.findInputRef,
+      findQuery: s.findQuery, findCount, findCountColor: s.findError ? 'var(--mv-danger)' : 'var(--mv-status)',
       findRing: s.findError ? '0 0 0 1px rgba(199,72,46,0.45)' : 'none',
-      navColor: canNav ? '#6e6e73' : '#D1D1D6',
-      navCursor: canNav ? 'pointer' : 'default',
-      navHoverBg: canNav ? 'rgba(0,0,0,0.05)' : 'transparent',
-      findNext: this.findNext,
-      findPrev: this.findPrev,
-      toggleCase: this.toggleCase,
-      toggleWord: this.toggleWord,
-      toggleRegex: this.toggleRegex,
+      navColor: canNav ? '#6e6e73' : '#D1D1D6', navCursor: canNav ? 'pointer' : 'default', navHoverBg: canNav ? 'rgba(0,0,0,0.05)' : 'transparent',
+      findNext: this.findNext, findPrev: this.findPrev,
+      toggleCase: this.toggleCase, toggleWord: this.toggleWord, toggleRegex: this.toggleRegex,
       caseBg: tglBg(s.caseSensitive), caseColor: tglColor(s.caseSensitive), caseRing: tglRing(s.caseSensitive),
       wordBg: tglBg(s.wholeWord), wordColor: tglColor(s.wholeWord), wordRing: tglRing(s.wholeWord),
       regexBg: tglBg(s.useRegex), regexColor: tglColor(s.useRegex), regexRing: tglRing(s.useRegex),
-      replaceOpen: s.replaceOpen,
-      replaceChevron: s.replaceOpen ? '▾' : '▸',
-      chevBg: s.replaceOpen ? 'rgba(0,0,0,0.05)' : 'transparent',
-      chevColor: s.replaceOpen ? '#6e6e73' : '#aeaeb2',
-      toggleReplace: this.toggleReplace,
-      replaceText: s.replaceText,
-      onReplaceChange: this.onReplaceChange,
-      onReplaceKey: this.onReplaceKey,
-      replaceCurrent: this.replaceCurrent,
-      replaceAll: this.replaceAll,
-      paletteOpen: s.paletteOpen,
-      closePalette: this.closePalette,
-      onPaletteKey: this.onPaletteKey,
-      stop: (e) => e.stopPropagation(),
-      filter: s.filter,
-      onFilter: (e) => this.setState({ filter: e.target.value, palSel: 0 }),
-      paletteFiles,
-      paletteCmds,
-      hasPalFiles: paletteFiles.length > 0,
-      hasPalCmds: paletteCmds.length > 0,
-      palEmpty: paletteFiles.length === 0 && paletteCmds.length === 0,
-      newDoc: this.newDoc,
-      saveDoc: this.saveDoc,
-      toast: s.toast,
-      showToast: !!s.toast,
+      replaceOpen: s.replaceOpen, replaceChevron: s.replaceOpen ? '▾' : '▸',
+      chevBg: s.replaceOpen ? 'var(--mv-row-hover)' : 'transparent', chevColor: s.replaceOpen ? 'var(--mv-muted)' : 'var(--mv-muted-2)',
+      toggleReplace: this.toggleReplace, replaceText: s.replaceText, onReplaceChange: this.onReplaceChange, onReplaceKey: this.onReplaceKey,
+      replaceCurrent: this.replaceCurrent, replaceAll: this.replaceAll,
+      paletteOpen: s.paletteOpen, closePalette: this.closePalette, onPaletteKey: this.onPaletteKey, stop: (e) => e.stopPropagation(),
+      filter: s.filter, onFilter: (e) => this.setState({ filter: e.target.value, palSel: 0 }),
+      paletteFiles, paletteCmds, hasPalFiles: paletteFiles.length > 0, hasPalCmds: paletteCmds.length > 0, palEmpty: paletteFiles.length === 0 && paletteCmds.length === 0,
+      newDoc: this.newDoc, saveDoc: this.saveDoc,
+      toast: s.toast, showToast: !!s.toast,
     };
   }
 }
