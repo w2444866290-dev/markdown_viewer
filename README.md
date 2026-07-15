@@ -66,7 +66,7 @@ Build the true Debug bundle with:
 ```
 
 The Debug application is written to `dist/debug/MarkdownViewer.app` with bundle identifier `local.codex.markdownviewer.debug`.
-It contains the verified `Fixtures/Debug/格式示例.md` fixture, while the Release bundle does not contain that fixture.
+`ui/格式示例.md` is the sole source fixture, and the Debug application contains a verified byte-for-byte copy while the Release bundle does not contain it.
 
 Repeated test setup can reuse a verified, current Debug bundle explicitly:
 

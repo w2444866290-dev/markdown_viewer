@@ -77,6 +77,59 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
         return pieces.joined()
     }
 
+    /// Migrates the source-empty paragraph blocks written by the pre-boundary
+    /// session model. Detection relies on the persisted virtual block itself, not
+    /// on ordinary source whitespace, so historical blank lines are never inferred
+    /// as an edit position. Existing IDs and all non-boundary source slices remain
+    /// unchanged.
+    func migratingLegacyContainerEmptyParagraphs() -> (
+        document: MarkdownDocument,
+        didMigrate: Bool
+    ) {
+        guard blocks.count > 1 else { return (self, false) }
+        var migrated = self
+        let ending = preferredLineEnding
+        var didMigrate = false
+
+        for index in migrated.blocks.indices.dropFirst() {
+            let block = migrated.blocks[index]
+            let previous = migrated.blocks[index - 1]
+            guard block.kind == .paragraph,
+                  block.source.isEmpty,
+                  previous.kind == .list || previous.kind == .quote else {
+                continue
+            }
+
+            let durableLeading = Self.lineTerminatorCount(in: block.leadingTrivia) >= 2
+            if index == migrated.blocks.count - 1 {
+                guard !durableLeading else { continue }
+                migrated.blocks[index] = block.replacingLeadingTrivia(
+                    Self.ensureBlankLineBoundary(block.leadingTrivia, lineEnding: ending)
+                )
+                didMigrate = true
+                continue
+            }
+
+            let following = migrated.blocks[index + 1]
+            let durableFollowing = Self.lineTerminatorCount(
+                in: following.leadingTrivia
+            ) >= 2
+            guard !durableLeading || !durableFollowing else { continue }
+            if !durableLeading {
+                migrated.blocks[index] = block.replacingLeadingTrivia(
+                    Self.ensureBlankLineBoundary(block.leadingTrivia, lineEnding: ending)
+                )
+            }
+            if !durableFollowing {
+                migrated.blocks[index + 1] = following.replacingLeadingTrivia(
+                    Self.ensureBlankLineBoundary(following.leadingTrivia, lineEnding: ending)
+                )
+            }
+            didMigrate = true
+        }
+        return (migrated, didMigrate)
+    }
+
     /// Re-detects the semantic kind of one live source-editor draft.
     ///
     /// A block may change type before it is committed, such as when a paragraph
@@ -84,6 +137,33 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
     /// instead of the kind captured when editing began.
     static func inferredBlockKind(forDraft source: String) -> MarkdownBlockKind {
         standaloneKind(of: source)
+    }
+
+    /// Re-detects the semantic kind at one caret inside a multi-block draft.
+    /// This is intentionally source-position based: a paste can temporarily put
+    /// several Markdown blocks inside one native text editor before commit.
+    static func inferredBlockKind(
+        forDraft source: String,
+        atUTF16Offset offset: Int
+    ) -> MarkdownBlockKind {
+        let parsed = parse(source)
+        guard !parsed.blocks.isEmpty else { return .paragraph }
+        let clamped = min(max(0, offset), (source as NSString).length)
+        var cursor = 0
+        var nearest = parsed.blocks[0].kind
+        for block in parsed.blocks {
+            let leadingEnd = cursor + (block.leadingTrivia as NSString).length
+            let sourceEnd = leadingEnd + (block.source as NSString).length
+            if clamped < leadingEnd {
+                return block.kind
+            }
+            if clamped <= sourceEnd {
+                return block.kind
+            }
+            nearest = block.kind
+            cursor = sourceEnd
+        }
+        return nearest
     }
 
     /// The first line terminator present in the document, or LF for a single-line
@@ -188,12 +268,17 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
         let paragraphID = UUID()
         let insertionIndex = index + 1
         let leadingTrivia: String
+        let ending = preferredLineEnding
         if blocks.indices.contains(insertionIndex) {
-            let following = blocks[insertionIndex]
-            leadingTrivia = following.leadingTrivia
-            blocks[insertionIndex] = following.replacingLeadingTrivia("")
+            // Add one minimal boundary for the new block. The following block
+            // keeps ownership of its exact pre-existing trivia, including unusual
+            // whitespace and extra blank lines.
+            leadingTrivia = ending + ending
         } else {
-            leadingTrivia = trailingTrivia
+            leadingTrivia = Self.ensureBlankLineBoundary(
+                trailingTrivia,
+                lineEnding: ending
+            )
             trailingTrivia = ""
         }
         blocks.insert(
@@ -379,7 +464,56 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
         for index in lastEnd..<lines.count {
             trailingPieces.append(lines[index].raw)
         }
-        return ParsedDocument(blocks: parsed, trailingTrivia: trailingPieces.joined())
+        return materializingContainerBoundaries(
+            in: parsed,
+            trailingTrivia: trailingPieces.joined()
+        )
+    }
+
+    /// Empty paragraphs produced by exiting a list or quote use an explicit,
+    /// source-stable blank-line boundary. Between blocks, two ordinary blank-line
+    /// boundaries are required so typing into the empty paragraph still leaves a
+    /// normal separator on both sides. At EOF one blank-line boundary is enough.
+    private static func materializingContainerBoundaries(
+        in parsed: [ParsedBlock],
+        trailingTrivia: String
+    ) -> ParsedDocument {
+        var blocks: [ParsedBlock] = []
+        blocks.reserveCapacity(parsed.count + 1)
+        for block in parsed {
+            if let previous = blocks.last,
+               previous.kind == .list || previous.kind == .quote,
+               lineTerminatorCount(in: block.leadingTrivia) >= 4,
+               let boundary = splitTrivia(
+                   block.leadingTrivia,
+                   afterLineTerminators: 2
+               ) {
+                blocks.append(ParsedBlock(
+                    kind: .paragraph,
+                    source: "",
+                    leadingTrivia: boundary.prefix
+                ))
+                blocks.append(ParsedBlock(
+                    kind: block.kind,
+                    source: block.source,
+                    leadingTrivia: boundary.suffix
+                ))
+            } else {
+                blocks.append(block)
+            }
+        }
+
+        if let final = blocks.last,
+           final.kind == .list || final.kind == .quote,
+           lineTerminatorCount(in: trailingTrivia) >= 2 {
+            blocks.append(ParsedBlock(
+                kind: .paragraph,
+                source: "",
+                leadingTrivia: trailingTrivia
+            ))
+            return ParsedDocument(blocks: blocks, trailingTrivia: "")
+        }
+        return ParsedDocument(blocks: blocks, trailingTrivia: trailingTrivia)
     }
 
     private static func blockRanges(in lines: [LosslessSourceLine]) -> [BlockRange] {
@@ -458,7 +592,7 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
         in lines: [LosslessSourceLine]
     ) -> MarkdownBlockKind? {
         let line = lines[index].content
-        if openingFence(in: line) != nil { return .code }
+        if MarkdownFenceSyntax.openingFence(in: line) != nil { return .code }
         if isHorizontalRule(line) { return .horizontalRule }
         if matches(headingRegex, line) { return .heading }
         if index + 1 < lines.count,
@@ -476,10 +610,12 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
         startingAt index: Int,
         in lines: [LosslessSourceLine]
     ) -> Int {
-        guard let opening = openingFence(in: lines[index].content) else { return index + 1 }
+        guard let opening = MarkdownFenceSyntax.openingFence(in: lines[index].content) else {
+            return index + 1
+        }
         var cursor = index + 1
         while cursor < lines.count {
-            if isClosingFence(lines[cursor].content, matching: opening) {
+            if MarkdownFenceSyntax.isClosingFence(lines[cursor].content, matching: opening) {
                 return cursor + 1
             }
             cursor += 1
@@ -543,31 +679,60 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
         return width
     }
 
-    private struct Fence: Equatable {
-        let marker: Character
-        let count: Int
-    }
-
-    private static func openingFence(in line: String) -> Fence? {
-        let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
-        guard let first = trimmed.first, first == "`" || first == "~" else { return nil }
-        let count = trimmed.prefix(while: { $0 == first }).count
-        guard count >= 3 else { return nil }
-        return Fence(marker: first, count: count)
-    }
-
-    private static func isClosingFence(_ line: String, matching fence: Fence) -> Bool {
-        let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
-        let markerCount = trimmed.prefix(while: { $0 == fence.marker }).count
-        guard markerCount >= fence.count else { return false }
-        return trimmed.dropFirst(markerCount).allSatisfy { $0 == " " || $0 == "\t" }
-    }
-
     private static func isHorizontalRule(_ line: String) -> Bool {
         let compact = line.filter { $0 != " " && $0 != "\t" }
         guard compact.count >= 3, let marker = compact.first,
               marker == "-" || marker == "*" || marker == "_" else { return false }
         return compact.allSatisfy { $0 == marker }
+    }
+
+    private static func ensureBlankLineBoundary(
+        _ trivia: String,
+        lineEnding: String
+    ) -> String {
+        var result = trivia
+        while lineTerminatorCount(in: result) < 2 {
+            result += lineEnding
+        }
+        return result
+    }
+
+    private static func lineTerminatorCount(in source: String) -> Int {
+        losslessLines(source).reduce(0) { count, line in
+            count + (line.terminator.isEmpty ? 0 : 1)
+        }
+    }
+
+    private static func splitTrivia(
+        _ source: String,
+        afterLineTerminators count: Int
+    ) -> (prefix: String, suffix: String)? {
+        guard count > 0 else { return ("", source) }
+        let text = source as NSString
+        var cursor = 0
+        var found = 0
+        while cursor < text.length {
+            let character = text.character(at: cursor)
+            if character == 0x0D {
+                cursor += 1
+                if cursor < text.length, text.character(at: cursor) == 0x0A {
+                    cursor += 1
+                }
+                found += 1
+            } else if character == 0x0A {
+                cursor += 1
+                found += 1
+            } else {
+                cursor += 1
+            }
+            if found == count {
+                return (
+                    text.substring(to: cursor),
+                    text.substring(from: cursor)
+                )
+            }
+        }
+        return nil
     }
 }
 
@@ -595,9 +760,10 @@ enum MarkdownTableError: Error, Equatable {
 
 /// A native two-dimensional editing model for one Markdown table block.
 ///
-/// The original block source remains untouched until this grid is committed. Once
-/// edited, `serialized()` emits stable, conventional Markdown while preserving the
-/// table's line-ending style, outer-pipe style, and final-newline state.
+/// Semantic cell values and their source lexemes deliberately coexist. Editing a
+/// cell replaces only that cell's escaped content; row padding, outer pipes,
+/// separator spelling, and every row terminator remain untouched. Structural edits
+/// rebuild only the rows or columns whose shape necessarily changes.
 struct MarkdownTableGrid: Codable, Equatable, Sendable {
     private(set) var header: [String]
     private(set) var rows: [[String]]
@@ -606,6 +772,10 @@ struct MarkdownTableGrid: Codable, Equatable, Sendable {
     private(set) var hasLeadingPipe: Bool
     private(set) var hasTrailingPipe: Bool
     private(set) var finalLineEnding: String
+    private var headerLexeme: MarkdownTableRowLexeme
+    private var separatorLexeme: MarkdownTableRowLexeme
+    private var rowLexemes: [MarkdownTableRowLexeme]
+    private var leftAlignmentUsesColon: [Bool]
 
     var columnCount: Int { header.count }
 
@@ -626,6 +796,36 @@ struct MarkdownTableGrid: Codable, Equatable, Sendable {
         self.hasLeadingPipe = hasLeadingPipe
         self.hasTrailingPipe = hasTrailingPipe
         self.finalLineEnding = finalLineEnding
+        let forceOuterPipes = count == 1
+        let leading = hasLeadingPipe || forceOuterPipes
+        let trailing = hasTrailingPipe || forceOuterPipes
+        headerLexeme = Self.canonicalRow(
+            values: self.header,
+            leading: leading,
+            trailing: trailing,
+            terminator: self.lineEnding
+        )
+        leftAlignmentUsesColon = Array(repeating: false, count: count)
+        separatorLexeme = Self.canonicalRow(
+            values: self.alignments.map(Self.separatorSource),
+            leading: leading,
+            trailing: trailing,
+            terminator: self.rows.isEmpty ? finalLineEnding : self.lineEnding
+        )
+        let semanticRows = self.rows
+        let preferredEnding = self.lineEnding
+        rowLexemes = semanticRows.enumerated().map { index, row in
+            Self.canonicalRow(
+                values: row,
+                leading: leading,
+                trailing: trailing,
+                terminator: index == semanticRows.count - 1
+                    ? finalLineEnding
+                    : preferredEnding
+            )
+        }
+        self.hasLeadingPipe = headerLexeme.hasLeadingPipe
+        self.hasTrailingPipe = headerLexeme.hasTrailingPipe
     }
 
     init(parsing source: String) throws {
@@ -634,37 +834,58 @@ struct MarkdownTableGrid: Codable, Equatable, Sendable {
               lines.allSatisfy({ !$0.content.trimmingCharacters(in: .whitespaces).isEmpty }) else {
             throw MarkdownTableError.invalidTable
         }
-        let parsedHeader = MarkdownTableSyntax.parseRow(lines[0].content)
-        let parsedSeparator = MarkdownTableSyntax.parseRow(lines[1].content)
-        guard !parsedHeader.cells.isEmpty,
-              parsedSeparator.cells.allSatisfy({ MarkdownTableSyntax.alignment(for: $0) != nil }) else {
+        let parsedHeader = MarkdownTableSyntax.parseLexicalRow(lines[0])
+        let parsedSeparator = MarkdownTableSyntax.parseLexicalRow(lines[1])
+        let headerValues = parsedHeader.values
+        let separatorValues = parsedSeparator.values
+        guard !headerValues.isEmpty,
+              separatorValues.allSatisfy({ MarkdownTableSyntax.alignment(for: $0) != nil }) else {
             throw MarkdownTableError.invalidTable
         }
 
-        let body = lines.dropFirst(2).map { MarkdownTableSyntax.parseRow($0.content).cells }
+        let parsedBody = lines.dropFirst(2).map(MarkdownTableSyntax.parseLexicalRow)
+        let body = parsedBody.map(\.values)
         let count = max(
             1,
-            parsedHeader.cells.count,
-            parsedSeparator.cells.count,
+            headerValues.count,
+            separatorValues.count,
             body.map(\.count).max() ?? 0
         )
-        header = Self.padded(parsedHeader.cells, to: count)
+        header = Self.padded(headerValues, to: count)
         rows = body.map { Self.padded($0, to: count) }
         alignments = Self.paddedAlignments(
-            parsedSeparator.cells.compactMap(MarkdownTableSyntax.alignment(for:)),
+            separatorValues.compactMap(MarkdownTableSyntax.alignment(for:)),
             to: count
         )
         lineEnding = lines.first(where: { !$0.terminator.isEmpty })?.terminator ?? "\n"
         hasLeadingPipe = parsedHeader.hasLeadingPipe
         hasTrailingPipe = parsedHeader.hasTrailingPipe
         finalLineEnding = lines.last?.terminator ?? ""
+        headerLexeme = parsedHeader
+        separatorLexeme = parsedSeparator
+        rowLexemes = parsedBody
+        leftAlignmentUsesColon = separatorValues.map { value in
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            return trimmed.first == ":"
+                && MarkdownTableSyntax.alignment(for: value) == .left
+        }
+        leftAlignmentUsesColon = Self.padded(
+            leftAlignmentUsesColon,
+            to: count,
+            with: false
+        )
     }
 
     mutating func setHeader(column: Int, value: String) throws {
         guard header.indices.contains(column) else {
             throw MarkdownTableError.columnOutOfBounds(column)
         }
+        if column >= headerLexeme.cells.count || column >= separatorLexeme.cells.count {
+            extendHeaderRuleShape(to: column + 1)
+        }
         header[column] = value
+        headerLexeme.setValue(value, at: column)
+        reconcileHeaderRuleEdges()
     }
 
     mutating func setCell(row: Int, column: Int, value: String) throws {
@@ -674,17 +895,40 @@ struct MarkdownTableGrid: Codable, Equatable, Sendable {
         guard header.indices.contains(column) else {
             throw MarkdownTableError.columnOutOfBounds(column)
         }
+        if column >= rowLexemes[row].cells.count {
+            rowLexemes[row].ensureValueCount(column + 1)
+        }
         rows[row][column] = value
+        rowLexemes[row].setValue(value, at: column)
+        rowLexemes[row].ensureLocallyUnambiguousEmptyEdgeCells()
     }
 
     mutating func addRow(_ values: [String] = []) {
-        rows.append(Self.padded(values, to: columnCount))
+        let row = Self.padded(values, to: columnCount)
+        let previousFinal = finalLineEnding
+        setLastRowTerminator(lineEnding)
+        let template = rowLexemes.last ?? headerLexeme
+        var lexeme = template.styledCopy(values: row)
+        lexeme.terminator = previousFinal
+        lexeme.ensureUnambiguousEmptyEdgeCells()
+        rows.append(row)
+        rowLexemes.append(lexeme)
+        finalLineEnding = lexeme.terminator
     }
 
     @discardableResult
     mutating func deleteRow(at index: Int) -> Bool {
         guard rows.indices.contains(index) else { return false }
+        let deletingFinal = index == rows.count - 1
+        let removed = rowLexemes.remove(at: index)
         rows.remove(at: index)
+        if deletingFinal {
+            setLastRowTerminator(removed.terminator)
+            finalLineEnding = removed.terminator
+        }
+        if !rowLexemes.contains(where: { $0.cells.count >= columnCount }) {
+            ensureHeaderRuleShape(to: columnCount)
+        }
         return true
     }
 
@@ -693,18 +937,42 @@ struct MarkdownTableGrid: Codable, Equatable, Sendable {
         defaultCell: String = "",
         alignment: MarkdownTableAlignment = .left
     ) {
+        let existingCount = columnCount
+        normalizeLexemeShape(to: existingCount)
         header.append(headerValue)
         alignments.append(alignment)
-        for index in rows.indices { rows[index].append(defaultCell) }
+        leftAlignmentUsesColon.append(false)
+        headerLexeme.appendValue(headerValue)
+        separatorLexeme.appendValue(Self.separatorSource(alignment))
+        for index in rows.indices {
+            rows[index].append(defaultCell)
+            rowLexemes[index].appendValue(defaultCell)
+        }
+        ensureUnambiguousLexemeShape()
     }
 
     /// Delete a column while enforcing the invariant that a table always has one.
     @discardableResult
     mutating func deleteColumn(at index: Int) -> Bool {
         guard columnCount > 1, header.indices.contains(index) else { return false }
+        normalizeLexemeShape(to: columnCount)
         header.remove(at: index)
         alignments.remove(at: index)
-        for row in rows.indices { rows[row].remove(at: index) }
+        leftAlignmentUsesColon.remove(at: index)
+        headerLexeme.removeValue(at: index)
+        separatorLexeme.removeValue(at: index)
+        for row in rows.indices {
+            rows[row].remove(at: index)
+            rowLexemes[row].removeValue(at: index)
+        }
+        if columnCount == 1 {
+            headerLexeme.ensureOuterPipes()
+            separatorLexeme.ensureOuterPipes()
+            for row in rowLexemes.indices { rowLexemes[row].ensureOuterPipes() }
+            hasLeadingPipe = true
+            hasTrailingPipe = true
+        }
+        ensureUnambiguousLexemeShape()
         return true
     }
 
@@ -713,32 +981,22 @@ struct MarkdownTableGrid: Codable, Equatable, Sendable {
         guard alignments.indices.contains(column) else {
             throw MarkdownTableError.columnOutOfBounds(column)
         }
+        if column >= headerLexeme.cells.count || column >= separatorLexeme.cells.count {
+            ensureHeaderRuleShape(to: column + 1)
+        }
         alignments[column] = alignments[column].next
+        separatorLexeme.setSeparator(
+            alignment: alignments[column],
+            at: column,
+            leftUsesColon: leftAlignmentUsesColon[column]
+        )
         return alignments[column]
     }
 
     func serialized() -> String {
-        let forceOuterPipes = columnCount == 1
-        let leading = hasLeadingPipe || forceOuterPipes
-        let trailing = hasTrailingPipe || forceOuterPipes
-        var output: [String] = []
-        output.reserveCapacity(rows.count + 2)
-        output.append(Self.renderRow(header, leading: leading, trailing: trailing))
-        output.append(Self.renderRow(
-            alignments.map { alignment in
-                switch alignment {
-                case .left: return "---"
-                case .center: return ":---:"
-                case .right: return "---:"
-                }
-            },
-            leading: leading,
-            trailing: trailing
-        ))
-        for row in rows {
-            output.append(Self.renderRow(row, leading: leading, trailing: trailing))
-        }
-        return output.joined(separator: lineEnding) + finalLineEnding
+        ([headerLexeme, separatorLexeme] + rowLexemes)
+            .map(\.serialized)
+            .joined()
     }
 
     private static func padded(_ values: [String], to count: Int) -> [String] {
@@ -754,13 +1012,221 @@ struct MarkdownTableGrid: Codable, Equatable, Sendable {
         return values + Array(repeating: .left, count: count - values.count)
     }
 
-    private static func renderRow(
-        _ cells: [String],
+    private static func padded<T>(
+        _ values: [T],
+        to count: Int,
+        with value: T
+    ) -> [T] {
+        if values.count >= count { return Array(values.prefix(count)) }
+        return values + Array(repeating: value, count: count - values.count)
+    }
+
+    private static func canonicalRow(
+        values: [String],
         leading: Bool,
-        trailing: Bool
-    ) -> String {
-        let body = cells.map(MarkdownTableSyntax.escapeCell).joined(separator: " | ")
-        return (leading ? "| " : "") + body + (trailing ? " |" : "")
+        trailing: Bool,
+        terminator: String
+    ) -> MarkdownTableRowLexeme {
+        MarkdownTableRowLexeme(
+            leadingOuterWhitespace: "",
+            hasLeadingPipe: leading,
+            cells: values.enumerated().map { index, value in
+                MarkdownTableCellLexeme(
+                    leadingWhitespace: leading || index > 0 ? " " : "",
+                    rawContent: MarkdownTableSyntax.escapeCell(value),
+                    trailingWhitespace: trailing || index + 1 < values.count ? " " : ""
+                )
+            },
+            hasTrailingPipe: trailing,
+            trailingOuterWhitespace: "",
+            terminator: terminator
+        )
+    }
+
+    private static func separatorSource(_ alignment: MarkdownTableAlignment) -> String {
+        switch alignment {
+        case .left: return "---"
+        case .center: return ":---:"
+        case .right: return "---:"
+        }
+    }
+
+    private mutating func setLastRowTerminator(_ terminator: String) {
+        if rowLexemes.isEmpty {
+            separatorLexeme.terminator = terminator
+        } else {
+            rowLexemes[rowLexemes.count - 1].terminator = terminator
+        }
+    }
+
+    private mutating func normalizeLexemeShape(to count: Int) {
+        ensureHeaderRuleShape(to: count)
+        for row in rowLexemes.indices {
+            rowLexemes[row].ensureValueCount(count)
+        }
+        ensureUnambiguousLexemeShape()
+    }
+
+    private mutating func ensureHeaderRuleShape(to count: Int) {
+        extendHeaderRuleShape(to: count)
+        reconcileHeaderRuleEdges()
+    }
+
+    private mutating func extendHeaderRuleShape(to count: Int) {
+        headerLexeme.ensureValueCount(count)
+        while separatorLexeme.cells.count < count {
+            let column = separatorLexeme.cells.count
+            separatorLexeme.appendValue(Self.separatorSource(alignments[column]))
+        }
+    }
+
+    private mutating func reconcileHeaderRuleEdges() {
+        headerLexeme.ensureLocallyUnambiguousEmptyEdgeCells()
+        separatorLexeme.ensureLocallyUnambiguousEmptyEdgeCells()
+        hasLeadingPipe = headerLexeme.hasLeadingPipe
+        hasTrailingPipe = headerLexeme.hasTrailingPipe
+    }
+
+    private mutating func ensureUnambiguousLexemeShape() {
+        headerLexeme.ensureUnambiguousEmptyEdgeCells()
+        separatorLexeme.ensureUnambiguousEmptyEdgeCells()
+        for row in rowLexemes.indices {
+            rowLexemes[row].ensureUnambiguousEmptyEdgeCells()
+        }
+        hasLeadingPipe = headerLexeme.hasLeadingPipe
+        hasTrailingPipe = headerLexeme.hasTrailingPipe
+    }
+}
+
+private struct MarkdownTableCellLexeme: Codable, Equatable, Sendable {
+    var leadingWhitespace: String
+    var rawContent: String
+    var trailingWhitespace: String
+
+    var value: String { MarkdownTableSyntax.unescapeCell(rawContent) }
+    var serialized: String { leadingWhitespace + rawContent + trailingWhitespace }
+
+    init(rawSegment: String) {
+        leadingWhitespace = String(rawSegment.prefix(while: { $0 == " " || $0 == "\t" }))
+        let afterLeading = rawSegment.dropFirst(leadingWhitespace.count)
+        if afterLeading.isEmpty {
+            rawContent = ""
+            trailingWhitespace = ""
+        } else {
+            trailingWhitespace = String(
+                afterLeading.reversed()
+                    .prefix(while: { $0 == " " || $0 == "\t" })
+                    .reversed()
+            )
+            rawContent = String(afterLeading.dropLast(trailingWhitespace.count))
+        }
+    }
+
+    init(leadingWhitespace: String, rawContent: String, trailingWhitespace: String) {
+        self.leadingWhitespace = leadingWhitespace
+        self.rawContent = rawContent
+        self.trailingWhitespace = trailingWhitespace
+    }
+}
+
+private struct MarkdownTableRowLexeme: Codable, Equatable, Sendable {
+    var leadingOuterWhitespace: String
+    var hasLeadingPipe: Bool
+    var cells: [MarkdownTableCellLexeme]
+    var hasTrailingPipe: Bool
+    var trailingOuterWhitespace: String
+    var terminator: String
+
+    var values: [String] { cells.map(\.value) }
+    var serialized: String {
+        leadingOuterWhitespace
+            + (hasLeadingPipe ? "|" : "")
+            + cells.map(\.serialized).joined(separator: "|")
+            + (hasTrailingPipe ? "|" : "")
+            + trailingOuterWhitespace
+            + terminator
+    }
+
+    mutating func setValue(_ value: String, at column: Int) {
+        while cells.count <= column { appendValue("") }
+        cells[column].rawContent = MarkdownTableSyntax.escapeCell(value)
+    }
+
+    mutating func appendValue(_ value: String) {
+        let style = cells.last ?? MarkdownTableCellLexeme(
+            leadingWhitespace: hasLeadingPipe ? " " : "",
+            rawContent: "",
+            trailingWhitespace: hasTrailingPipe ? " " : ""
+        )
+        cells.append(MarkdownTableCellLexeme(
+            leadingWhitespace: style.leadingWhitespace,
+            rawContent: MarkdownTableSyntax.escapeCell(value),
+            trailingWhitespace: style.trailingWhitespace
+        ))
+    }
+
+    mutating func ensureValueCount(_ count: Int, defaultValue: String = "") {
+        while cells.count < count { appendValue(defaultValue) }
+    }
+
+    mutating func removeValue(at column: Int) {
+        guard cells.indices.contains(column) else { return }
+        cells.remove(at: column)
+    }
+
+    mutating func ensureOuterPipes() {
+        hasLeadingPipe = true
+        hasTrailingPipe = true
+    }
+
+    mutating func ensureUnambiguousEmptyEdgeCells() {
+        guard let first = cells.first, let last = cells.last else { return }
+        if first.value.isEmpty || last.value.isEmpty {
+            ensureOuterPipes()
+        }
+    }
+
+    mutating func ensureLocallyUnambiguousEmptyEdgeCells() {
+        guard let first = cells.first, let last = cells.last else { return }
+        if first.value.isEmpty { hasLeadingPipe = true }
+        if last.value.isEmpty { hasTrailingPipe = true }
+    }
+
+    func styledCopy(values: [String]) -> MarkdownTableRowLexeme {
+        var copy = self
+        copy.cells = values.enumerated().map { index, value in
+            let style = cells.indices.contains(index)
+                ? cells[index]
+                : cells.last ?? MarkdownTableCellLexeme(
+                    leadingWhitespace: hasLeadingPipe ? " " : "",
+                    rawContent: "",
+                    trailingWhitespace: hasTrailingPipe ? " " : ""
+                )
+            return MarkdownTableCellLexeme(
+                leadingWhitespace: style.leadingWhitespace,
+                rawContent: MarkdownTableSyntax.escapeCell(value),
+                trailingWhitespace: style.trailingWhitespace
+            )
+        }
+        return copy
+    }
+
+    mutating func setSeparator(
+        alignment: MarkdownTableAlignment,
+        at column: Int,
+        leftUsesColon: Bool
+    ) {
+        while cells.count <= column { appendValue("---") }
+        let dashCount = max(3, cells[column].rawContent.filter { $0 == "-" }.count)
+        let dashes = String(repeating: "-", count: dashCount)
+        switch alignment {
+        case .left:
+            cells[column].rawContent = (leftUsesColon ? ":" : "") + dashes
+        case .center:
+            cells[column].rawContent = ":" + dashes + ":"
+        case .right:
+            cells[column].rawContent = dashes + ":"
+        }
     }
 }
 
@@ -844,38 +1310,53 @@ fileprivate enum MarkdownTableSyntax {
     }
 
     static func parseRow(_ line: String) -> ParsedRow {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        let leading = trimmed.first == "|"
-        let trailing = endsWithUnescapedPipe(trimmed)
-        var cells: [String] = []
-        var current = ""
-        var iterator = trimmed.makeIterator()
-        while let character = iterator.next() {
-            if character == "\\" {
-                if let next = iterator.next() {
-                    if next == "|" {
-                        current.append("|")
-                    } else if next == "\\" {
-                        current.append("\\")
-                    } else {
-                        current.append("\\")
-                        current.append(next)
-                    }
-                } else {
-                    current.append("\\")
-                }
-            } else if character == "|" {
-                cells.append(current.trimmingCharacters(in: .whitespaces))
-                current = ""
-            } else {
-                current.append(character)
-            }
+        let parsed = parseLexicalRow(LosslessSourceLine(content: line, terminator: ""))
+        return ParsedRow(
+            cells: parsed.values,
+            hasLeadingPipe: parsed.hasLeadingPipe,
+            hasTrailingPipe: parsed.hasTrailingPipe
+        )
+    }
+
+    static func parseLexicalRow(_ line: LosslessSourceLine) -> MarkdownTableRowLexeme {
+        let source = line.content
+        let unescapedPipes = unescapedPipeIndices(in: source)
+        let firstNonWhitespace = source.firstIndex(where: { $0 != " " && $0 != "\t" })
+        let lastNonWhitespace = source.lastIndex(where: { $0 != " " && $0 != "\t" })
+        let leadingPipe = firstNonWhitespace.flatMap { first in
+            unescapedPipes.first == first ? first : nil
         }
-        cells.append(current.trimmingCharacters(in: .whitespaces))
-        if leading, !cells.isEmpty { cells.removeFirst() }
-        if trailing, !cells.isEmpty { cells.removeLast() }
-        if cells.isEmpty { cells = [""] }
-        return ParsedRow(cells: cells, hasLeadingPipe: leading, hasTrailingPipe: trailing)
+        let candidateTrailingPipe = lastNonWhitespace.flatMap { last in
+            unescapedPipes.last == last ? last : nil
+        }
+        let trailingPipe = candidateTrailingPipe == leadingPipe ? nil : candidateTrailingPipe
+        let hasLeadingPipe = leadingPipe != nil
+        let hasTrailingPipe = trailingPipe != nil
+        let contentStart = leadingPipe.map { source.index(after: $0) } ?? source.startIndex
+        let contentEnd = trailingPipe ?? source.endIndex
+        let internalPipes = unescapedPipes.filter {
+            $0 >= contentStart && $0 < contentEnd
+        }
+
+        var segments: [String] = []
+        var start = contentStart
+        for pipe in internalPipes {
+            segments.append(String(source[start..<pipe]))
+            start = source.index(after: pipe)
+        }
+        segments.append(String(source[start..<contentEnd]))
+        if segments.isEmpty { segments = [""] }
+
+        return MarkdownTableRowLexeme(
+            leadingOuterWhitespace: leadingPipe.map { String(source[..<$0]) } ?? "",
+            hasLeadingPipe: hasLeadingPipe,
+            cells: segments.map(MarkdownTableCellLexeme.init(rawSegment:)),
+            hasTrailingPipe: hasTrailingPipe,
+            trailingOuterWhitespace: trailingPipe.map {
+                String(source[source.index(after: $0)...])
+            } ?? "",
+            terminator: line.terminator
+        )
     }
 
     static func containsUnescapedPipe(_ line: String) -> Bool {
@@ -899,6 +1380,41 @@ fileprivate enum MarkdownTableSyntax {
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "|", with: "\\|")
+    }
+
+    static func unescapeCell(_ source: String) -> String {
+        var output = ""
+        var iterator = source.makeIterator()
+        while let character = iterator.next() {
+            if character == "\\", let next = iterator.next() {
+                if next == "|" || next == "\\" {
+                    output.append(next)
+                } else {
+                    output.append("\\")
+                    output.append(next)
+                }
+            } else {
+                output.append(character)
+            }
+        }
+        return output
+    }
+
+    private static func unescapedPipeIndices(in source: String) -> [String.Index] {
+        var result: [String.Index] = []
+        var slashCount = 0
+        for index in source.indices {
+            let character = source[index]
+            if character == "|" {
+                if slashCount.isMultiple(of: 2) { result.append(index) }
+                slashCount = 0
+            } else if character == "\\" {
+                slashCount += 1
+            } else {
+                slashCount = 0
+            }
+        }
+        return result
     }
 
     private static func endsWithUnescapedPipe(_ line: String) -> Bool {

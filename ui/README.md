@@ -11,6 +11,7 @@
 | `Markdown Viewer.dc.html` | 终稿 | 定义应用完整界面、布局、交互状态和精确样式，是实现与验收的唯一设计真相源。 |
 | `Design System.dc.html` | 设计系统 | 为设计维护提供 token、组件状态、扩展规则和反模式边界，不作为实现验收依据。 |
 | `Markdown Viewer Icon 1024.png` | 图标源资源 | 用于生成应用的 `AppIcon.icns`。 |
+| `格式示例.md` | Debug 格式 fixture | 是 Debug 构建、测试和 E2E 使用的格式示例唯一实体真相源，构建时只把逐字节副本放入 Debug App。 |
 | `support.js` | 设计预览运行时 | 只供 `.dc.html` 浏览器预览和独立视觉捕获工具使用，不进入生产应用。 |
 
 ## 优先级规则

@@ -780,7 +780,7 @@ enum BlockFindEngine {
         _ source: NSString,
         into builder: inout ProjectionBuilder
     ) {
-        var activeFence: Fence?
+        var activeFence: MarkdownFenceSyntax.Fence?
         for line in sourceLines(source) {
             var content = line.contentRange
             if activeFence != nil {
@@ -828,7 +828,7 @@ enum BlockFindEngine {
             builder.append(run)
             return
         }
-        let closingIndex = lines.indices.dropFirst().last(where: {
+        let closingIndex = lines.indices.dropFirst().first(where: {
             isClosingFence(source, range: lines[$0].contentRange, fence: fence)
         })
         let end = closingIndex ?? lines.count
@@ -1100,11 +1100,6 @@ enum BlockFindEngine {
         let terminatorRange: NSRange
     }
 
-    private struct Fence: Equatable {
-        let marker: unichar
-        let count: Int
-    }
-
     private static let listPrefixRegex = try? NSRegularExpression(
         pattern: #"^[ \t]{0,12}(?:[-+*]|(?:[0-9]+|[A-Za-z]+)[.)])[ \t]+"#
     )
@@ -1266,39 +1261,22 @@ enum BlockFindEngine {
         return slashCount % 2 == 1
     }
 
-    private static func openingFence(_ source: NSString, range: NSRange) -> Fence? {
-        let trimmed = trimmingLeadingWhitespace(source, range: range)
-        guard trimmed.length >= 3 else { return nil }
-        let marker = source.character(at: trimmed.location)
-        guard marker == ascii("`") || marker == ascii("~") else { return nil }
-        let count = repeatedCount(
-            source,
-            at: trimmed.location,
-            value: marker,
-            limit: NSMaxRange(trimmed)
-        )
-        return count >= 3 ? Fence(marker: marker, count: count) : nil
+    private static func openingFence(
+        _ source: NSString,
+        range: NSRange
+    ) -> MarkdownFenceSyntax.Fence? {
+        MarkdownFenceSyntax.openingFence(in: source.substring(with: range))
     }
 
     private static func isClosingFence(
         _ source: NSString,
         range: NSRange,
-        fence: Fence
+        fence: MarkdownFenceSyntax.Fence
     ) -> Bool {
-        let trimmed = trimmingLeadingWhitespace(source, range: range)
-        let count = repeatedCount(
-            source,
-            at: trimmed.location,
-            value: fence.marker,
-            limit: NSMaxRange(trimmed)
+        MarkdownFenceSyntax.isClosingFence(
+            source.substring(with: range),
+            matching: fence
         )
-        guard count >= fence.count else { return false }
-        var cursor = trimmed.location + count
-        while cursor < NSMaxRange(trimmed) {
-            guard isWhitespace(source.character(at: cursor)) else { return false }
-            cursor += 1
-        }
-        return true
     }
 
     private static func recognizedHTMLTag(

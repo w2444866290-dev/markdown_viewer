@@ -53,9 +53,16 @@ struct DocumentTab: Identifiable, Codable {
         self.scrollY = scrollY
         self.selectionLocation = max(0, selectionLocation)
         self.selectionLength = max(0, selectionLength)
-        self.markdownDocument = self.isMarkdown
-            ? Self.consistentMarkdownDocument(markdownDocument, source: text)
-            : nil
+        if self.isMarkdown {
+            let reconciled = Self.consistentMarkdownDocument(markdownDocument, source: text)
+            self.markdownDocument = reconciled.document
+            if reconciled.didMigrate {
+                self.text = reconciled.document.source
+                self.isDirty = true
+            }
+        } else {
+            self.markdownDocument = nil
+        }
     }
 
     /// Explicit keys: `id` is persisted (it is otherwise a fresh-per-instance UUID),
@@ -94,9 +101,19 @@ struct DocumentTab: Identifiable, Codable {
             MarkdownDocument.self,
             forKey: .markdownDocument
         )
-        markdownDocument = isMarkdown
-            ? Self.consistentMarkdownDocument(persistedDocument, source: text)
-            : nil
+        if isMarkdown {
+            let reconciled = Self.consistentMarkdownDocument(
+                persistedDocument,
+                source: text
+            )
+            markdownDocument = reconciled.document
+            if reconciled.didMigrate {
+                text = reconciled.document.source
+                isDirty = true
+            }
+        } else {
+            markdownDocument = nil
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -125,11 +142,11 @@ struct DocumentTab: Identifiable, Codable {
     private static func consistentMarkdownDocument(
         _ document: MarkdownDocument?,
         source: String
-    ) -> MarkdownDocument {
+    ) -> (document: MarkdownDocument, didMigrate: Bool) {
         guard let document, document.source == source else {
-            return MarkdownDocument(source: source)
+            return (MarkdownDocument(source: source), false)
         }
-        return document
+        return document.migratingLegacyContainerEmptyParagraphs()
     }
 
     private static func fileURL(fromPersistedValue value: String) -> URL {

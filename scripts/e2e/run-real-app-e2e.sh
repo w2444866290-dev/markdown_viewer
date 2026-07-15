@@ -858,7 +858,7 @@ source_tree_dirty() {
 }
 
 GIT_SHA="$(git -C "$ROOT" rev-parse HEAD)"
-FIXTURE_SHA="$(shasum -a 256 "$ROOT/Fixtures/Debug/格式示例.md" | awk '{print $1}')"
+FIXTURE_SHA="$(shasum -a 256 "$ROOT/ui/格式示例.md" | awk '{print $1}')"
 HTML_SHA="$(shasum -a 256 "$ROOT/ui/Markdown Viewer.dc.html" | awk '{print $1}')"
 VISUAL_CONTRACT_SHA="$(shasum -a 256 "$ROOT/scripts/visual/acceptance-contract.json" | awk '{print $1}')"
 E2E_SCRIPT_SHA="$(shasum -a 256 "$ROOT/scripts/e2e/run-real-app-e2e.sh" | awk '{print $1}')"
@@ -1701,7 +1701,7 @@ assert_fixture_source_state() {
     local label="$1"
     local expected_state="$2"
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local assertion="$SIZE_DIR/session-fixture-$label.json"
     local verifier="$ROOT/scripts/e2e/verify-fixture-session.py"
     local ready=0
@@ -1997,7 +1997,7 @@ PY
 
 assert_foreground_palette_session() {
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local assertion="$SIZE_DIR/session-foreground-palette.json"
     local marker="E2E_PALETTE_COMMIT"
     local ready=0
@@ -2184,7 +2184,7 @@ capture_foreground_palette_find_phase_state() {
     local output="$phase_dir/phase-state.json"
     local error="$phase_dir/phase-state.err"
     local verifier="$ROOT/scripts/e2e/verify-palette-find-phase.py"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local live_args=(
         --phase "$phase"
         --session "$live_session"
@@ -2246,7 +2246,7 @@ assert_foreground_palette_find_completion() {
     local session="$phase_dir/session.json"
     local diagnostic="$phase_dir/diagnostic.json"
     local report="$SIZE_DIR/foreground-report.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local verifier="$ROOT/scripts/e2e/verify-foreground-palette-find.py"
     local session_assertion="$SIZE_DIR/session-foreground-palette.json"
     local diagnostic_assertion="$SIZE_DIR/diagnostic-foreground-palette-completion.json"
@@ -2386,7 +2386,7 @@ verify_tab_session_stage() {
     local verifier="$ROOT/scripts/e2e/verify-tab-session-lifecycle.py"
     local live_session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
     local live_diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local workspace_fixture="$PROFILE_ROOT/Temporary/Workspace/docs/格式示例.md"
     local stage_dir="$SIZE_DIR/tab-session/$stage"
     local session_snapshot="$stage_dir/session.json"
@@ -2502,7 +2502,7 @@ assert_foreground_find_session() {
     local scenario="$1"
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
     local diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local workspace_fixture="$PROFILE_ROOT/Temporary/Workspace/docs/格式示例.md"
     local assertion="$SIZE_DIR/session-foreground-$scenario.json"
     local diagnostic_assertion="$SIZE_DIR/diagnostic-foreground-$scenario.json"
@@ -2609,7 +2609,7 @@ run_foreground_find_regex_replace() {
 assert_foreground_preview_content_session() {
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
     local diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local workspace_fixture="$PROFILE_ROOT/Temporary/Workspace/docs/格式示例.md"
     local assertion="$SIZE_DIR/session-foreground-preview-content.json"
     local diagnostic_assertion="$SIZE_DIR/diagnostic-foreground-preview-content.json"
@@ -2711,7 +2711,7 @@ run_foreground_preview_content() {
 assert_foreground_preview_footnotes_session() {
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
     local diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local workspace_fixture="$PROFILE_ROOT/Temporary/Workspace/docs/格式示例.md"
     local assertion="$SIZE_DIR/session-foreground-preview-footnotes.json"
     local diagnostic_assertion="$SIZE_DIR/diagnostic-foreground-preview-footnotes.json"
@@ -2819,7 +2819,7 @@ run_foreground_preview_footnotes() {
 assert_foreground_outline_navigation_session() {
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
     local diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local workspace_fixture="$PROFILE_ROOT/Temporary/Workspace/docs/格式示例.md"
     local assertion="$SIZE_DIR/session-foreground-outline-navigation.json"
     local diagnostic_assertion="$SIZE_DIR/diagnostic-foreground-outline-navigation.json"
@@ -2929,7 +2929,7 @@ assert_foreground_sidebar_state() {
     local scenario="$1"
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
     local diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local workspace_root="$PROFILE_ROOT/Temporary/Workspace"
     local foreground_report="$SIZE_DIR/foreground-report.json"
     local assertion="$SIZE_DIR/session-foreground-$scenario.json"
@@ -3173,7 +3173,7 @@ run_foreground_sidebar_layout_controls() {
 assert_foreground_table_session() {
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
     local diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local workspace_fixture="$PROFILE_ROOT/Temporary/Workspace/docs/格式示例.md"
     local assertion="$SIZE_DIR/session-foreground-table.json"
     local diagnostic_assertion="$SIZE_DIR/diagnostic-foreground-table-completion.json"
@@ -3492,7 +3492,7 @@ run_foreground_table_controls() {
 assert_foreground_table_navigation_session() {
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
     local diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local workspace_fixture="$PROFILE_ROOT/Temporary/Workspace/docs/格式示例.md"
     local report="$SIZE_DIR/foreground-report.json"
     local assertion="$SIZE_DIR/session-foreground-table-navigation.json"
@@ -3720,7 +3720,7 @@ run_foreground_table_navigation() {
 assert_foreground_editor_session() {
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
     local diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local workspace_fixture="$PROFILE_ROOT/Temporary/Workspace/docs/格式示例.md"
     local assertion="$SIZE_DIR/session-foreground-editor.json"
     local diagnostic_assertion="$SIZE_DIR/diagnostic-foreground-editor-completion.json"
@@ -3947,7 +3947,7 @@ run_foreground_editor_structure() {
 assert_foreground_editor_boundaries_session() {
     local session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
     local diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
-    local fixture="$ROOT/Fixtures/Debug/格式示例.md"
+    local fixture="$ROOT/ui/格式示例.md"
     local workspace_fixture="$PROFILE_ROOT/Temporary/Workspace/docs/格式示例.md"
     local assertion="$SIZE_DIR/session-foreground-editor-boundaries.json"
     local diagnostic_assertion="$SIZE_DIR/diagnostic-foreground-editor-boundaries.json"

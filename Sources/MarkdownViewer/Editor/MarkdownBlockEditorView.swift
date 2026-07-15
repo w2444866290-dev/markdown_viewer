@@ -361,7 +361,8 @@ struct MarkdownBlockEditorView: View {
             }
         } else if modifiers.isDisjoint(with: [.control, .option]) {
             switch event.keyCode {
-            case 36, 76: command = .enter
+            case 36, 76:
+                command = modifiers.contains(.shift) ? .shiftEnter : .enter
             case 51: command = .backspace
             case 48: command = modifiers.contains(.shift) ? .shiftTab : .tab
             case 126: command = .arrowUp
@@ -376,7 +377,10 @@ struct MarkdownBlockEditorView: View {
                 command,
                 to: source,
                 selection: selection,
-                blockKind: MarkdownDocument.inferredBlockKind(forDraft: source)
+                blockKind: MarkdownDocument.inferredBlockKind(
+                    forDraft: source,
+                    atUTF16Offset: selection.location
+                )
               ) else { return nil }
         if (command == .arrowUp || command == .arrowDown), result.boundaryAction == nil {
             return nil

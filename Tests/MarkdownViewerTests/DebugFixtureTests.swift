@@ -9,20 +9,28 @@ struct DebugFixtureTests {
     private static let expectedSHA256 = "cbcdfe19a3383f175f1e9beb78afce473f335fd0e8e814bc799f3a1deade0d9f"
 
     @Test
-    func fixtureExactlyMatchesAuthoritativeHTMLSeed() throws {
-        let fixtureData = try Data(contentsOf: repositoryURL("Fixtures/Debug/格式示例.md"))
+    func authoritativeFixtureHasStableByteContract() throws {
+        let fixtureData = try Data(contentsOf: repositoryURL("ui/格式示例.md"))
+        let fixture = try #require(String(data: fixtureData, encoding: .utf8))
+
+        #expect(fixtureData.count == Self.expectedByteCount)
+        #expect(fixture.split(separator: "\n", omittingEmptySubsequences: false).count == Self.expectedLineCount)
+        #expect(sha256(fixtureData) == Self.expectedSHA256)
+        #expect(fixtureData.last != 0x0A)
+    }
+
+    @Test
+    func authoritativeFixtureMatchesPrototypeSeedByteForByte() throws {
+        let fixtureData = try Data(contentsOf: repositoryURL("ui/格式示例.md"))
         let html = try String(
             contentsOf: repositoryURL("ui/Markdown Viewer.dc.html"),
             encoding: .utf8
         )
-        let extracted = try extractSeed(named: "格式示例.md", from: html)
-        let extractedData = try #require(extracted.data(using: .utf8))
+        let prototypeSeed = try extractPrototypeSeed(from: html)
+        let prototypeData = try #require(prototypeSeed.data(using: .utf8))
 
-        #expect(fixtureData == extractedData)
-        #expect(fixtureData.count == Self.expectedByteCount)
-        #expect(extracted.split(separator: "\n", omittingEmptySubsequences: false).count == Self.expectedLineCount)
-        #expect(sha256(fixtureData) == Self.expectedSHA256)
-        #expect(fixtureData.last != 0x0A)
+        // HTML is checked only for prototype drift; the Markdown file remains the build input.
+        #expect(fixtureData == prototypeData)
     }
 
     private func repositoryURL(_ relativePath: String) -> URL {
@@ -33,68 +41,49 @@ struct DebugFixtureTests {
             .appendingPathComponent(relativePath)
     }
 
-    private func extractSeed(named name: String, from html: String) throws -> String {
-        let startMarker = "'\(name)': ["
+    private func extractPrototypeSeed(from html: String) throws -> String {
+        let startMarker = "'格式示例.md': ["
         let endMarker = "].join('\\n'),"
         let start = try #require(html.range(of: startMarker))
         let tail = html[start.upperBound...]
         let end = try #require(tail.range(of: endMarker))
-        let arrayBody = tail[..<end.lowerBound]
 
-        let values = try arrayBody
+        return try tail[..<end.lowerBound]
             .split(separator: "\n", omittingEmptySubsequences: true)
-            .compactMap { line -> String? in
+            .compactMap { line in
                 var literal = line.trimmingCharacters(in: .whitespaces)
                 guard !literal.isEmpty else { return nil }
                 if literal.hasSuffix(",") {
                     literal.removeLast()
                 }
-                guard literal.count >= 2,
-                      literal.first == "'",
-                      literal.last == "'" else {
+                guard literal.first == "'", literal.last == "'" else {
                     throw FixtureError.invalidLiteral(literal)
                 }
-                literal.removeFirst()
-                literal.removeLast()
-                return try decodeJavaScriptSingleQuotedString(literal)
+                return try decodeJavaScriptString(literal.dropFirst().dropLast())
             }
-        return values.joined(separator: "\n")
+            .joined(separator: "\n")
     }
 
-    private func decodeJavaScriptSingleQuotedString(_ source: String) throws -> String {
-        let scalars = Array(source.unicodeScalars)
-        var output = String.UnicodeScalarView()
-        var index = 0
-
-        while index < scalars.count {
-            let scalar = scalars[index]
-            guard scalar == "\\" else {
-                output.append(scalar)
-                index += 1
+    private func decodeJavaScriptString(_ source: Substring) throws -> String {
+        var output = ""
+        var iterator = source.makeIterator()
+        while let character = iterator.next() {
+            guard character == "\\" else {
+                output.append(character)
                 continue
             }
-
-            index += 1
-            guard index < scalars.count else {
+            guard let escaped = iterator.next() else {
                 throw FixtureError.danglingEscape
             }
-            let escaped = scalars[index]
             switch escaped {
-            case "\\", "'", "\"":
-                output.append(escaped)
-            case "n":
-                output.append("\n")
-            case "r":
-                output.append("\r")
-            case "t":
-                output.append("\t")
-            default:
-                throw FixtureError.unsupportedEscape(Character(String(escaped)))
+            case "\\", "'", "\"": output.append(escaped)
+            case "n": output.append("\n")
+            case "r": output.append("\r")
+            case "t": output.append("\t")
+            default: throw FixtureError.unsupportedEscape(escaped)
             }
-            index += 1
         }
-
-        return String(output)
+        return output
     }
 
     private func sha256(_ data: Data) -> String {

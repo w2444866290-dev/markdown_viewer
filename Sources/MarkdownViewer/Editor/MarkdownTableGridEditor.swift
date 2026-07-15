@@ -41,6 +41,17 @@ struct MarkdownTableCellFocusRequestState {
     }
 }
 
+struct MarkdownTableStructureGeneration: Hashable, Sendable {
+    fileprivate let rawValue: UInt64
+
+    static let initial = MarkdownTableStructureGeneration(rawValue: 0)
+}
+
+private struct MarkdownTableCellEditorIdentity: Hashable {
+    let cell: MarkdownTableCell
+    let generation: MarkdownTableStructureGeneration
+}
+
 struct MarkdownTableFindHighlight: Equatable {
     let range: NSRange
     let isCurrent: Bool
@@ -105,6 +116,8 @@ enum MarkdownTableFindFormatter {
 
 @MainActor
 final class MarkdownTableEditorBridge {
+    typealias ValueHandler = (MarkdownTableCell, String) -> Void
+
     struct Snapshot: Equatable {
         let cell: MarkdownTableCell
         let value: String
@@ -113,11 +126,58 @@ final class MarkdownTableEditorBridge {
 
     private weak var activeField: NSTextField?
     private var activeCell: MarkdownTableCell?
-    private var onValue: ((String) -> Void)?
+    private var activeGeneration: MarkdownTableStructureGeneration?
+    private var onValue: ValueHandler?
     private var isFlushing = false
+    private var generation = MarkdownTableStructureGeneration.initial
+    private var acceptsEditorBindings = false
+    private var pendingValueDeliveries: [PendingValueDelivery] = []
+    private var deferredDeliveryScheduled = false
+
+    private struct PendingValueDelivery {
+        let generation: MarkdownTableStructureGeneration
+        let cell: MarkdownTableCell
+        let value: String
+        let onValue: ValueHandler
+    }
+
+    func beginEditingSession() -> MarkdownTableStructureGeneration {
+        invalidateActiveEditor(keepingSessionActive: true)
+        return generation
+    }
+
+    @discardableResult
+    func flushAndAdvanceStructureGeneration() -> MarkdownTableStructureGeneration {
+        _ = flushForLifecycleBoundary()
+        invalidateActiveEditor(keepingSessionActive: true)
+        return generation
+    }
+
+    @discardableResult
+    func advanceStructureGenerationDiscardingActiveEditor()
+        -> MarkdownTableStructureGeneration {
+        invalidateActiveEditor(keepingSessionActive: true)
+        return generation
+    }
+
+    @discardableResult
+    func discardEditingSession() -> MarkdownTableStructureGeneration {
+        invalidateActiveEditor(keepingSessionActive: false)
+        return generation
+    }
+
+    @discardableResult
+    func finishEditingSession() -> MarkdownTableStructureGeneration {
+        _ = flushForLifecycleBoundary()
+        invalidateActiveEditor(keepingSessionActive: false)
+        return generation
+    }
 
     func snapshot() -> Snapshot? {
-        guard let activeField, let activeCell else { return nil }
+        guard acceptsEditorBindings,
+              let activeField,
+              let activeCell,
+              activeGeneration == generation else { return nil }
         let editor = activeField.currentEditor() as? NSTextView
         return Snapshot(
             cell: activeCell,
@@ -128,9 +188,12 @@ final class MarkdownTableEditorBridge {
 
     @discardableResult
     func flushForLifecycleBoundary() -> Snapshot? {
-        guard !isFlushing,
+        deliverPendingValues()
+        guard acceptsEditorBindings,
+              !isFlushing,
               let activeField,
-              let activeCell else { return snapshot() }
+              let activeCell,
+              activeGeneration == generation else { return snapshot() }
         isFlushing = true
         defer { isFlushing = false }
 
@@ -139,7 +202,7 @@ final class MarkdownTableEditorBridge {
         if hadMarkedText { editor?.unmarkText() }
         let value = editor?.string ?? activeField.stringValue
         activeField.stringValue = value
-        onValue?(value)
+        onValue?(activeCell, value)
         return Snapshot(
             cell: activeCell,
             value: value,
@@ -147,31 +210,156 @@ final class MarkdownTableEditorBridge {
         )
     }
 
+    @discardableResult
     func activate(
         field: NSTextField,
         cell: MarkdownTableCell,
-        onValue: @escaping (String) -> Void
-    ) {
-        if let activeField, activeField !== field {
+        generation: MarkdownTableStructureGeneration,
+        onValue: @escaping ValueHandler
+    ) -> Bool {
+        guard acceptsEditorBindings, generation == self.generation else { return false }
+        if let activeField,
+           activeField !== field || activeCell != cell || activeGeneration != generation {
             _ = flushForLifecycleBoundary()
         }
         activeField = field
         activeCell = cell
+        activeGeneration = generation
+        self.onValue = onValue
+        return true
+    }
+
+    /// SwiftUI calls this from `NSViewRepresentable.updateNSView`. Publishing an
+    /// ObservableObject change synchronously from that callback can re-enter the
+    /// current AppKit constraint pass and raise an NSGenericException. Capture the
+    /// outgoing field value immediately, but publish it on the next main-loop turn.
+    func activateFromViewUpdate(
+        field: NSTextField,
+        cell: MarkdownTableCell,
+        generation: MarkdownTableStructureGeneration,
+        onValue: @escaping ValueHandler
+    ) {
+        guard acceptsEditorBindings, generation == self.generation else { return }
+        if let activeField,
+           activeField !== field || activeCell != cell || activeGeneration != generation {
+            enqueueActiveValueForDeferredDelivery()
+        }
+        activeField = field
+        activeCell = cell
+        activeGeneration = generation
         self.onValue = onValue
     }
 
-    func deactivate(field: NSTextField, flush: Bool = true) {
-        guard activeField === field else { return }
+    func deactivate(
+        field: NSTextField,
+        cell: MarkdownTableCell,
+        generation: MarkdownTableStructureGeneration,
+        flush: Bool = true
+    ) {
+        guard matchesActiveBinding(field: field, cell: cell, generation: generation) else {
+            return
+        }
         if flush { _ = flushForLifecycleBoundary() }
+        clearActiveField()
+    }
+
+    func deactivateFromViewUpdate(
+        field: NSTextField,
+        cell: MarkdownTableCell,
+        generation: MarkdownTableStructureGeneration
+    ) {
+        guard matchesActiveBinding(field: field, cell: cell, generation: generation) else {
+            return
+        }
+        enqueueActiveValueForDeferredDelivery()
+        clearActiveField()
+    }
+
+    func snapshot(
+        field: NSTextField,
+        cell: MarkdownTableCell,
+        generation: MarkdownTableStructureGeneration
+    ) -> Snapshot? {
+        guard matchesActiveBinding(field: field, cell: cell, generation: generation) else {
+            return nil
+        }
+        return snapshot()
+    }
+
+    func publishValue(
+        _ value: String,
+        field: NSTextField,
+        cell: MarkdownTableCell,
+        generation: MarkdownTableStructureGeneration
+    ) {
+        guard matchesActiveBinding(field: field, cell: cell, generation: generation) else {
+            return
+        }
+        onValue?(cell, value)
+    }
+
+    private func clearActiveField() {
         activeField = nil
         activeCell = nil
+        activeGeneration = nil
         onValue = nil
     }
 
-    func resetAfterCommit() {
-        activeField = nil
-        activeCell = nil
-        onValue = nil
+    private func matchesActiveBinding(
+        field: NSTextField,
+        cell: MarkdownTableCell,
+        generation: MarkdownTableStructureGeneration
+    ) -> Bool {
+        acceptsEditorBindings
+            && generation == self.generation
+            && activeGeneration == generation
+            && activeCell == cell
+            && activeField === field
+    }
+
+    private func invalidateActiveEditor(keepingSessionActive: Bool) {
+        let field = activeField
+        clearActiveField()
+        pendingValueDeliveries.removeAll(keepingCapacity: true)
+        generation = MarkdownTableStructureGeneration(rawValue: generation.rawValue &+ 1)
+        acceptsEditorBindings = keepingSessionActive
+
+        guard let field, field.currentEditor() != nil else { return }
+        field.window?.makeFirstResponder(nil)
+        if field.currentEditor() != nil {
+            _ = field.abortEditing()
+        }
+    }
+
+    private func enqueueActiveValueForDeferredDelivery() {
+        guard acceptsEditorBindings,
+              let activeField,
+              let activeCell,
+              let activeGeneration,
+              activeGeneration == generation,
+              let onValue else { return }
+        let editor = activeField.currentEditor() as? NSTextView
+        pendingValueDeliveries.append(PendingValueDelivery(
+            generation: activeGeneration,
+            cell: activeCell,
+            value: editor?.string ?? activeField.stringValue,
+            onValue: onValue
+        ))
+        guard !deferredDeliveryScheduled else { return }
+        deferredDeliveryScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.deliverPendingValues()
+        }
+    }
+
+    private func deliverPendingValues() {
+        deferredDeliveryScheduled = false
+        let deliveries = pendingValueDeliveries
+        pendingValueDeliveries.removeAll(keepingCapacity: true)
+        for delivery in deliveries where acceptsEditorBindings
+            && delivery.generation == generation {
+            delivery.onValue(delivery.cell, delivery.value)
+        }
     }
 }
 
@@ -339,6 +527,8 @@ struct MarkdownTableGridEditor: View {
             availableWidth: paperWidth,
             columnCount: grid.columnCount
         )
+        let generation = store.tableStructureGeneration
+        let tableID = store.activeTableID
         return HStack(spacing: 0) {
             ForEach(values.indices, id: \.self) { column in
                 let cell = MarkdownTableCell(row: row, column: column)
@@ -358,13 +548,26 @@ struct MarkdownTableGridEditor: View {
                     findHighlights: findHighlights,
                     accessibilityIdentifier: "table-cell-\(row)-\(column)",
                     lifecycleBridge: store.tableEditorBridge,
-                    onChange: { [weak store] value in
-                        store?.setTableCell(cell, value: value)
+                    generation: generation,
+                    onChange: { [weak store] callbackCell, value in
+                        guard let tableID else { return }
+                        store?.setTableCellFromEditor(
+                            callbackCell,
+                            value: value,
+                            tableID: tableID,
+                            generation: generation
+                        )
                     },
                     onFocus: { [weak store] in
+                        guard store?.activeTableID == tableID,
+                              store?.tableStructureGeneration == generation else { return }
                         store?.activeTableCell = cell
                     }
                 )
+                    .id(MarkdownTableCellEditorIdentity(
+                        cell: cell,
+                        generation: generation
+                    ))
                     .padding(.horizontal, 2)
                     .padding(.vertical, 3)
                     .frame(width: max(72, columnWidth - 24))
@@ -478,7 +681,8 @@ private struct MarkdownTableCellTextField: NSViewRepresentable {
     let findHighlights: [MarkdownTableFindHighlight]
     let accessibilityIdentifier: String
     let lifecycleBridge: MarkdownTableEditorBridge
-    let onChange: (String) -> Void
+    let generation: MarkdownTableStructureGeneration
+    let onChange: MarkdownTableEditorBridge.ValueHandler
     let onFocus: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -515,7 +719,11 @@ private struct MarkdownTableCellTextField: NSViewRepresentable {
         _ field: MarkdownTableTextField,
         coordinator: Coordinator
     ) {
-        coordinator.parent.lifecycleBridge.deactivate(field: field)
+        coordinator.parent.lifecycleBridge.deactivateFromViewUpdate(
+            field: field,
+            cell: coordinator.parent.cell,
+            generation: coordinator.parent.generation
+        )
         field.delegate = nil
         field.onWindowAttached = nil
         coordinator.field = nil
@@ -549,14 +757,19 @@ private struct MarkdownTableCellTextField: NSViewRepresentable {
             }
         }
         if isFocused {
-            lifecycleBridge.activate(
+            lifecycleBridge.activateFromViewUpdate(
                 field: field,
                 cell: cell,
+                generation: generation,
                 onValue: onChange
             )
             if shouldRequestFocus { coordinator.requestFocusIfNeeded() }
         } else {
-            lifecycleBridge.deactivate(field: field)
+            lifecycleBridge.deactivateFromViewUpdate(
+                field: field,
+                cell: cell,
+                generation: generation
+            )
         }
     }
 
@@ -587,11 +800,12 @@ private struct MarkdownTableCellTextField: NSViewRepresentable {
 
         func controlTextDidBeginEditing(_ notification: Notification) {
             guard let field else { return }
-            parent.lifecycleBridge.activate(
+            guard parent.lifecycleBridge.activate(
                 field: field,
                 cell: parent.cell,
+                generation: parent.generation,
                 onValue: parent.onChange
-            )
+            ) else { return }
             parent.onFocus()
             if let editor = field.currentEditor() as? NSTextView {
                 MarkdownTableFindFormatter.applyTemporaryHighlights(
@@ -603,18 +817,30 @@ private struct MarkdownTableCellTextField: NSViewRepresentable {
 
         func controlTextDidChange(_ notification: Notification) {
             guard let field,
-                  let snapshot = parent.lifecycleBridge.snapshot(),
-                  snapshot.cell == parent.cell,
+                  let snapshot = parent.lifecycleBridge.snapshot(
+                    field: field,
+                    cell: parent.cell,
+                    generation: parent.generation
+                  ),
                   !snapshot.hadMarkedText else { return }
             if field.stringValue != snapshot.value {
                 field.stringValue = snapshot.value
             }
-            parent.onChange(snapshot.value)
+            parent.lifecycleBridge.publishValue(
+                snapshot.value,
+                field: field,
+                cell: parent.cell,
+                generation: parent.generation
+            )
         }
 
         func controlTextDidEndEditing(_ notification: Notification) {
             guard let field else { return }
-            parent.lifecycleBridge.deactivate(field: field)
+            parent.lifecycleBridge.deactivate(
+                field: field,
+                cell: parent.cell,
+                generation: parent.generation
+            )
         }
     }
 }

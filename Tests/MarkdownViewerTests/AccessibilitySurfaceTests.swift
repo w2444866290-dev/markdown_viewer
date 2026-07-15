@@ -218,7 +218,7 @@ struct AccessibilitySurfaceTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/Debug/格式示例.md")
+            .appendingPathComponent("ui/格式示例.md")
         let source = try String(contentsOf: fixtureURL, encoding: .utf8)
         let document = MarkdownDocument(source: source)
 

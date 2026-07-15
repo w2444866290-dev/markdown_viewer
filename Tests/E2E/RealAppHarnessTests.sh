@@ -1511,7 +1511,7 @@ PY
 
 FOREGROUND_PALETTE_AGGREGATE_ROOT="$TEMP_ROOT/foreground-palette-find-aggregate"
 PALETTE_FIXTURE_SHA="$(
-    shasum -a 256 "$ROOT/Fixtures/Debug/格式示例.md" | awk '{print $1}'
+    shasum -a 256 "$ROOT/ui/格式示例.md" | awk '{print $1}'
 )"
 for phase in block-find palette-keyboard; do
     mkdir -p "$FOREGROUND_PALETTE_AGGREGATE_ROOT/$phase/raw"
@@ -1525,7 +1525,7 @@ for phase in block-find palette-keyboard; do
         > "$FOREGROUND_PALETTE_AGGREGATE_ROOT/$phase/foreground-plan-validation.json"
 done
 python3 - \
-    "$ROOT/Fixtures/Debug/格式示例.md" \
+    "$ROOT/ui/格式示例.md" \
     "$FOREGROUND_PALETTE_AGGREGATE_ROOT" <<'PY'
 import json
 import pathlib
@@ -1688,7 +1688,7 @@ for phase in block-find palette-keyboard; do
         --session "$phase_root/session.json" \
         --expected-session-path "$FOREGROUND_PALETTE_AGGREGATE_ROOT/live-session.json" \
         --diagnostic "$phase_root/diagnostic.json" \
-        --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+        --fixture "$ROOT/ui/格式示例.md" \
         --fixture-sha "$PALETTE_FIXTURE_SHA" \
         --output "$phase_root/phase-state.json"
 done
@@ -1704,7 +1704,7 @@ for report_kind in session diagnostic; do
         --session "$FOREGROUND_PALETTE_AGGREGATE_ROOT/palette-keyboard/session.json" \
         --diagnostic "$FOREGROUND_PALETTE_AGGREGATE_ROOT/palette-keyboard/diagnostic.json" \
         --foreground-report "$FOREGROUND_PALETTE_AGGREGATE_ROOT/aggregate-report.json" \
-        --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+        --fixture "$ROOT/ui/格式示例.md" \
         --fixture-sha "$PALETTE_FIXTURE_SHA" \
         --output-root "$TEMP_ROOT" \
         --report-kind "$report_kind" \
@@ -1823,7 +1823,7 @@ if python3 "$ROOT/scripts/e2e/verify-foreground-palette-find.py" \
     --session "$FOREGROUND_PALETTE_AGGREGATE_ROOT/palette-keyboard/session.json" \
     --diagnostic "$FOREGROUND_PALETTE_AGGREGATE_ROOT/palette-keyboard/diagnostic.json" \
     --foreground-report "$FOREGROUND_PALETTE_AGGREGATE_ROOT/invalid-final-report.json" \
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+    --fixture "$ROOT/ui/格式示例.md" \
     --fixture-sha "$PALETTE_FIXTURE_SHA" \
     --output-root "$TEMP_ROOT" \
     --check-only \
@@ -3418,7 +3418,7 @@ python3 - \
     "$FOREGROUND_EDITOR_BOUNDARIES_ROOT/plan.json" \
     "$FOREGROUND_EDITOR_BOUNDARIES_ROOT/validation.json" \
     "$ROOT/scripts/e2e/run-real-app-e2e.sh" \
-    "$ROOT/Fixtures/Debug/格式示例.md" <<'PY'
+    "$ROOT/ui/格式示例.md" <<'PY'
 import json
 import pathlib
 import sys
@@ -4293,7 +4293,7 @@ if ! rg -q "unsupported find control" "$TEMP_ROOT/invalid-find-point.err"; then
     exit 1
 fi
 
-python3 - "$ROOT/Fixtures/Debug/格式示例.md" "$TEMP_ROOT" <<'PY'
+python3 - "$ROOT/ui/格式示例.md" "$TEMP_ROOT" <<'PY'
 import json
 import pathlib
 import sys
@@ -4339,7 +4339,7 @@ PY
 for state in clean table table-source; do
     python3 "$ROOT/scripts/e2e/verify-fixture-session.py" \
         --session "$TEMP_ROOT/session-$state.json" \
-        --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+        --fixture "$ROOT/ui/格式示例.md" \
         --state "$state" \
         --label "test-$state" \
         --evidence-root "$TEMP_ROOT" \
@@ -4471,7 +4471,7 @@ python3 "$ROOT/scripts/e2e/verify-find-diagnostic.py" \
 FOREGROUND_FIND_VERIFY_ROOT="$TEMP_ROOT/foreground-find-verifier"
 mkdir -p "$FOREGROUND_FIND_VERIFY_ROOT"
 python3 - \
-    "$ROOT/Fixtures/Debug/格式示例.md" \
+    "$ROOT/ui/格式示例.md" \
     "$FOREGROUND_FIND_VERIFY_ROOT" <<'PY'
 import json
 import pathlib
@@ -4595,14 +4595,14 @@ for scenario, expected in scenarios.items():
 PY
 
 FOREGROUND_FIND_FIXTURE_SHA="$(
-    shasum -a 256 "$ROOT/Fixtures/Debug/格式示例.md" | awk '{print $1}'
+    shasum -a 256 "$ROOT/ui/格式示例.md" | awk '{print $1}'
 )"
 for scenario in find-options find-regex-replace; do
     verifier_args=(
         --scenario "$scenario"
         --session "$FOREGROUND_FIND_VERIFY_ROOT/$scenario-session.json"
         --diagnostic "$FOREGROUND_FIND_VERIFY_ROOT/$scenario-diagnostic.json"
-        --fixture "$ROOT/Fixtures/Debug/格式示例.md"
+        --fixture "$ROOT/ui/格式示例.md"
         --workspace-fixture "$FOREGROUND_FIND_VERIFY_ROOT/workspace-fixture.md"
         --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA"
         --output-root "$TEMP_ROOT"
@@ -4650,7 +4650,7 @@ if python3 "$ROOT/scripts/e2e/verify-foreground-find-session.py" \
     --scenario find-options \
     --session "$FOREGROUND_FIND_VERIFY_ROOT/find-options-session.json" \
     --diagnostic "$FOREGROUND_FIND_VERIFY_ROOT/find-options-invalid-diagnostic.json" \
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+    --fixture "$ROOT/ui/格式示例.md" \
     --workspace-fixture "$FOREGROUND_FIND_VERIFY_ROOT/workspace-fixture.md" \
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
     --output-root "$TEMP_ROOT" \
@@ -4669,7 +4669,7 @@ fi
 FOREGROUND_PREVIEW_VERIFY_ROOT="$TEMP_ROOT/foreground-preview-content-verifier"
 mkdir -p "$FOREGROUND_PREVIEW_VERIFY_ROOT"
 python3 - \
-    "$ROOT/Fixtures/Debug/格式示例.md" \
+    "$ROOT/ui/格式示例.md" \
     "$FOREGROUND_PREVIEW_VERIFY_ROOT" <<'PY'
 import json
 import pathlib
@@ -4765,7 +4765,7 @@ PY
 preview_verifier_args=(
     --session "$FOREGROUND_PREVIEW_VERIFY_ROOT/session.json"
     --diagnostic "$FOREGROUND_PREVIEW_VERIFY_ROOT/diagnostic.json"
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md"
+    --fixture "$ROOT/ui/格式示例.md"
     --workspace-fixture "$FOREGROUND_PREVIEW_VERIFY_ROOT/workspace-fixture.md"
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA"
     --output-root "$TEMP_ROOT"
@@ -4801,7 +4801,7 @@ PY
 if python3 "$ROOT/scripts/e2e/verify-foreground-preview-content.py" \
     --session "$FOREGROUND_PREVIEW_VERIFY_ROOT/session.json" \
     --diagnostic "$FOREGROUND_PREVIEW_VERIFY_ROOT/invalid-diagnostic.json" \
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+    --fixture "$ROOT/ui/格式示例.md" \
     --workspace-fixture "$FOREGROUND_PREVIEW_VERIFY_ROOT/workspace-fixture.md" \
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
     --output-root "$TEMP_ROOT" \
@@ -4820,7 +4820,7 @@ fi
 FOREGROUND_PREVIEW_FOOTNOTES_VERIFY_ROOT="$TEMP_ROOT/foreground-preview-footnotes-verifier"
 mkdir -p "$FOREGROUND_PREVIEW_FOOTNOTES_VERIFY_ROOT"
 python3 - \
-    "$ROOT/Fixtures/Debug/格式示例.md" \
+    "$ROOT/ui/格式示例.md" \
     "$FOREGROUND_PREVIEW_FOOTNOTES_VERIFY_ROOT" <<'PY'
 import json
 import pathlib
@@ -4918,7 +4918,7 @@ PY
 preview_footnotes_verifier_args=(
     --session "$FOREGROUND_PREVIEW_FOOTNOTES_VERIFY_ROOT/session.json"
     --diagnostic "$FOREGROUND_PREVIEW_FOOTNOTES_VERIFY_ROOT/diagnostic.json"
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md"
+    --fixture "$ROOT/ui/格式示例.md"
     --workspace-fixture "$FOREGROUND_PREVIEW_FOOTNOTES_VERIFY_ROOT/workspace-fixture.md"
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA"
     --output-root "$TEMP_ROOT"
@@ -4963,7 +4963,7 @@ PY
 if python3 "$ROOT/scripts/e2e/verify-foreground-preview-footnotes.py" \
     --session "$FOREGROUND_PREVIEW_FOOTNOTES_VERIFY_ROOT/session.json" \
     --diagnostic "$FOREGROUND_PREVIEW_FOOTNOTES_VERIFY_ROOT/invalid-diagnostic.json" \
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+    --fixture "$ROOT/ui/格式示例.md" \
     --workspace-fixture "$FOREGROUND_PREVIEW_FOOTNOTES_VERIFY_ROOT/workspace-fixture.md" \
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
     --output-root "$TEMP_ROOT" \
@@ -4982,7 +4982,7 @@ fi
 FOREGROUND_OUTLINE_VERIFY_ROOT="$TEMP_ROOT/foreground-outline-navigation-verifier"
 mkdir -p "$FOREGROUND_OUTLINE_VERIFY_ROOT"
 python3 - \
-    "$ROOT/Fixtures/Debug/格式示例.md" \
+    "$ROOT/ui/格式示例.md" \
     "$FOREGROUND_OUTLINE_VERIFY_ROOT" <<'PY'
 import json
 import pathlib
@@ -5071,7 +5071,7 @@ PY
 outline_verifier_args=(
     --session "$FOREGROUND_OUTLINE_VERIFY_ROOT/session.json"
     --diagnostic "$FOREGROUND_OUTLINE_VERIFY_ROOT/diagnostic.json"
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md"
+    --fixture "$ROOT/ui/格式示例.md"
     --workspace-fixture "$FOREGROUND_OUTLINE_VERIFY_ROOT/workspace-fixture.md"
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA"
     --output-root "$TEMP_ROOT"
@@ -5120,7 +5120,7 @@ PY
 if python3 "$ROOT/scripts/e2e/verify-foreground-outline-navigation.py" \
     --session "$FOREGROUND_OUTLINE_VERIFY_ROOT/session.json" \
     --diagnostic "$FOREGROUND_OUTLINE_VERIFY_ROOT/invalid-diagnostic.json" \
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+    --fixture "$ROOT/ui/格式示例.md" \
     --workspace-fixture "$FOREGROUND_OUTLINE_VERIFY_ROOT/workspace-fixture.md" \
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
     --output-root "$TEMP_ROOT" \
@@ -5139,7 +5139,7 @@ fi
 FOREGROUND_SIDEBAR_VERIFY_ROOT="$TEMP_ROOT/foreground-sidebar-verifier"
 mkdir -p "$FOREGROUND_SIDEBAR_VERIFY_ROOT"
 python3 - \
-    "$ROOT/Fixtures/Debug/格式示例.md" \
+    "$ROOT/ui/格式示例.md" \
     "$FOREGROUND_SIDEBAR_VERIFY_ROOT" <<'PY'
 import json
 import pathlib
@@ -5571,7 +5571,7 @@ for sidebar_scenario in sidebar-filter-navigation sidebar-layout-controls; do
         --session "$sidebar_root/session.json"
         --diagnostic "$sidebar_root/diagnostic.json"
         --foreground-report "$sidebar_root/foreground-report.json"
-        --fixture "$ROOT/Fixtures/Debug/格式示例.md"
+        --fixture "$ROOT/ui/格式示例.md"
         --workspace-root "$sidebar_root/workspace"
         --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA"
         --output-root "$TEMP_ROOT"
@@ -5652,7 +5652,7 @@ if python3 "$ROOT/scripts/e2e/verify-foreground-sidebar.py" \
     --session "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-filter-navigation/invalid-session.json" \
     --diagnostic "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-filter-navigation/diagnostic.json" \
     --foreground-report "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-filter-navigation/foreground-report.json" \
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+    --fixture "$ROOT/ui/格式示例.md" \
     --workspace-root "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-filter-navigation/workspace" \
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
     --output-root "$TEMP_ROOT" \
@@ -5673,7 +5673,7 @@ if python3 "$ROOT/scripts/e2e/verify-foreground-sidebar.py" \
     --session "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-layout-controls/session.json" \
     --diagnostic "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-layout-controls/diagnostic.json" \
     --foreground-report "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-layout-controls/invalid-report.json" \
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+    --fixture "$ROOT/ui/格式示例.md" \
     --workspace-root "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-layout-controls/workspace" \
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
     --output-root "$TEMP_ROOT" \
@@ -5695,7 +5695,7 @@ for invalid_layout_case in activation restore; do
         --session "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-layout-controls/session.json" \
         --diagnostic "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-layout-controls/diagnostic.json" \
         --foreground-report "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-layout-controls/invalid-$invalid_layout_case-report.json" \
-        --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+        --fixture "$ROOT/ui/格式示例.md" \
         --workspace-root "$FOREGROUND_SIDEBAR_VERIFY_ROOT/sidebar-layout-controls/workspace" \
         --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
         --output-root "$TEMP_ROOT" \
@@ -5720,7 +5720,7 @@ fi
 TAB_SESSION_VERIFY_ROOT="$TEMP_ROOT/tab-session-lifecycle-verifier"
 mkdir -p "$TAB_SESSION_VERIFY_ROOT"
 python3 - \
-    "$ROOT/Fixtures/Debug/格式示例.md" \
+    "$ROOT/ui/格式示例.md" \
     "$TAB_SESSION_VERIFY_ROOT" <<'PY'
 import copy
 import json
@@ -6069,7 +6069,7 @@ for tab_stage in \
         --session "$tab_stage_root/session.json"
         --expected-session-path "$TAB_SESSION_EXPECTED_PATH"
         --diagnostic "$tab_stage_root/diagnostic.json"
-        --fixture "$ROOT/Fixtures/Debug/格式示例.md"
+        --fixture "$ROOT/ui/格式示例.md"
         --workspace-fixture "$TAB_SESSION_VERIFY_ROOT/workspace-fixture.md"
         --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA"
         --output-root "$TEMP_ROOT"
@@ -6145,7 +6145,7 @@ if python3 "$ROOT/scripts/e2e/verify-tab-session-lifecycle.py" \
     --expected-session-path "$TAB_SESSION_EXPECTED_PATH" \
     --diagnostic "$TAB_SESSION_VERIFY_ROOT/close-left-seed/diagnostic.json" \
     --previous-session "$TAB_SESSION_VERIFY_ROOT/close-right-reopen/session.json" \
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+    --fixture "$ROOT/ui/格式示例.md" \
     --workspace-fixture "$TAB_SESSION_VERIFY_ROOT/workspace-fixture.md" \
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
     --output-root "$TEMP_ROOT" \
@@ -6173,7 +6173,7 @@ for invalid_seeded_kind in state active; do
         --expected-session-path "$TAB_SESSION_EXPECTED_PATH" \
         --diagnostic "$TAB_SESSION_VERIFY_ROOT/close-left-seed/diagnostic.json" \
         --previous-session "$TAB_SESSION_VERIFY_ROOT/close-right-reopen/session.json" \
-        --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+        --fixture "$ROOT/ui/格式示例.md" \
         --workspace-fixture "$TAB_SESSION_VERIFY_ROOT/workspace-fixture.md" \
         --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
         --output-root "$TEMP_ROOT" \
@@ -6207,7 +6207,7 @@ for invalid_relaunch_kind in session diagnostic; do
         --diagnostic "$invalid_diagnostic" \
         --previous-session "$TAB_SESSION_VERIFY_ROOT/close-left-seed/session.json" \
         --previous-diagnostic "$TAB_SESSION_VERIFY_ROOT/close-left-seed/diagnostic.json" \
-        --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+        --fixture "$ROOT/ui/格式示例.md" \
         --workspace-fixture "$TAB_SESSION_VERIFY_ROOT/workspace-fixture.md" \
         --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
         --output-root "$TEMP_ROOT" \
@@ -6229,7 +6229,7 @@ if python3 "$ROOT/scripts/e2e/verify-tab-session-lifecycle.py" \
     --session "$TAB_SESSION_VERIFY_ROOT/switch-commit/session.json" \
     --expected-session-path "$TAB_SESSION_VERIFY_ROOT/wrong-live-session.json" \
     --diagnostic "$TAB_SESSION_VERIFY_ROOT/switch-commit/diagnostic.json" \
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+    --fixture "$ROOT/ui/格式示例.md" \
     --workspace-fixture "$TAB_SESSION_VERIFY_ROOT/workspace-fixture.md" \
     --fixture-sha "$FOREGROUND_FIND_FIXTURE_SHA" \
     --output-root "$TEMP_ROOT" \
@@ -6274,7 +6274,7 @@ fi
 
 if python3 "$ROOT/scripts/e2e/verify-fixture-session.py" \
     --session "$TEMP_ROOT/session-table.json" \
-    --fixture "$ROOT/Fixtures/Debug/格式示例.md" \
+    --fixture "$ROOT/ui/格式示例.md" \
     --state clean \
     --label invalid \
     --evidence-root "$TEMP_ROOT" \

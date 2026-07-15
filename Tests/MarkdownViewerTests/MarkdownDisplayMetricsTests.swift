@@ -7,7 +7,7 @@ struct MarkdownDisplayMetricsTests {
     @Test("authoritative fixture keeps source lines and matches rendered status")
     func authoritativeFixtureLineCount() throws {
         let fixture = try String(
-            contentsOf: repositoryURL("Fixtures/Debug/格式示例.md"),
+            contentsOf: repositoryURL("ui/格式示例.md"),
             encoding: .utf8
         )
         #expect(fixture.components(separatedBy: "\n").count == 113)

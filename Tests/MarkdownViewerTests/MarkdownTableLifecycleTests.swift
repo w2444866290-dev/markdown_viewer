@@ -50,6 +50,330 @@ struct MarkdownTableLifecycleTests {
         ) as? NSColor)?.isEqual(DesignTokens.accentStrong) == true)
     }
 
+    @Test("view-update field transitions defer store publication without losing text")
+    func viewUpdateFieldTransitionDefersPublication() throws {
+        let source = """
+        | Name| Value  |Note|
+        | :--- |---:|:---: |
+        | alpha   |  7| keep   spacing |
+        | beta|11  |second|
+        """
+        let document = MarkdownDocument(source: source)
+        let store = BlockEditorStore(tabID: UUID(), document: document) { _ in }
+        let tableID = try #require(document.blocks.first?.id)
+        let firstCell = MarkdownTableCell(row: 0, column: 0)
+        let secondCell = MarkdownTableCell(row: 0, column: 1)
+        store.beginTableEditing(blockID: tableID, cell: firstCell)
+        let generation = store.tableStructureGeneration
+
+        let firstField = NSTextField(frame: .zero)
+        firstField.stringValue = "alpha"
+        let secondField = NSTextField(frame: .zero)
+        secondField.stringValue = "7"
+        let bridge = store.tableEditorBridge
+        bridge.activate(
+            field: firstField,
+            cell: firstCell,
+            generation: generation,
+            onValue: { [weak store] _, value in
+                store?.setTableCell(firstCell, value: value)
+            }
+        )
+
+        firstField.stringValue = "changed"
+        bridge.activateFromViewUpdate(
+            field: secondField,
+            cell: secondCell,
+            generation: generation,
+            onValue: { [weak store] _, value in
+                store?.setTableCell(secondCell, value: value)
+            }
+        )
+
+        #expect(store.tableDraft?.rows[0][0] == "alpha")
+        #expect(store.source == source)
+
+        bridge.deactivate(
+            field: secondField,
+            cell: secondCell,
+            generation: generation,
+            flush: false
+        )
+        _ = bridge.flushForLifecycleBoundary()
+
+        #expect(store.tableDraft?.rows[0][0] == "changed")
+        #expect(store.source == source.replacingOccurrences(
+            of: "| alpha   |",
+            with: "| changed   |"
+        ))
+
+        bridge.activate(
+            field: firstField,
+            cell: firstCell,
+            generation: generation,
+            onValue: { [weak store] _, value in
+                store?.setTableCell(firstCell, value: value)
+            }
+        )
+        firstField.stringValue = "deactivated"
+        bridge.deactivateFromViewUpdate(
+            field: firstField,
+            cell: firstCell,
+            generation: generation
+        )
+
+        #expect(store.tableDraft?.rows[0][0] == "changed")
+        _ = bridge.flushForLifecycleBoundary()
+        #expect(store.tableDraft?.rows[0][0] == "deactivated")
+    }
+
+    @Test("deleting a non-final row invalidates reused and dismantled field callbacks")
+    func deletingNonFinalRowInvalidatesStaleFieldCallbacks() async throws {
+        let source = """
+        | Name| Value  |Note|
+        | :--- |---:|:---: |
+        | alpha   |  7| keep   spacing |
+        | beta|11  |second|
+        """
+        let expected = """
+        | Name| Value  |Note|
+        | :--- |---:|:---: |
+        | beta|11  |second|
+        """
+        let document = MarkdownDocument(source: source)
+        let store = BlockEditorStore(tabID: UUID(), document: document) { _ in }
+        let tableID = try #require(document.blocks.first?.id)
+        let cell = MarkdownTableCell(row: 0, column: 0)
+        store.beginTableEditing(blockID: tableID, cell: cell)
+        let oldGeneration = store.tableStructureGeneration
+        let liveField = try LiveTableField(store: store, cell: cell, value: "alpha")
+        defer { liveField.teardown() }
+
+        store.tableEditorBridge.deactivateFromViewUpdate(
+            field: liveField.field,
+            cell: cell,
+            generation: oldGeneration
+        )
+        store.tableEditorBridge.activateFromViewUpdate(
+            field: liveField.field,
+            cell: cell,
+            generation: oldGeneration,
+            onValue: { [weak store] callbackCell, value in
+                store?.setTableCellFromEditor(
+                    callbackCell,
+                    value: value,
+                    tableID: tableID,
+                    generation: oldGeneration
+                )
+            }
+        )
+
+        store.deleteActiveTableRow()
+
+        let newGeneration = store.tableStructureGeneration
+        #expect(newGeneration != oldGeneration)
+        #expect(liveField.editor == nil)
+        #expect(store.source == expected)
+
+        liveField.field.stringValue = "alpha"
+        store.tableEditorBridge.activateFromViewUpdate(
+            field: liveField.field,
+            cell: cell,
+            generation: oldGeneration,
+            onValue: { [weak store] callbackCell, value in
+                store?.setTableCellFromEditor(
+                    callbackCell,
+                    value: value,
+                    tableID: tableID,
+                    generation: oldGeneration
+                )
+            }
+        )
+        store.tableEditorBridge.deactivateFromViewUpdate(
+            field: liveField.field,
+            cell: cell,
+            generation: oldGeneration
+        )
+        store.setTableCellFromEditor(
+            cell,
+            value: "alpha",
+            tableID: tableID,
+            generation: oldGeneration
+        )
+        await drainMainQueue()
+
+        liveField.field.stringValue = "beta"
+        store.tableEditorBridge.activateFromViewUpdate(
+            field: liveField.field,
+            cell: cell,
+            generation: newGeneration,
+            onValue: { [weak store] callbackCell, value in
+                store?.setTableCellFromEditor(
+                    callbackCell,
+                    value: value,
+                    tableID: tableID,
+                    generation: newGeneration
+                )
+            }
+        )
+        store.tableEditorBridge.deactivateFromViewUpdate(
+            field: liveField.field,
+            cell: cell,
+            generation: oldGeneration
+        )
+        store.finishTableEditing()
+
+        #expect(store.source == expected)
+        #expect(try store.document.tableGrid(for: tableID).rows == [["beta", "11", "second"]])
+    }
+
+    @Test("deleting a non-final column rejects stale delivery through save")
+    func deletingNonFinalColumnRejectsStaleDeliveryThroughSave() async throws {
+        let root = try temporaryRoot(named: "delete-column")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = """
+        | Name| Value  |Note|
+        | :--- |---:|:---: |
+        | alpha   |  7| keep   spacing |
+        | beta|11  |second|
+        """
+        let expected = """
+        | Value  |Note|
+        |---:|:---: |
+        |  7| keep   spacing |
+        |11  |second|
+        """
+        let manager = DocumentManager(
+            sessionURL: root.appendingPathComponent("session.json"),
+            sessionSaveDelay: 3_600
+        )
+        let documentURL = root.appendingPathComponent("table.md")
+        manager.openTab(for: documentURL, text: source)
+        let tab = try #require(manager.activeTab)
+        let store = manager.blockEditorStore(for: tab)
+        let tableID = try #require(store.document.blocks.first?.id)
+        let cell = MarkdownTableCell(row: 0, column: 0)
+        store.beginTableEditing(blockID: tableID, cell: cell)
+        let oldGeneration = store.tableStructureGeneration
+        let liveField = try LiveTableField(store: store, cell: cell, value: "alpha")
+        defer { liveField.teardown() }
+
+        store.deleteActiveTableColumn()
+
+        let newGeneration = store.tableStructureGeneration
+        #expect(newGeneration != oldGeneration)
+        #expect(liveField.editor == nil)
+        #expect(store.source == expected)
+
+        liveField.field.stringValue = "7"
+        store.tableEditorBridge.activateFromViewUpdate(
+            field: liveField.field,
+            cell: cell,
+            generation: newGeneration,
+            onValue: { [weak store] callbackCell, value in
+                store?.setTableCellFromEditor(
+                    callbackCell,
+                    value: value,
+                    tableID: tableID,
+                    generation: newGeneration
+                )
+            }
+        )
+        store.tableEditorBridge.deactivateFromViewUpdate(
+            field: liveField.field,
+            cell: cell,
+            generation: oldGeneration
+        )
+        store.setTableCellFromEditor(
+            cell,
+            value: "alpha",
+            tableID: tableID,
+            generation: oldGeneration
+        )
+        await drainMainQueue()
+
+        var writtenText: String?
+        #expect(manager.saveActiveDocument { text, _ in
+            writtenText = text
+        })
+        #expect(writtenText == expected)
+        #expect(store.source == expected)
+        #expect(try store.document.tableGrid(for: tableID).rows == [
+            ["7", "keep   spacing"],
+            ["11", "second"],
+        ])
+    }
+
+    @Test("undo and redo of row deletion invalidate the shifted field identity")
+    func undoRedoRowDeletionInvalidatesShiftedFieldIdentity() async throws {
+        let source = """
+        | Name| Value  |Note|
+        | :--- |---:|:---: |
+        | alpha   |  7| keep   spacing |
+        | beta|11  |second|
+        """
+        let deletedSource = """
+        | Name| Value  |Note|
+        | :--- |---:|:---: |
+        | beta|11  |second|
+        """
+        let document = MarkdownDocument(source: source)
+        let store = BlockEditorStore(tabID: UUID(), document: document) { _ in }
+        let tableID = try #require(document.blocks.first?.id)
+        let cell = MarkdownTableCell(row: 0, column: 0)
+        store.beginTableEditing(blockID: tableID, cell: cell)
+        let liveField = try LiveTableField(store: store, cell: cell, value: "alpha")
+        defer { liveField.teardown() }
+
+        store.deleteActiveTableRow()
+        let deletedGeneration = store.tableStructureGeneration
+        liveField.field.stringValue = "beta"
+        store.tableEditorBridge.activateFromViewUpdate(
+            field: liveField.field,
+            cell: cell,
+            generation: deletedGeneration,
+            onValue: { [weak store] callbackCell, value in
+                store?.setTableCellFromEditor(
+                    callbackCell,
+                    value: value,
+                    tableID: tableID,
+                    generation: deletedGeneration
+                )
+            }
+        )
+        liveField.window.makeFirstResponder(liveField.field)
+        #expect(liveField.editor != nil)
+
+        store.undoManager.undo()
+
+        #expect(store.tableStructureGeneration != deletedGeneration)
+        #expect(liveField.editor == nil)
+        store.setTableCellFromEditor(
+            cell,
+            value: "beta",
+            tableID: tableID,
+            generation: deletedGeneration
+        )
+        store.tableEditorBridge.deactivateFromViewUpdate(
+            field: liveField.field,
+            cell: cell,
+            generation: deletedGeneration
+        )
+        await drainMainQueue()
+        #expect(store.source == source)
+        #expect(store.tableDraft?.rows == [
+            ["alpha", "7", "keep   spacing"],
+            ["beta", "11", "second"],
+        ])
+
+        store.undoManager.redo()
+        await drainMainQueue()
+        #expect(store.source == deletedSource)
+        #expect(store.tableDraft?.rows == [["beta", "11", "second"]])
+        store.finishTableEditing()
+        #expect(store.source == deletedSource)
+    }
+
     private enum ExplicitBoundary: String, CaseIterable {
         case preview
         case save
@@ -167,11 +491,21 @@ struct MarkdownTableLifecycleTests {
         return root
     }
 
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+    }
+
     @MainActor
     private final class LiveTableField {
         let field = NSTextField(frame: .zero)
         let window: NSWindow
         let bridge: MarkdownTableEditorBridge
+        let cell: MarkdownTableCell
+        let generation: MarkdownTableStructureGeneration
 
         var editor: NSTextView? { field.currentEditor() as? NSTextView }
         var hasMarkedText: Bool { editor?.hasMarkedText() == true }
@@ -182,6 +516,8 @@ struct MarkdownTableLifecycleTests {
             value: String
         ) throws {
             bridge = store.tableEditorBridge
+            self.cell = cell
+            generation = store.tableStructureGeneration
             field.stringValue = value
             field.isEditable = true
             field.isSelectable = true
@@ -195,8 +531,9 @@ struct MarkdownTableLifecycleTests {
             bridge.activate(
                 field: field,
                 cell: cell,
-                onValue: { [weak store] value in
-                    store?.setTableCell(cell, value: value)
+                generation: generation,
+                onValue: { [weak store] callbackCell, value in
+                    store?.setTableCell(callbackCell, value: value)
                 }
             )
             window.makeFirstResponder(field)
@@ -218,7 +555,12 @@ struct MarkdownTableLifecycleTests {
         }
 
         func teardown() {
-            bridge.deactivate(field: field, flush: false)
+            bridge.deactivate(
+                field: field,
+                cell: cell,
+                generation: generation,
+                flush: false
+            )
             window.makeFirstResponder(nil)
             window.contentView = nil
         }

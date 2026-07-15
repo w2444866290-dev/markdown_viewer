@@ -71,6 +71,27 @@ struct MarkdownEditingCommandsTests {
         #expect(result.boundaryAction == nil)
     }
 
+    @Test("draft kind follows the block containing the caret after a multi-block paste")
+    func multiBlockPasteUsesCaretLocalKind() throws {
+        let draft = "intro paragraph\n\n- pasted item"
+        let caret = (draft as NSString).length
+        let draftKind = MarkdownDocument.inferredBlockKind(
+            forDraft: draft,
+            atUTF16Offset: caret
+        )
+
+        let result = try apply(
+            .enter,
+            to: draft,
+            at: caret,
+            blockKind: draftKind
+        )
+
+        #expect(draftKind == .list)
+        #expect(result.replacementSource == draft + "\n- ")
+        #expect(result.boundaryAction == nil)
+    }
+
     @Test
     func taskContinuationIsAlwaysUnchecked() throws {
         for source in ["- [x] done", "- [X] done", "- [ ] done"] {
@@ -199,11 +220,33 @@ struct MarkdownEditingCommandsTests {
     }
 
     @Test
-    func tabAndShiftTabIndentSingleLineAndPreserveCaret() throws {
+    func tabInsertsAtCaretPastLeadingWhitespaceOutsideContainers() throws {
         let indented = try apply(.tab, to: "item", at: 2)
-        #expect(indented.replacementSource == "  item")
+        #expect(indented.replacementSource == "it  em")
         #expect(indented.selection == NSRange(location: 4, length: 0))
 
+        let afterIndent = try apply(.tab, to: "  item", at: 3)
+        #expect(afterIndent.replacementSource == "  i  tem")
+        #expect(afterIndent.selection == NSRange(location: 5, length: 0))
+    }
+
+    @Test
+    func tabIndentsContainersAndCaretWithinLeadingWhitespace() throws {
+        let atIndentBoundary = try apply(.tab, to: "  item", at: 2)
+        #expect(atIndentBoundary.replacementSource == "    item")
+        #expect(atIndentBoundary.selection == NSRange(location: 4, length: 0))
+
+        let list = try apply(.tab, to: "- item", at: 4, blockKind: .list)
+        #expect(list.replacementSource == "  - item")
+        #expect(list.selection == NSRange(location: 6, length: 0))
+
+        let quote = try apply(.tab, to: "> item", at: 4, blockKind: .quote)
+        #expect(quote.replacementSource == "  > item")
+        #expect(quote.selection == NSRange(location: 6, length: 0))
+    }
+
+    @Test
+    func shiftTabOutdentsSingleLineAndPreservesCaret() throws {
         let outdented = try apply(.shiftTab, to: "  item", at: 4)
         #expect(outdented.replacementSource == "item")
         #expect(outdented.selection == NSRange(location: 2, length: 0))
@@ -211,6 +254,55 @@ struct MarkdownEditingCommandsTests {
         let tabOutdented = try apply(.shiftTab, to: "\titem", at: 3)
         #expect(tabOutdented.replacementSource == "item")
         #expect(tabOutdented.selection == NSRange(location: 2, length: 0))
+    }
+
+    @Test
+    func shiftEnterUsesContextSpecificLineAndBlockBehavior() throws {
+        let list = try apply(
+            .shiftEnter,
+            to: "- item",
+            at: 6,
+            blockKind: .list
+        )
+        #expect(list.replacementSource == "- item\n")
+        #expect(list.selection == NSRange(location: 7, length: 0))
+        #expect(list.boundaryAction == nil)
+
+        let quote = try apply(
+            .shiftEnter,
+            to: "> quoted",
+            at: 8,
+            blockKind: .quote
+        )
+        #expect(quote.replacementSource == "> quoted\n> ")
+        #expect(quote.selection == NSRange(location: 11, length: 0))
+        #expect(quote.boundaryAction == nil)
+
+        let emptyQuote = try apply(
+            .shiftEnter,
+            to: "> ",
+            at: 2,
+            blockKind: .quote
+        )
+        #expect(emptyQuote.replacementSource == "> \n> ")
+        #expect(emptyQuote.boundaryAction == nil)
+
+        let paragraph = try apply(.shiftEnter, to: "helloworld", at: 5)
+        #expect(paragraph.replacementSource == "hello\n\nworld")
+        #expect(paragraph.selection == NSRange(location: 7, length: 0))
+        #expect(paragraph.boundaryAction == .splitBlock)
+
+        for kind in [MarkdownBlockKind.code, .table] {
+            let literal = try apply(
+                .shiftEnter,
+                to: "left|right",
+                at: 4,
+                blockKind: kind
+            )
+            #expect(literal.replacementSource == "left\n|right")
+            #expect(literal.selection == NSRange(location: 5, length: 0))
+            #expect(literal.boundaryAction == nil)
+        }
     }
 
     @Test

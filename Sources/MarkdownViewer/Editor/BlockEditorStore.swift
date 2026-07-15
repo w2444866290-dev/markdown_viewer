@@ -32,6 +32,8 @@ final class BlockEditorStore: ObservableObject {
     @Published private(set) var activeTableID: UUID?
     @Published private(set) var tableDraft: MarkdownTableGrid?
     @Published var activeTableCell: MarkdownTableCell?
+    @Published private(set) var tableStructureGeneration =
+        MarkdownTableStructureGeneration.initial
     @Published private(set) var parseCount = 1
     @Published private(set) var localMutationCount = 0
     @Published private(set) var renderRevisionByBlock: [UUID: Int] = [:]
@@ -332,9 +334,21 @@ final class BlockEditorStore: ObservableObject {
     func beginTableEditing(blockID: UUID, cell: MarkdownTableCell?) {
         commitActiveEditing()
         guard let grid = try? document.tableGrid(for: blockID) else { return }
+        tableStructureGeneration = tableEditorBridge.beginEditingSession()
         activeTableID = blockID
         tableDraft = grid
         activeTableCell = clampedTableCell(cell ?? .header(0), in: grid)
+    }
+
+    func setTableCellFromEditor(
+        _ cell: MarkdownTableCell,
+        value: String,
+        tableID: UUID,
+        generation: MarkdownTableStructureGeneration
+    ) {
+        guard activeTableID == tableID,
+              tableStructureGeneration == generation else { return }
+        setTableCell(cell, value: value)
     }
 
     func setTableCell(_ cell: MarkdownTableCell, value: String) {
@@ -362,7 +376,9 @@ final class BlockEditorStore: ObservableObject {
     }
 
     func addTableRow() {
-        tableEditorBridge.flushForLifecycleBoundary()
+        guard tableDraft != nil, activeTableID != nil else { return }
+        tableStructureGeneration =
+            tableEditorBridge.flushAndAdvanceStructureGeneration()
         guard var grid = tableDraft, let blockID = activeTableID else { return }
         grid.addRow()
         tableDraft = grid
@@ -371,7 +387,9 @@ final class BlockEditorStore: ObservableObject {
     }
 
     func addTableColumn() {
-        tableEditorBridge.flushForLifecycleBoundary()
+        guard tableDraft != nil, activeTableID != nil else { return }
+        tableStructureGeneration =
+            tableEditorBridge.flushAndAdvanceStructureGeneration()
         guard var grid = tableDraft, let blockID = activeTableID else { return }
         grid.addColumn()
         tableDraft = grid
@@ -380,11 +398,15 @@ final class BlockEditorStore: ObservableObject {
     }
 
     func deleteActiveTableRow() {
-        tableEditorBridge.flushForLifecycleBoundary()
-        guard var grid = tableDraft,
-              let blockID = activeTableID,
+        guard let grid = tableDraft,
+              activeTableID != nil,
               let cell = activeTableCell,
               cell.row >= 0,
+              grid.rows.indices.contains(cell.row) else { return }
+        tableStructureGeneration =
+            tableEditorBridge.flushAndAdvanceStructureGeneration()
+        guard var grid = tableDraft,
+              let blockID = activeTableID,
               grid.deleteRow(at: cell.row) else { return }
         tableDraft = grid
         let nextRow = min(cell.row, max(0, grid.rows.count - 1))
@@ -396,10 +418,15 @@ final class BlockEditorStore: ObservableObject {
     }
 
     func deleteActiveTableColumn() {
-        tableEditorBridge.flushForLifecycleBoundary()
+        guard let grid = tableDraft,
+              activeTableID != nil,
+              let cell = activeTableCell,
+              grid.columnCount > 1,
+              grid.header.indices.contains(cell.column) else { return }
+        tableStructureGeneration =
+            tableEditorBridge.flushAndAdvanceStructureGeneration()
         guard var grid = tableDraft,
               let blockID = activeTableID,
-              let cell = activeTableCell,
               grid.deleteColumn(at: cell.column) else { return }
         tableDraft = grid
         activeTableCell = MarkdownTableCell(
@@ -424,11 +451,10 @@ final class BlockEditorStore: ObservableObject {
     }
 
     func finishTableEditing() {
-        tableEditorBridge.flushForLifecycleBoundary()
+        tableStructureGeneration = tableEditorBridge.finishEditingSession()
         activeTableID = nil
         tableDraft = nil
         activeTableCell = nil
-        tableEditorBridge.resetAfterCommit()
     }
 
     // MARK: - Visible-text find and replace
@@ -860,9 +886,16 @@ final class BlockEditorStore: ObservableObject {
     private func resynchronizeTableDraftAfterHistoryMutation() {
         guard let blockID = activeTableID else { return }
         guard let grid = try? document.tableGrid(for: blockID) else {
-            finishTableEditing()
+            tableStructureGeneration = tableEditorBridge.discardEditingSession()
+            activeTableID = nil
+            tableDraft = nil
+            activeTableCell = nil
             return
         }
+        // The restored history snapshot is authoritative here.
+        // Invalidate the old field without flushing its coordinate into the restored grid.
+        tableStructureGeneration =
+            tableEditorBridge.advanceStructureGenerationDiscardingActiveEditor()
         tableDraft = grid
         activeTableCell = clampedTableCell(
             activeTableCell ?? .header(0),

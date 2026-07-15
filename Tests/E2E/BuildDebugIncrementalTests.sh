@@ -38,18 +38,18 @@ assert_output_path() {
 bash -n "$ROOT/scripts/build-debug.sh"
 
 mkdir -p \
-    "$TEST_ROOT/Fixtures/Debug" \
     "$TEST_ROOT/Resources" \
     "$TEST_ROOT/Sources/MarkdownViewer" \
     "$TEST_ROOT/scripts" \
+    "$TEST_ROOT/ui" \
     "$FAKE_BIN"
 
 cp "$ROOT/scripts/build-debug.sh" "$TEST_ROOT/scripts/build-debug.sh"
-cp "$ROOT/Fixtures/Debug/格式示例.md" "$TEST_ROOT/Fixtures/Debug/格式示例.md"
 cp "$ROOT/Resources/Info.plist" "$TEST_ROOT/Resources/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$TEST_ROOT/Resources/AppIcon.icns"
 cp "$ROOT/Package.swift" "$TEST_ROOT/Package.swift"
 cp "$ROOT/VERSION" "$TEST_ROOT/VERSION"
+cp "$ROOT/ui/格式示例.md" "$TEST_ROOT/ui/格式示例.md"
 printf 'struct IncrementalBuildFixture {}\n' > "$TEST_ROOT/Sources/MarkdownViewer/Input.swift"
 chmod +x "$TEST_ROOT/scripts/build-debug.sh"
 
@@ -102,6 +102,7 @@ git -C "$TEST_ROOT" \
 SCRIPT="$TEST_ROOT/scripts/build-debug.sh"
 EXPECTED_APP="$TEST_ROOT/dist/debug/MarkdownViewer.app"
 EXPECTED_MANIFEST="$EXPECTED_APP/Contents/Resources/BuildDebugInputs.manifest"
+PACKAGED_FIXTURE="$EXPECTED_APP/Contents/Resources/DebugFixtures/格式示例.md"
 SOURCE_INPUT="$TEST_ROOT/Sources/MarkdownViewer/Input.swift"
 export FAKE_SWIFT_BIN_DIR="$TEMP_ROOT/swift-bin"
 export FAKE_SWIFT_LOG="$SWIFT_LOG"
@@ -119,6 +120,15 @@ assert_output_path "$TEMP_ROOT/first.stdout" "first build"
     || fail "first build did not assemble an executable"
 [[ -f "$EXPECTED_MANIFEST" && ! -L "$EXPECTED_MANIFEST" ]] \
     || fail "first build did not package its input manifest"
+[[ -f "$PACKAGED_FIXTURE" && ! -L "$PACKAGED_FIXTURE" ]] \
+    || fail "first build did not package the Debug fixture"
+cmp -s "$TEST_ROOT/ui/格式示例.md" "$PACKAGED_FIXTURE" \
+    || fail "packaged Debug fixture does not match ui/格式示例.md"
+rg -q $'^file\t[0-9a-f]{64}\tui/格式示例\\.md$' "$EXPECTED_MANIFEST" \
+    || fail "input manifest does not cover ui/格式示例.md"
+if rg -q 'Markdown Viewer\\.dc\\.html|support\\.js' "$EXPECTED_MANIFEST"; then
+    fail "input manifest includes a design-only resource"
+fi
 codesign --verify --deep --strict "$EXPECTED_APP" >/dev/null 2>&1 \
     || fail "first build is not validly signed"
 FIRST_SWIFT_CALLS="$(swift_build_call_count)"

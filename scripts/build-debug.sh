@@ -6,7 +6,7 @@ ROOT_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 DIST_ROOT="$ROOT_DIR/dist"
 DIST_DIR="$DIST_ROOT/debug"
 APP_DIR="$DIST_DIR/MarkdownViewer.app"
-FIXTURE="$ROOT_DIR/Fixtures/Debug/格式示例.md"
+FIXTURE="$ROOT_DIR/ui/格式示例.md"
 EXPECTED_FIXTURE_SHA="cbcdfe19a3383f175f1e9beb78afce473f335fd0e8e814bc799f3a1deade0d9f"
 MANIFEST_RELATIVE_PATH="Contents/Resources/BuildDebugInputs.manifest"
 LOCK_FILE="$DIST_DIR/.build-debug.lock"
@@ -213,7 +213,7 @@ validate_manifest_inputs() {
     for required_directory in \
         "$ROOT_DIR/Sources" \
         "$ROOT_DIR/Resources" \
-        "$ROOT_DIR/Fixtures/Debug"; do
+        "$ROOT_DIR/ui"; do
         [[ -d "$required_directory" && ! -L "$required_directory" ]] \
             || fail "required input directory is missing or unsafe: $required_directory"
     done
@@ -239,7 +239,6 @@ validate_manifest_inputs() {
         find \
             "$ROOT_DIR/Sources" \
             "$ROOT_DIR/Resources" \
-            "$ROOT_DIR/Fixtures/Debug" \
             -type l -print0
     )
 
@@ -249,7 +248,6 @@ validate_manifest_inputs() {
         find \
             "$ROOT_DIR/Sources" \
             "$ROOT_DIR/Resources" \
-            "$ROOT_DIR/Fixtures/Debug" \
             ! -type f ! -type d ! -type l -print0
     )
 
@@ -380,9 +378,9 @@ append_input_records() {
         find \
             "$ROOT_DIR/Sources" \
             "$ROOT_DIR/Resources" \
-            "$ROOT_DIR/Fixtures/Debug" \
             \( -type f -o -type d \) -print0
         printf '%s\0' \
+            "$FIXTURE" \
             "$ROOT_DIR/Package.swift" \
             "$ROOT_DIR/VERSION" \
             "$ROOT_DIR/scripts/build-debug.sh"
@@ -498,6 +496,9 @@ debug_app_is_reusable() {
     packaged_fixture_sha="$(file_sha256 "$packaged_fixture")"
     [[ "$packaged_fixture_sha" == "$EXPECTED_FIXTURE_SHA" ]] \
         || reject_reuse "packaged Debug fixture SHA-256 is incorrect" \
+        || return 1
+    cmp -s "$FIXTURE" "$packaged_fixture" \
+        || reject_reuse "packaged Debug fixture does not match ui/格式示例.md" \
         || return 1
 
     [[ "$(plist_value "$plist" CFBundleExecutable || true)" == "MarkdownViewer" \

@@ -298,6 +298,43 @@ struct BlockFindEngineTests {
         #expect(search("|", in: document).matches.isEmpty)
     }
 
+    @Test("code projection shares long-fence and unclosed-fence semantics")
+    func arbitraryFenceProjection() {
+        let document = MarkdownDocument(source: """
+        ````swift
+        first
+        ```
+        second
+        `````
+
+        ~~~~lang
+        tilde body
+        ```
+        """)
+
+        #expect(search("first", in: document).matches.count == 1)
+        #expect(search("```", in: document).matches.count == 2)
+        #expect(search("second", in: document).matches.count == 1)
+        #expect(search("tilde body", in: document).matches.count == 1)
+        #expect(search("swift", in: document).matches.isEmpty)
+        #expect(search("lang", in: document).matches.isEmpty)
+        #expect(search("````", in: document).matches.isEmpty)
+    }
+
+    @Test("code projection stops at the first valid closing fence")
+    func codeProjectionUsesFirstClosingFence() {
+        let block = MarkdownBlock(
+            id: UUID(),
+            kind: .code,
+            source: "````lang\nfirst\n````\nafter first close\n`````",
+            leadingTrivia: ""
+        )
+        let projection = BlockFindEngine.projection(for: block)
+
+        #expect(projection.text == "first")
+        #expect(!projection.text.contains("after first close"))
+    }
+
     private func search(
         _ query: String,
         in document: MarkdownDocument,

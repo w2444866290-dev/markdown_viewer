@@ -205,6 +205,248 @@ struct SessionStoreTests {
         #expect(restored.markdownDocument?.blocks.first?.source == "# Recovered")
     }
 
+    @Test("schema two virtual container paragraphs migrate to durable source boundaries")
+    func virtualContainerParagraphMigration() throws {
+        let trailingTabID = UUID()
+        let trailingListID = UUID()
+        let trailingParagraphID = UUID()
+        let middleTabID = UUID()
+        let firstListID = UUID()
+        let middleParagraphID = UUID()
+        let finalListID = UUID()
+        let legacyJSON = """
+        {
+          "schemaVersion": 2,
+          "tabs": [
+            {
+              "id": "\(trailingTabID.uuidString)",
+              "url": "/tmp/trailing.md",
+              "name": "trailing.md",
+              "text": "- last item\\n",
+              "isDirty": false,
+              "isMarkdown": true,
+              "scrollY": 0,
+              "markdownDocument": {
+                "blocks": [
+                  {"id":"\(trailingListID.uuidString)","kind":"list","source":"- last item","leadingTrivia":""},
+                  {"id":"\(trailingParagraphID.uuidString)","kind":"paragraph","source":"","leadingTrivia":"\\n"}
+                ],
+                "trailingTrivia": ""
+              }
+            },
+            {
+              "id": "\(middleTabID.uuidString)",
+              "url": null,
+              "name": "middle.md",
+              "text": "- one\\n\\n- three",
+              "isDirty": true,
+              "isMarkdown": true,
+              "scrollY": 0,
+              "markdownDocument": {
+                "blocks": [
+                  {"id":"\(firstListID.uuidString)","kind":"list","source":"- one","leadingTrivia":""},
+                  {"id":"\(middleParagraphID.uuidString)","kind":"paragraph","source":"","leadingTrivia":"\\n\\n"},
+                  {"id":"\(finalListID.uuidString)","kind":"list","source":"- three","leadingTrivia":""}
+                ],
+                "trailingTrivia": ""
+              }
+            }
+          ],
+          "activeTabID": "\(middleTabID.uuidString)",
+          "fontIndex": 1,
+          "sidebarWidth": 216,
+          "sidebarOpen": true,
+          "directoryPath": null
+        }
+        """
+        let url = try temporarySessionURL()
+        defer { removeTemporaryRoot(for: url) }
+        try Data(legacyJSON.utf8).write(to: url)
+
+        let session = try #require(SessionStore.load(from: url))
+        let trailing = session.tabs[0]
+        let middle = session.tabs[1]
+
+        #expect(session.schemaVersion == Session.currentSchemaVersion)
+        #expect(trailing.text == "- last item\n\n")
+        #expect(trailing.markdownDocument?.source == trailing.text)
+        #expect(trailing.isDirty)
+        #expect(trailing.markdownDocument?.blocks.map(\.id) == [
+            trailingListID,
+            trailingParagraphID,
+        ])
+        #expect(MarkdownDocument(source: trailing.text).blocks.map(\.kind) == [.list, .paragraph])
+
+        #expect(middle.text == "- one\n\n\n\n- three")
+        #expect(middle.markdownDocument?.source == middle.text)
+        #expect(middle.isDirty)
+        #expect(middle.markdownDocument?.blocks.map(\.id) == [
+            firstListID,
+            middleParagraphID,
+            finalListID,
+        ])
+        #expect(MarkdownDocument(source: middle.text).blocks.map(\.kind) == [
+            .list,
+            .paragraph,
+            .list,
+        ])
+
+        #expect(SessionStore.save(session, to: url))
+        let reopened = try #require(SessionStore.load(from: url))
+        #expect(reopened.tabs[0].markdownDocument?.blocks.map(\.id) == [
+            trailingListID,
+            trailingParagraphID,
+        ])
+        #expect(reopened.tabs[1].markdownDocument?.blocks.map(\.id) == [
+            firstListID,
+            middleParagraphID,
+            finalListID,
+        ])
+        #expect(reopened.tabs.map(\.text) == [trailing.text, middle.text])
+    }
+
+    @Test("quote virtual paragraphs migrate without treating ordinary trivia as virtual")
+    func quoteVirtualParagraphMigration() throws {
+        let trailingTabID = UUID()
+        let trailingQuoteID = UUID()
+        let trailingParagraphID = UUID()
+        let middleTabID = UUID()
+        let firstQuoteID = UUID()
+        let middleParagraphID = UUID()
+        let finalQuoteID = UUID()
+        let ordinaryTabID = UUID()
+        let ordinaryQuoteID = UUID()
+        let tabs: [[String: Any]] = [
+            [
+                "id": trailingTabID.uuidString,
+                "url": "/tmp/trailing-quote.md",
+                "name": "trailing-quote.md",
+                "text": "> last quote\r\n",
+                "isDirty": false,
+                "isMarkdown": true,
+                "scrollY": 84.5,
+                "selectionLocation": 3,
+                "selectionLength": 1,
+                "markdownDocument": [
+                    "blocks": [
+                        [
+                            "id": trailingQuoteID.uuidString,
+                            "kind": "quote",
+                            "source": "> last quote",
+                            "leadingTrivia": "",
+                        ],
+                        [
+                            "id": trailingParagraphID.uuidString,
+                            "kind": "paragraph",
+                            "source": "",
+                            "leadingTrivia": "\r\n",
+                        ],
+                    ],
+                    "trailingTrivia": "",
+                ],
+            ],
+            [
+                "id": middleTabID.uuidString,
+                "url": NSNull(),
+                "name": "middle-quote.md",
+                "text": "> one\n\n> three",
+                "isDirty": true,
+                "isMarkdown": true,
+                "scrollY": 19.25,
+                "selectionLocation": 0,
+                "selectionLength": 0,
+                "markdownDocument": [
+                    "blocks": [
+                        [
+                            "id": firstQuoteID.uuidString,
+                            "kind": "quote",
+                            "source": "> one",
+                            "leadingTrivia": "",
+                        ],
+                        [
+                            "id": middleParagraphID.uuidString,
+                            "kind": "paragraph",
+                            "source": "",
+                            "leadingTrivia": "\n\n",
+                        ],
+                        [
+                            "id": finalQuoteID.uuidString,
+                            "kind": "quote",
+                            "source": "> three",
+                            "leadingTrivia": "",
+                        ],
+                    ],
+                    "trailingTrivia": "",
+                ],
+            ],
+            [
+                "id": ordinaryTabID.uuidString,
+                "url": "/tmp/ordinary-quote.md",
+                "name": "ordinary-quote.md",
+                "text": "> ordinary\n\n",
+                "isDirty": false,
+                "isMarkdown": true,
+                "scrollY": 7.5,
+                "selectionLocation": 2,
+                "selectionLength": 0,
+                "markdownDocument": [
+                    "blocks": [[
+                        "id": ordinaryQuoteID.uuidString,
+                        "kind": "quote",
+                        "source": "> ordinary",
+                        "leadingTrivia": "",
+                    ]],
+                    "trailingTrivia": "\n\n",
+                ],
+            ],
+        ]
+        let object: [String: Any] = [
+            "schemaVersion": 2,
+            "tabs": tabs,
+            "activeTabID": middleTabID.uuidString,
+            "fontIndex": 1,
+            "sidebarWidth": 216,
+            "sidebarOpen": true,
+            "directoryPath": NSNull(),
+        ]
+        let url = try temporarySessionURL()
+        defer { removeTemporaryRoot(for: url) }
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+
+        let migrated = try #require(SessionStore.load(from: url))
+        let trailing = migrated.tabs[0]
+        let middle = migrated.tabs[1]
+        let ordinary = migrated.tabs[2]
+
+        #expect(trailing.text == "> last quote\r\n\r\n")
+        #expect(trailing.markdownDocument?.source == trailing.text)
+        #expect(trailing.markdownDocument?.blocks.map(\.id) == [
+            trailingQuoteID,
+            trailingParagraphID,
+        ])
+        #expect(trailing.isDirty)
+        #expect(trailing.url?.path == "/tmp/trailing-quote.md")
+        #expect(trailing.scrollY == 84.5)
+        #expect(trailing.selectionRange == NSRange(location: 3, length: 1))
+
+        #expect(middle.text == "> one\n\n\n\n> three")
+        #expect(middle.markdownDocument?.source == middle.text)
+        #expect(middle.markdownDocument?.blocks.map(\.id) == [
+            firstQuoteID,
+            middleParagraphID,
+            finalQuoteID,
+        ])
+        #expect(middle.isDirty)
+        #expect(middle.scrollY == 19.25)
+
+        #expect(ordinary.text == "> ordinary\n\n")
+        #expect(ordinary.markdownDocument?.source == ordinary.text)
+        #expect(ordinary.markdownDocument?.blocks.map(\.id) == [ordinaryQuoteID])
+        #expect(!ordinary.isDirty)
+        #expect(ordinary.scrollY == 7.5)
+        #expect(ordinary.selectionRange == NSRange(location: 2, length: 0))
+    }
+
     @Test
     func unsupportedSchemaVersionsRecoverAsNoSession() throws {
         let url = try temporarySessionURL()

@@ -3,6 +3,7 @@ import Foundation
 /// Source-editing commands handled before an active Markdown block is reparsed.
 enum MarkdownEditingCommand: Equatable {
     case enter
+    case shiftEnter
     case backspace
     case arrowUp
     case arrowDown
@@ -63,6 +64,12 @@ enum MarkdownEditingCommands {
         switch command {
         case .enter:
             return applyEnter(to: source, selection: selection, blockKind: blockKind)
+        case .shiftEnter:
+            return applyShiftEnter(
+                to: source,
+                selection: selection,
+                blockKind: blockKind
+            )
         case .backspace:
             return applyBackspace(to: source, selection: selection)
         case .arrowUp:
@@ -78,7 +85,11 @@ enum MarkdownEditingCommands {
                 selection: selection
             )
         case .tab:
-            return applyIndent(to: source, selection: selection, outdent: false)
+            return applyTab(
+                to: source,
+                selection: selection,
+                blockKind: blockKind
+            )
         case .shiftTab:
             return applyIndent(to: source, selection: selection, outdent: true)
         case .bold:
@@ -142,6 +153,61 @@ enum MarkdownEditingCommands {
         }
 
         if blockKind == .code || blockKind == .table {
+            return inserting(
+                lineEnding,
+                at: caret,
+                in: collapsed,
+                boundaryAction: nil
+            )
+        }
+
+        return inserting(
+            lineEnding + lineEnding,
+            at: caret,
+            in: collapsed,
+            boundaryAction: .splitBlock
+        )
+    }
+
+    private static func applyShiftEnter(
+        to source: String,
+        selection: NSRange,
+        blockKind: MarkdownBlockKind
+    ) -> MarkdownEditingResult {
+        let lineEnding = preferredLineEnding(in: source, near: selection.location)
+        let collapsed = replacing(source, range: selection, with: "")
+        let caret = selection.location
+
+        if blockKind == .list || blockKind == .code || blockKind == .table {
+            return inserting(
+                lineEnding,
+                at: caret,
+                in: collapsed,
+                boundaryAction: nil
+            )
+        }
+
+        if blockKind == .quote {
+            let lines = sourceLines(collapsed)
+            let line = lines[indexOfLine(containing: caret, in: lines)]
+            let lineSource = (collapsed as NSString).substring(
+                with: NSRange(
+                    location: line.start,
+                    length: line.contentEnd - line.start
+                )
+            )
+            let caretInLine = caret - line.start
+            let sourceBeforeCaret = (lineSource as NSString).substring(
+                to: caretInLine
+            )
+            if let prefix = parseQuotePrefix(in: sourceBeforeCaret) {
+                return inserting(
+                    lineEnding + prefix.source,
+                    at: caret,
+                    in: collapsed,
+                    boundaryAction: nil
+                )
+            }
             return inserting(
                 lineEnding,
                 at: caret,
@@ -313,6 +379,36 @@ enum MarkdownEditingCommands {
 
     // MARK: - Indent and outdent
 
+    private static func applyTab(
+        to source: String,
+        selection: NSRange,
+        blockKind: MarkdownBlockKind
+    ) -> MarkdownEditingResult {
+        if selection.length == 0,
+           blockKind != .list,
+           blockKind != .quote {
+            let lines = sourceLines(source)
+            let line = lines[indexOfLine(containing: selection.location, in: lines)]
+            let lineText = (source as NSString).substring(
+                with: NSRange(
+                    location: line.start,
+                    length: line.contentEnd - line.start
+                )
+            )
+            let leadingWhitespaceEnd = line.start + leadingWhitespaceLength(in: lineText)
+            if selection.location > leadingWhitespaceEnd {
+                return inserting(
+                    "  ",
+                    at: selection.location,
+                    in: source,
+                    boundaryAction: nil
+                )
+            }
+        }
+
+        return applyIndent(to: source, selection: selection, outdent: false)
+    }
+
     private static func applyIndent(
         to source: String,
         selection: NSRange,
@@ -391,6 +487,17 @@ enum MarkdownEditingCommands {
             && spaces >= 3
             && spaces.isMultiple(of: 3)
         return min(spaces, orderedUnit ? 3 : 2)
+    }
+
+    private static func leadingWhitespaceLength(in line: String) -> Int {
+        let nsLine = line as NSString
+        var length = 0
+        while length < nsLine.length {
+            let character = nsLine.character(at: length)
+            guard character == 32 || character == 9 else { break }
+            length += 1
+        }
+        return length
     }
 
     // MARK: - Formatting

@@ -79,7 +79,7 @@ struct BlockEditorStoreTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/Debug/格式示例.md")
+            .appendingPathComponent("ui/格式示例.md")
         let originalSource = try String(contentsOf: fixtureURL, encoding: .utf8)
         let original = MarkdownDocument(source: originalSource)
         let originalBlockCount = original.blocks.count
@@ -131,7 +131,7 @@ struct BlockEditorStoreTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/Debug/格式示例.md")
+            .appendingPathComponent("ui/格式示例.md")
         let originalSource = try String(contentsOf: fixtureURL, encoding: .utf8)
         let original = MarkdownDocument(source: originalSource)
         let tableBlock = try #require(original.blocks[safe: 28])
@@ -176,7 +176,7 @@ struct BlockEditorStoreTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/Debug/格式示例.md")
+            .appendingPathComponent("ui/格式示例.md")
         let originalSource = try String(contentsOf: fixtureURL, encoding: .utf8)
         let original = MarkdownDocument(source: originalSource)
         let first = try #require(original.blocks[safe: 10])
@@ -237,7 +237,7 @@ struct BlockEditorStoreTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/Debug/格式示例.md")
+            .appendingPathComponent("ui/格式示例.md")
         let originalSource = try String(contentsOf: fixtureURL, encoding: .utf8)
         let original = MarkdownDocument(source: originalSource)
         let originalBlocks = original.blocks
@@ -537,13 +537,54 @@ struct BlockEditorStoreTests {
             selection: NSRange(location: 7, length: 0)
         )
 
-        #expect(store.source == "- one\r\n\r\n- three")
+        #expect(store.source == "- one\r\n\r\n\r\n\r\n- three")
         #expect(store.document.blocks.map(\.kind) == [.list, .paragraph, .list])
         #expect(store.activeBlock?.kind == .paragraph)
         #expect(store.activeBlock?.source.isEmpty == true)
+        #expect(MarkdownDocument(source: store.source).blocks.map(\.kind) == [.list, .paragraph, .list])
 
         store.undoManager.undo()
         #expect(store.source == source)
+    }
+
+    @Test("two Returns at a trailing container create one durable empty paragraph")
+    func trailingContainerExitDoesNotDuplicateContent() throws {
+        for fixture in [
+            (source: "# List tail\n\n- last item", kind: MarkdownBlockKind.list),
+            (source: "# Quote tail\n\n> last item", kind: MarkdownBlockKind.quote),
+        ] {
+            let document = MarkdownDocument(source: fixture.source)
+            let store = BlockEditorStore(tabID: UUID(), document: document) { _ in }
+            let container = try #require(document.blocks.last)
+            let first = try MarkdownEditingCommands.apply(
+                .enter,
+                to: container.source,
+                selection: NSRange(location: (container.source as NSString).length, length: 0),
+                blockKind: fixture.kind
+            )
+            let second = try MarkdownEditingCommands.apply(
+                .enter,
+                to: first.replacementSource,
+                selection: first.selection,
+                blockKind: fixture.kind
+            )
+
+            store.beginSourceEditing(blockID: container.id)
+            store.updateActiveDraft(first.replacementSource, selection: first.selection)
+            store.updateActiveDraft(second.replacementSource, selection: second.selection)
+            store.handleBoundaryAction(try #require(second.boundaryAction), selection: second.selection)
+
+            let expectedContainer = fixture.kind == .list ? "- last item" : "> last item"
+            #expect(store.document.blocks.map(\.kind) == [.heading, fixture.kind, .paragraph])
+            #expect(store.document.blocks[1].source == expectedContainer)
+            #expect(store.document.blocks[2].source.isEmpty)
+            #expect(store.source == fixture.source + "\n\n")
+
+            let reopened = MarkdownDocument(source: store.source)
+            #expect(reopened.blocks.map(\.kind) == [.heading, fixture.kind, .paragraph])
+            #expect(reopened.blocks[1].source == expectedContainer)
+            #expect(reopened.blocks[2].source.isEmpty)
+        }
     }
 
     @Test

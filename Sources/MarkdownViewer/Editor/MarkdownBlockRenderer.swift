@@ -687,8 +687,7 @@ struct MarkdownBlockRenderer: View, Equatable {
         let lines = Self.dedented(item.children)
         if !lines.isEmpty {
             let childSource = lines.joined(separator: "\n")
-            if childSource.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("```")
-                || childSource.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("~~~") {
+            if Self.startsWithFence(childSource) {
                 MarkdownCodeBlock(
                     source: childSource,
                     paperWidth: paperWidth,
@@ -730,8 +729,15 @@ struct MarkdownBlockRenderer: View, Equatable {
     private static func hasNestedCode(_ item: ListItem) -> Bool {
         let source = dedented(item.children)
             .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return source.hasPrefix("```") || source.hasPrefix("~~~")
+        return startsWithFence(source)
+    }
+
+    private static func startsWithFence(_ source: String) -> Bool {
+        guard let first = source
+            .components(separatedBy: .newlines)
+            .drop(while: { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+            .first else { return false }
+        return MarkdownFenceSyntax.openingFence(in: first) != nil
     }
 
     private static func imageAlt(_ source: String) -> String {
@@ -895,21 +901,13 @@ private struct MarkdownCodeBlock: View {
     @State private var showsTrailingFade = false
 
     private var parts: (language: String, code: String) {
-        var lines = source
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .components(separatedBy: "\n")
-        guard let first = lines.first else { return ("text", "") }
-        let language = first
-            .trimmingCharacters(in: .whitespaces)
-            .replacingOccurrences(of: #"^(```|~~~)"#, with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespaces)
-        lines.removeFirst()
-        if lines.last?.trimmingCharacters(in: .whitespaces).hasPrefix("```") == true
-            || lines.last?.trimmingCharacters(in: .whitespaces).hasPrefix("~~~") == true {
-            lines.removeLast()
+        guard let content = MarkdownFenceSyntax.content(in: source) else {
+            return ("text", source)
         }
-        return (language.isEmpty ? "text" : language, lines.joined(separator: "\n"))
+        return (
+            content.language.isEmpty ? "text" : content.language,
+            content.code
+        )
     }
 
     var body: some View {

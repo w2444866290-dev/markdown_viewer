@@ -205,7 +205,7 @@ else
 fi
 GIT_SHA="$(git -C "$ROOT" rev-parse HEAD)"
 HTML_SHA="$(shasum -a 256 "$ROOT/ui/Markdown Viewer.dc.html" | awk '{print $1}')"
-FIXTURE_SHA="$(shasum -a 256 "$ROOT/Fixtures/Debug/$FIXTURE_NAME" | awk '{print $1}')"
+FIXTURE_SHA="$(shasum -a 256 "$ROOT/ui/$FIXTURE_NAME" | awk '{print $1}')"
 
 # Seed the existing bundle with a resource that is not part of a release build.
 # A correct assembly replaces the whole app, so this file cannot survive.
