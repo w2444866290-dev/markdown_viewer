@@ -13,7 +13,7 @@ Options:
   --probe-sizes CSV             Passive development probe for selected canonical sizes.
   --probe-states CSV            Passive development probe for selected visual state names.
   --foreground-smoke            Run the bounded palette/find foreground batch at 1180x760.
-  --foreground-batch NAME       Run a named bounded batch or the five-phase tab-session-lifecycle suite.
+  --foreground-batch NAME       Run a named bounded batch, the five-phase tab-session-lifecycle suite, or save-lifecycle.
   --foreground-budget SECONDS   Foreground batch budget, fixed at 4 seconds.
   --keyboard-only               Run the legacy focus-taking keyboard matrix.
   --extended-full-pointer       Run the legacy extended keyboard and pointer matrix.
@@ -234,10 +234,10 @@ select_foreground_batch() {
     local name="$1"
     local option="$2"
     case "$name" in
-        palette-find|block-activation|find-options|find-regex-replace|preview-content|preview-footnotes|outline-navigation|sidebar-filter-navigation|sidebar-layout-controls|tab-session-lifecycle|table-controls|table-navigation|editor-structure|editor-boundaries) ;;
+        palette-find|block-activation|find-options|find-regex-replace|preview-content|preview-footnotes|outline-navigation|sidebar-filter-navigation|sidebar-layout-controls|tab-session-lifecycle|table-controls|save-lifecycle|table-navigation|editor-structure|editor-boundaries) ;;
         *)
             echo "run-real-app-e2e.sh: unsupported foreground batch: $name" >&2
-            echo "run-real-app-e2e.sh: expected palette-find, block-activation, find-options, find-regex-replace, preview-content, preview-footnotes, outline-navigation, sidebar-filter-navigation, sidebar-layout-controls, tab-session-lifecycle, table-controls, table-navigation, editor-structure, or editor-boundaries" >&2
+            echo "run-real-app-e2e.sh: expected palette-find, block-activation, find-options, find-regex-replace, preview-content, preview-footnotes, outline-navigation, sidebar-filter-navigation, sidebar-layout-controls, tab-session-lifecycle, save-lifecycle, table-controls, table-navigation, editor-structure, or editor-boundaries" >&2
             exit 2
             ;;
     esac
@@ -1203,13 +1203,17 @@ launch_restored_visual_session() {
     for attempt in 1 2 3; do
         printf 'Restore launch attempt %s\n' "$attempt" >> "$launch_log"
         assert_debug_app_binary_unchanged
+        local restore_hud_options=(--visual-test-hide-hud)
+        if [[ "$FOREGROUND_BATCH_NAME" == "save-lifecycle" ]]; then
+            restore_hud_options=(--show-hud)
+        fi
         if "$ROOT/scripts/run-debug.sh" \
             --background \
             --skip-build \
             --visual-test-root "$PROFILE_ROOT" \
             --visual-test-size "$SIZE" \
             --visual-test-restore-session \
-            --visual-test-hide-hud \
+            "${restore_hud_options[@]}" \
             >> "$launch_log" 2>&1; then
             launch_succeeded=1
             break
@@ -4614,6 +4618,389 @@ print(json.dumps({
 PY
 }
 
+seed_save_lifecycle_fixture() {
+    local kind="$1"
+    local workspace="$PROFILE_ROOT/Temporary/Workspace"
+    python3 - "$workspace" "$kind" <<'PY'
+import os
+import pathlib
+import sys
+
+workspace = pathlib.Path(sys.argv[1])
+kind = sys.argv[2]
+readme = workspace / "README.md"
+config = workspace / "docs" / "config.yaml"
+saved_as = workspace / "saved-as.md"
+symlink = workspace / "README-link.md"
+if not workspace.is_dir() or not config.parent.is_dir():
+    raise SystemExit("isolated save lifecycle workspace is unavailable")
+
+bom = b"\xef\xbb\xbf"
+fixtures = {
+    "markdown": bom + b"# Save lifecycle\r\n\r\nmarkdown original\r\n",
+    "table": (
+        b"# Table lifecycle\n\n"
+        b"| Name | Value |\n"
+        b"| --- | --- |\n"
+        b"| row | table original |"
+    ),
+    "conflict": b"# Conflict lifecycle\n\nconflict baseline\n",
+    "session": b"# Session lifecycle\n\nsession baseline\n",
+}
+if kind in fixtures:
+    readme.write_bytes(fixtures[kind])
+elif kind == "plain":
+    config.write_bytes(bom + b"model: gpt-4o\r\ntemperature: 0.2\r\n")
+else:
+    raise SystemExit(f"unsupported save lifecycle fixture kind: {kind}")
+
+if kind == "conflict":
+    saved_as.unlink(missing_ok=True)
+    symlink.unlink(missing_ok=True)
+    os.symlink("README.md", symlink)
+PY
+}
+
+replace_save_lifecycle_external_file() {
+    local kind="$1"
+    local readme="$PROFILE_ROOT/Temporary/Workspace/README.md"
+    python3 - "$readme" "$kind" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+kind = sys.argv[2]
+payloads = {
+    "conflict": b"# Conflict lifecycle\n\nexternal replacement\n",
+    "session": b"# Session lifecycle\n\nsession external replacement\n",
+}
+try:
+    payload = payloads[kind]
+except KeyError as error:
+    raise SystemExit(f"unsupported external replacement kind: {kind}") from error
+path.write_bytes(payload)
+PY
+}
+
+run_save_lifecycle_plan() {
+    local phase="$1"
+    local evidence_name="${2:-$phase}"
+    local phase_dir="$SIZE_DIR/save-lifecycle/$evidence_name"
+    local raw_dir="$phase_dir/raw"
+    local plan="$phase_dir/foreground-plan.json"
+    local validation="$phase_dir/foreground-plan-validation.json"
+    local report="$phase_dir/foreground-report.json"
+    mkdir -p "$raw_dir"
+    python3 "$ROOT/scripts/e2e/build-foreground-save-lifecycle-plan.py" \
+        --phase "$phase" \
+        --raw-dir "$raw_dir" \
+        --output "$plan"
+    run_foreground_plan_file "$plan" "$validation" "$report"
+    if [[ -s "$raw_dir/$phase.png" ]]; then
+        register_foreground_checkpoint \
+            "save-lifecycle-$evidence_name" "$raw_dir/$phase.png"
+    fi
+}
+
+capture_save_lifecycle_stage() {
+    local stage="$1"
+    local stage_dir="$SIZE_DIR/save-lifecycle/$stage"
+    local live_session="$PROFILE_ROOT/Application Support/MarkdownViewer/session.json"
+    local live_diagnostic="$PROFILE_ROOT/Diagnostics/state.json"
+    local session_snapshot="$stage_dir/session.json"
+    local diagnostic_snapshot="$stage_dir/diagnostic.json"
+    local report="$stage_dir/foreground-report.json"
+    local screenshot="$stage_dir/raw/$stage.png"
+    local ocr="$stage_dir/ocr.json"
+    local verifier="$ROOT/scripts/e2e/verify-foreground-save-lifecycle.py"
+    local workspace="$PROFILE_ROOT/Temporary/Workspace"
+    local session_assertion="$stage_dir/session-assertion.json"
+    local diagnostic_assertion="$stage_dir/diagnostic-assertion.json"
+    local verification_error="$stage_dir/verification.err"
+    local verifier_options=(
+        --stage "$stage"
+        --foreground-report "$report"
+        --workspace-root "$workspace"
+        --expected-session-path "$live_session"
+        --output-root "$OUTPUT"
+    )
+
+    rm -f "$ocr"
+    case "$stage" in
+        conflict-save|conflict-save-as-current|conflict-save-as-symlink|restored-conflict-save)
+            "$DRIVER" screenshot-text \
+                --screenshot "$screenshot" \
+                --contains "磁盘上" \
+                --contains "未覆盖" \
+                > "$ocr"
+            verifier_options+=(--ocr "$ocr")
+            ;;
+        plain-open-diagnostic)
+            "$DRIVER" screenshot-text \
+                --screenshot "$screenshot" \
+                --contains "doc=config.yaml" \
+                --contains "mode=source" \
+                > "$ocr"
+            verifier_options+=(--ocr "$ocr")
+            ;;
+    esac
+
+    local ready=0
+    for _ in {1..80}; do
+        if [[ -s "$live_session" && -s "$live_diagnostic" ]] \
+            && python3 "$verifier" \
+                "${verifier_options[@]}" \
+                --session "$live_session" \
+                --diagnostic "$live_diagnostic" \
+                --check-only >/dev/null 2>&1; then
+            cp "$live_session" "$session_snapshot"
+            cp "$live_diagnostic" "$diagnostic_snapshot"
+            if python3 "$verifier" \
+                "${verifier_options[@]}" \
+                --session "$session_snapshot" \
+                --diagnostic "$diagnostic_snapshot" \
+                --check-only >/dev/null 2>&1; then
+                ready=1
+                break
+            fi
+        fi
+        sleep 0.1
+    done
+    if [[ "$ready" -ne 1 ]]; then
+        python3 "$verifier" \
+            "${verifier_options[@]}" \
+            --session "$live_session" \
+            --diagnostic "$live_diagnostic" \
+            --check-only > /dev/null 2> "$verification_error" || true
+        echo "run-real-app-e2e.sh: save lifecycle stage did not verify: $stage" >&2
+        if [[ -s "$verification_error" ]]; then
+            sed 's/^/  /' "$verification_error" >&2
+        fi
+        exit 5
+    fi
+
+    python3 "$verifier" \
+        "${verifier_options[@]}" \
+        --session "$session_snapshot" \
+        --diagnostic "$diagnostic_snapshot" \
+        --report-kind session \
+        > "$session_assertion"
+    python3 "$verifier" \
+        "${verifier_options[@]}" \
+        --session "$session_snapshot" \
+        --diagnostic "$diagnostic_snapshot" \
+        --report-kind diagnostic \
+        > "$diagnostic_assertion"
+    printf '%s\n' "$session_assertion" >> "$SESSION_ASSERTION_LIST"
+    printf '%s\n' "$diagnostic_assertion" >> "$DIAGNOSTIC_LIST"
+}
+
+write_save_lifecycle_aggregate_evidence() {
+    local phases=(
+        markdown-save
+        close-clean-1
+        table-save
+        close-clean-2
+        conflict-open
+        conflict-save
+        save-as-new
+        close-clean-3
+        conflict-open-current
+        conflict-save-as-current
+        conflict-save-as-symlink
+        discard-dirty-close
+        session-draft
+        restored-conflict-save
+        plain-open-diagnostic
+        plain-save
+    )
+    local aggregate_validation="$SIZE_DIR/foreground-plan-validation.json"
+    local aggregate_report="$SIZE_DIR/foreground-report.json"
+    python3 - \
+        "$FOREGROUND_BUDGET" "$SIZE_DIR/save-lifecycle" \
+        "${phases[@]}" \
+        > "$aggregate_validation" <<'PY'
+import json
+import pathlib
+import sys
+
+budget_ms = int(round(float(sys.argv[1]) * 1_000))
+root = pathlib.Path(sys.argv[2])
+phase_names = sys.argv[3:]
+phases = []
+actions = []
+for phase_index, name in enumerate(phase_names):
+    phase_root = root / name
+    plan = json.loads((phase_root / "foreground-plan.json").read_text(encoding="utf-8"))
+    validation = json.loads(
+        (phase_root / "foreground-plan-validation.json").read_text(encoding="utf-8")
+    )
+    phases.append({"name": name, "plan": plan, "validation": validation})
+    for phase_action_index, action in enumerate(plan["actions"]):
+        actions.append({
+            **action,
+            "phase": name,
+            "phaseIndex": phase_index,
+            "phaseActionIndex": phase_action_index,
+        })
+print(json.dumps({
+    "schemaVersion": 1,
+    "suite": "save-lifecycle",
+    "logicalSize": "1180x760",
+    "phaseCount": len(phases),
+    "perPhaseBudgetMs": budget_ms,
+    "totalBudgetMs": budget_ms * len(phases),
+    "actions": actions,
+    "phases": phases,
+}, ensure_ascii=False, indent=2, sort_keys=True))
+PY
+    python3 - \
+        "$FOREGROUND_BUDGET" "$SIZE_DIR/save-lifecycle" \
+        "${phases[@]}" \
+        > "$aggregate_report" <<'PY'
+import json
+import pathlib
+import sys
+
+budget_ms = int(round(float(sys.argv[1]) * 1_000))
+root = pathlib.Path(sys.argv[2])
+phase_names = sys.argv[3:]
+phases = []
+actions = []
+duration_ms = 0
+for phase_index, name in enumerate(phase_names):
+    phase_root = root / name
+    validation = json.loads(
+        (phase_root / "foreground-plan-validation.json").read_text(encoding="utf-8")
+    )
+    report = json.loads(
+        (phase_root / "foreground-report.json").read_text(encoding="utf-8")
+    )
+    phases.append({"name": name, "planValidation": validation, "report": report})
+    duration_ms += report["durationMs"]
+    for phase_action_index, action in enumerate(report["actions"]):
+        actions.append({
+            **action,
+            "index": len(actions),
+            "phase": name,
+            "phaseIndex": phase_index,
+            "phaseActionIndex": phase_action_index,
+        })
+all_completed = all(phase["report"]["completed"] is True for phase in phases)
+print(json.dumps({
+    "schemaVersion": 1,
+    "suite": "save-lifecycle",
+    "logicalSize": "1180x760",
+    "pid": phases[0]["report"]["pid"],
+    "pids": [phase["report"]["pid"] for phase in phases],
+    "phaseCount": len(phases),
+    "perPhaseBudgetMs": budget_ms,
+    "totalBudgetMs": budget_ms * len(phases),
+    "budgetMs": budget_ms * len(phases),
+    "durationMs": duration_ms,
+    "targetActivationRequestCount": sum(
+        phase["report"]["targetActivationRequestCount"] for phase in phases
+    ),
+    "completed": all_completed,
+    "deadlineExceeded": any(
+        phase["report"]["deadlineExceeded"] for phase in phases
+    ),
+    "error": None,
+    "actions": actions,
+    "interference": {
+        "detected": any(
+            phase["report"]["interference"]["detected"] for phase in phases
+        ),
+        "pointerInputDetected": any(
+            phase["report"]["interference"]["pointerInputDetected"]
+            for phase in phases
+        ),
+        "pointerPositionInterferenceDetected": any(
+            phase["report"]["interference"]["pointerPositionInterferenceDetected"]
+            for phase in phases
+        ),
+        "eventTapReliable": all(
+            phase["report"]["interference"]["eventTapReliable"] for phase in phases
+        ),
+    },
+    "focusRestore": {
+        "attempted": True,
+        "restored": all(
+            phase["report"]["focusRestore"]["restored"] for phase in phases
+        ),
+    },
+    "pointerRestore": {
+        "attempted": True,
+        "restored": all(
+            phase["report"]["pointerRestore"]["restored"] for phase in phases
+        ),
+    },
+    "pasteboardRestore": {
+        "attempted": False,
+        "restored": all(
+            phase["report"]["pasteboardRestore"]["restored"] for phase in phases
+        ),
+    },
+    "phases": phases,
+}, ensure_ascii=False, indent=2, sort_keys=True))
+PY
+}
+
+run_foreground_save_lifecycle() {
+    if [[ "$SIZE" != "1180x760" || "$SIZE_WIDTH" != "1180" \
+        || "$SIZE_HEIGHT" != "760" ]]; then
+        echo "run-real-app-e2e.sh: save-lifecycle is locked to 1180x760" >&2
+        exit 5
+    fi
+
+    seed_save_lifecycle_fixture markdown
+    run_save_lifecycle_plan markdown-save
+    capture_save_lifecycle_stage markdown-save
+
+    run_save_lifecycle_plan close-clean close-clean-1
+    seed_save_lifecycle_fixture table
+    run_save_lifecycle_plan table-save
+    capture_save_lifecycle_stage table-save
+
+    run_save_lifecycle_plan close-clean close-clean-2
+    seed_save_lifecycle_fixture conflict
+    run_save_lifecycle_plan conflict-open
+    capture_save_lifecycle_stage conflict-open
+    replace_save_lifecycle_external_file conflict
+    run_save_lifecycle_plan conflict-save
+    capture_save_lifecycle_stage conflict-save
+    run_save_lifecycle_plan save-as-new
+    capture_save_lifecycle_stage save-as-new
+
+    run_save_lifecycle_plan close-clean close-clean-3
+    seed_save_lifecycle_fixture conflict
+    run_save_lifecycle_plan conflict-open conflict-open-current
+    replace_save_lifecycle_external_file conflict
+    run_save_lifecycle_plan conflict-save-as-current
+    capture_save_lifecycle_stage conflict-save-as-current
+    run_save_lifecycle_plan conflict-save-as-symlink
+    capture_save_lifecycle_stage conflict-save-as-symlink
+
+    run_save_lifecycle_plan discard-dirty-close
+    seed_save_lifecycle_fixture session
+    run_save_lifecycle_plan session-draft
+    capture_save_lifecycle_stage session-draft
+    local termination_dir="$SIZE_DIR/save-lifecycle/terminate-dirty-session"
+    mkdir -p "$termination_dir"
+    normal_terminate_current_app "$termination_dir/termination-report.json"
+    replace_save_lifecycle_external_file session
+    launch_restored_visual_session "$termination_dir/relaunch.log"
+    run_save_lifecycle_plan restored-conflict-save
+    capture_save_lifecycle_stage restored-conflict-save
+
+    seed_save_lifecycle_fixture plain
+    run_save_lifecycle_plan plain-open-diagnostic
+    capture_save_lifecycle_stage plain-open-diagnostic
+    run_save_lifecycle_plan plain-save
+    capture_save_lifecycle_stage plain-save
+    write_save_lifecycle_aggregate_evidence
+}
+
 run_foreground_smoke() {
     case "$FOREGROUND_BATCH_NAME" in
         palette-find) run_foreground_palette_find ;;
@@ -4626,6 +5013,7 @@ run_foreground_smoke() {
         sidebar-filter-navigation) run_foreground_sidebar_filter_navigation ;;
         sidebar-layout-controls) run_foreground_sidebar_layout_controls ;;
         tab-session-lifecycle) run_foreground_tab_session_lifecycle ;;
+        save-lifecycle) run_foreground_save_lifecycle ;;
         table-controls) run_foreground_table_controls ;;
         table-navigation) run_foreground_table_navigation ;;
         editor-structure) run_foreground_editor_structure ;;
@@ -5104,7 +5492,8 @@ for SIZE in "${SIZES[@]}"; do
     if [[ "$FOREGROUND_BATCH_NAME" == "block-activation" \
         || "$FOREGROUND_BATCH_NAME" == "sidebar-filter-navigation" \
         || "$FOREGROUND_BATCH_NAME" == "sidebar-layout-controls" \
-        || "$FOREGROUND_BATCH_NAME" == "tab-session-lifecycle" ]]; then
+        || "$FOREGROUND_BATCH_NAME" == "tab-session-lifecycle" \
+        || "$FOREGROUND_BATCH_NAME" == "save-lifecycle" ]]; then
         FOREGROUND_LAUNCH_OPTIONS=(
             --visual-test-state default
             --visual-test-scroll 0
@@ -5145,6 +5534,10 @@ for SIZE in "${SIZES[@]}"; do
             --visual-test-scroll 500
         )
     fi
+    FOREGROUND_HUD_OPTIONS=(--visual-test-hide-hud)
+    if [[ "$FOREGROUND_BATCH_NAME" == "save-lifecycle" ]]; then
+        FOREGROUND_HUD_OPTIONS=(--show-hud)
+    fi
     : > "$SIZE_DIR/launch.log"
     LAUNCH_SUCCEEDED=0
     for attempt in 1 2 3; do
@@ -5157,7 +5550,7 @@ for SIZE in "${SIZES[@]}"; do
             --visual-test-root "$PROFILE_ROOT" \
             --visual-test-size "$SIZE" \
             "${FOREGROUND_LAUNCH_OPTIONS[@]}" \
-            --visual-test-hide-hud \
+            "${FOREGROUND_HUD_OPTIONS[@]}" \
             >> "$SIZE_DIR/launch.log" 2>&1; then
             LAUNCH_SUCCEEDED=1
             break

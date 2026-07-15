@@ -1,12 +1,31 @@
 import Foundation
 import SwiftUI
 
+struct DebugDiagnosticActiveDocument: Equatable {
+    let id: UUID
+    let isMarkdown: Bool
+}
+
 enum DebugDiagnosticPublicationPolicy {
     static func allowsPublication(
         mountedDocumentID: UUID,
         activeDocumentID: UUID?
     ) -> Bool {
         mountedDocumentID == activeDocumentID
+    }
+
+    static func allowsUnscopedPublication(
+        mode: String,
+        activeDocument: DebugDiagnosticActiveDocument?
+    ) -> Bool {
+        switch mode {
+        case "source":
+            return activeDocument?.isMarkdown == false
+        case "empty":
+            return activeDocument == nil
+        default:
+            return activeDocument?.isMarkdown == true
+        }
     }
 }
 
@@ -171,6 +190,27 @@ struct DebugDiagnosticSnapshot: Codable, Equatable {
         case activeBlockRenderUpdateCount, renderedBlockUpdates, visual, updatedAt
     }
 
+    var hudText: String {
+        let selectionText = selection.map { "\($0.location),\($0.length)" } ?? "none"
+        let tableText = activeTableCell.map { "\($0.row),\($0.column)" } ?? "none"
+        return [
+            "doc=\(document)",
+            "block=\(blockID ?? "none")",
+            "type=\(blockType ?? "none")",
+            "mode=\(mode)",
+            "table=\(tableText)",
+            "selection=\(selectionText)",
+            "dirty=\(dirty)",
+            "find=\(find.display)",
+            "outline=\(outline.headingCount)/\(outline.activeIndex)",
+            "scroll=\(Int(scrollY))",
+            "session=\(sessionPath)",
+            "parse=\(parseCount)",
+            "local=\(localMutationCount)",
+            "render=\(renderedBlockUpdateCount)",
+        ].joined(separator: " · ")
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(schemaVersion, forKey: .schemaVersion)
@@ -283,6 +323,21 @@ struct DebugDiagnosticSnapshot: Codable, Equatable {
 }
 
 @MainActor
+enum DebugDiagnosticSurfacePublisher {
+    static func publishPlainSource(
+        _ snapshot: DebugDiagnosticSnapshot,
+        documentID: UUID,
+        writer: DebugDiagnosticWriter,
+        hud: DiagModel
+    ) {
+        hud.text = snapshot.hudText
+        hud.findText = ""
+        hud.findDetail = ""
+        writer.update(snapshot, for: documentID)
+    }
+}
+
+@MainActor
 final class DebugDiagnosticWriter {
     static let shared = DebugDiagnosticWriter(fileURL: AppEnv.diagnosticStateFileURL)
 
@@ -292,6 +347,7 @@ final class DebugDiagnosticWriter {
     private var renderUpdates: [String: Int] = [:]
     private var visual = DebugDiagnosticVisualState.empty
     private var writeWork: DispatchWorkItem?
+    private var activeDocumentProvider: (() -> DebugDiagnosticActiveDocument?)?
 
     init(fileURL: URL?, writeDelay: TimeInterval = 0.05) {
         self.fileURL = fileURL
@@ -307,12 +363,45 @@ final class DebugDiagnosticWriter {
         return renderUpdates[blockID.uuidString, default: 0]
     }
 
+    func installActiveDocumentProvider(
+        _ provider: @escaping () -> DebugDiagnosticActiveDocument?
+    ) {
+        activeDocumentProvider = provider
+    }
+
+    func activeDocumentDidChange() {
+        guard let activeDocumentProvider,
+              activeDocumentProvider()?.isMarkdown != true else { return }
+        visual.anchors.removeValue(forKey: "source-editor-frame")
+        visual.anchors.removeValue(forKey: "table-grid-frame")
+        refreshDerivedVisualState()
+    }
+
     func update(_ snapshot: DebugDiagnosticSnapshot) {
+        guard allowsUnscopedPublication(snapshot) else { return }
+        accept(snapshot)
+    }
+
+    func update(_ snapshot: DebugDiagnosticSnapshot, for mountedDocumentID: UUID) {
+        if let activeDocumentProvider {
+            guard DebugDiagnosticPublicationPolicy.allowsPublication(
+                mountedDocumentID: mountedDocumentID,
+                activeDocumentID: activeDocumentProvider()?.id
+            ) else { return }
+        }
+        accept(snapshot)
+    }
+
+    private func accept(_ snapshot: DebugDiagnosticSnapshot) {
         latest = snapshotWithRenderCounts(snapshot)
         scheduleWrite()
     }
 
     func recordBlockRender(_ blockID: UUID) {
+        if let activeDocumentProvider,
+           activeDocumentProvider()?.isMarkdown != true {
+            return
+        }
         renderUpdates[blockID.uuidString, default: 0] += 1
         if let latest {
             self.latest = snapshotWithRenderCounts(latest)
@@ -344,6 +433,12 @@ final class DebugDiagnosticWriter {
     }
 
     func updateVisualAnchor(_ name: String, frame: CGRect?) {
+        if frame != nil,
+           name == "source-editor-frame" || name == "table-grid-frame",
+           let activeDocumentProvider,
+           activeDocumentProvider()?.isMarkdown != true {
+            return
+        }
         if let frame {
             visual.anchors[name] = DebugDiagnosticRect(frame)
         } else {
@@ -388,6 +483,16 @@ final class DebugDiagnosticWriter {
     private func refreshDerivedVisualState() {
         visual.sourceEditorVisible = visual.anchors["source-editor-frame"] != nil
         visual.tableGridVisible = visual.anchors["table-grid-frame"] != nil
+    }
+
+    private func allowsUnscopedPublication(
+        _ snapshot: DebugDiagnosticSnapshot
+    ) -> Bool {
+        guard let activeDocumentProvider else { return true }
+        return DebugDiagnosticPublicationPolicy.allowsUnscopedPublication(
+            mode: snapshot.mode,
+            activeDocument: activeDocumentProvider()
+        )
     }
 
     private func scheduleWrite() {

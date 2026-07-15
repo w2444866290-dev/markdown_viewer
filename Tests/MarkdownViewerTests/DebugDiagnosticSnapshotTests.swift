@@ -24,6 +24,99 @@ struct DebugDiagnosticSnapshotTests {
     }
 
     @Test
+    func plainSourceMountPublishesCompleteSnapshotAndHUDImmediately() {
+        let documentID = UUID()
+        let writer = DebugDiagnosticWriter(fileURL: nil)
+        writer.installActiveDocumentProvider {
+            DebugDiagnosticActiveDocument(id: documentID, isMarkdown: false)
+        }
+        let hud = DiagModel()
+        let snapshot = DebugDiagnosticSnapshot.plainSource(
+            document: "plain.txt",
+            selection: NSRange(location: 5, length: 2),
+            dirty: true,
+            find: emptyFindState(),
+            scrollY: 18,
+            sessionPath: "/tmp/session.json"
+        )
+        DebugDiagnosticSurfacePublisher.publishPlainSource(
+            snapshot,
+            documentID: documentID,
+            writer: writer,
+            hud: hud
+        )
+
+        #expect(snapshot.document == "plain.txt")
+        #expect(snapshot.mode == "source")
+        #expect(snapshot.dirty)
+        #expect(snapshot.selection == DebugDiagnosticSelection(location: 5, length: 2))
+        #expect(snapshot.scrollY == 18)
+        #expect(snapshot.sessionPath == "/tmp/session.json")
+        #expect(hud.text.contains("doc=plain.txt"))
+        #expect(hud.text.contains("mode=source"))
+        #expect(hud.findText.isEmpty)
+        #expect(hud.findDetail.isEmpty)
+    }
+
+    @Test
+    func writerRejectsStaleMarkdownAndWrongPlainIdentityAfterPlainSwitch() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MarkdownViewerDiagnosticGateTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = root.appendingPathComponent("state.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let markdownID = UUID()
+        let plainID = UUID()
+        let writer = DebugDiagnosticWriter(fileURL: fileURL, writeDelay: 3_600)
+        var activeDocument = DebugDiagnosticActiveDocument(
+            id: markdownID,
+            isMarkdown: true
+        )
+        writer.installActiveDocumentProvider {
+            activeDocument
+        }
+        writer.update(snapshot(blockID: UUID()))
+        try writer.flush()
+        #expect(try decode(from: fileURL).document == "fixture.md")
+
+        activeDocument = DebugDiagnosticActiveDocument(id: plainID, isMarkdown: false)
+        writer.activeDocumentDidChange()
+        writer.update(.plainSource(
+            document: "plain.txt",
+            selection: NSRange(location: 0, length: 0),
+            dirty: false,
+            find: emptyFindState(),
+            scrollY: 0,
+            sessionPath: "/tmp/session.json"
+        ), for: plainID)
+
+        writer.update(snapshot(blockID: UUID()))
+        writer.update(.plainSource(
+            document: "stale.txt",
+            selection: nil,
+            dirty: true,
+            find: emptyFindState(),
+            scrollY: 90,
+            sessionPath: "/tmp/stale-session.json"
+        ), for: markdownID)
+        writer.recordBlockRender(UUID())
+        writer.updateVisualAnchor(
+            "table-grid-frame",
+            frame: CGRect(x: 10, y: 20, width: 300, height: 120)
+        )
+        try writer.flush()
+
+        let persisted = try decode(from: fileURL)
+        #expect(persisted.document == "plain.txt")
+        #expect(persisted.mode == "source")
+        #expect(!persisted.dirty)
+        #expect(persisted.renderedBlockUpdateCount == 0)
+        #expect(!persisted.visual.tableGridVisible)
+        #expect(persisted.visual.anchors["table-grid-frame"] == nil)
+    }
+
+    @Test
     func writerPersistsStructuredStateAndPerBlockRenderCounts() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("MarkdownViewerDiagnosticTests", isDirectory: true)

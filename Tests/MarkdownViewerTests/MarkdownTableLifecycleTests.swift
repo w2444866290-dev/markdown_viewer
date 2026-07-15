@@ -248,6 +248,7 @@ struct MarkdownTableLifecycleTests {
             sessionSaveDelay: 3_600
         )
         let documentURL = root.appendingPathComponent("table.md")
+        try Data(source.utf8).write(to: documentURL)
         manager.openTab(for: documentURL, text: source)
         let tab = try #require(manager.activeTab)
         let store = manager.blockEditorStore(for: tab)
@@ -293,8 +294,9 @@ struct MarkdownTableLifecycleTests {
         await drainMainQueue()
 
         var writtenText: String?
-        #expect(manager.saveActiveDocument { text, _ in
+        #expect(manager.saveActiveDocument { text, url in
             writtenText = text
+            try Data(text.utf8).write(to: url)
         })
         #expect(writtenText == expected)
         #expect(store.source == expected)
@@ -394,6 +396,40 @@ struct MarkdownTableLifecycleTests {
         }
     }
 
+    @Test("failed save keeps marked table text and focused native cell")
+    func failedSavePreservesMarkedTableEditor() throws {
+        enum WriteFailure: Error { case expected }
+        let root = try temporaryRoot(named: "failed-save")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = DocumentManager(
+            sessionURL: root.appendingPathComponent("session.json"),
+            sessionSaveDelay: 3_600
+        )
+        let documentURL = root.appendingPathComponent("table.md")
+        let source = "| Name |\n| --- |\n| old |"
+        try Data(source.utf8).write(to: documentURL)
+        manager.openTab(for: documentURL, text: source)
+        let tab = try #require(manager.activeTab)
+        let store = manager.blockEditorStore(for: tab)
+        let tableID = try #require(store.document.blocks.first?.id)
+        let cell = MarkdownTableCell(row: 0, column: 0)
+        store.beginTableEditing(blockID: tableID, cell: cell)
+        let liveField = try LiveTableField(store: store, cell: cell, value: "old")
+        defer { liveField.teardown() }
+        liveField.appendMarkedText("输入")
+
+        #expect(!manager.saveActiveDocument { _, _ in throw WriteFailure.expected })
+
+        #expect(manager.lastSaveFailure == .writeFailed)
+        #expect(liveField.hasMarkedText)
+        #expect(store.activeTableID == tableID)
+        #expect(store.activeTableCell == cell)
+        #expect(store.snapshotDocument().source.contains("old输入"))
+        #expect(manager.activeTab?.text.contains("old输入") == true)
+        #expect(manager.activeTab?.isDirty == true)
+        #expect(try Data(contentsOf: documentURL) == Data(source.utf8))
+    }
+
     @Test
     func escapeFlushesTheLiveFieldBeforeTableStateIsCleared() throws {
         let original = MarkdownDocument(source: "| Name |\n| --- |\n| old |")
@@ -430,6 +466,7 @@ struct MarkdownTableLifecycleTests {
         )
         let documentURL = root.appendingPathComponent("table.md")
         let source = "| Name |\n| --- |\n| old |"
+        try Data(source.utf8).write(to: documentURL)
         manager.openTab(for: documentURL, text: source)
         let tab = try #require(manager.activeTab)
         let store = manager.blockEditorStore(for: tab)
@@ -449,8 +486,9 @@ struct MarkdownTableLifecycleTests {
             manager.togglePreviewMode()
             #expect(manager.previewMode)
         case .save:
-            #expect(manager.saveActiveDocument { text, _ in
+            #expect(manager.saveActiveDocument { text, url in
                 writtenText = text
+                try Data(text.utf8).write(to: url)
             })
         case .tabSwitch:
             manager.openTab(
@@ -463,9 +501,15 @@ struct MarkdownTableLifecycleTests {
             #expect(manager.confirmingCloseTabID == tab.id)
         }
 
-        #expect(!liveField.hasMarkedText)
-        #expect(store.activeTableID == nil)
-        #expect(store.tableDraft == nil)
+        if boundary == .save {
+            #expect(liveField.hasMarkedText)
+            #expect(store.activeTableID == tableID)
+            #expect(store.activeTableCell == cell)
+        } else {
+            #expect(!liveField.hasMarkedText)
+            #expect(store.activeTableID == nil)
+            #expect(store.tableDraft == nil)
+        }
         #expect(try store.document.tableGrid(for: tableID).rows == [["old输入"]])
         #expect(manager.tabs.first(where: { $0.id == tab.id })?.text.contains("old输入") == true)
         if boundary == .tabSwitch {
@@ -477,6 +521,7 @@ struct MarkdownTableLifecycleTests {
         if boundary == .save {
             #expect(writtenText?.contains("old输入") == true)
             #expect(manager.tabs.first(where: { $0.id == tab.id })?.isDirty == false)
+            #expect(try String(contentsOf: documentURL, encoding: .utf8).contains("old输入"))
         }
     }
 

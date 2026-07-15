@@ -51,6 +51,7 @@ struct SessionStoreTests {
         #expect(tab.isMarkdown)
         #expect(tab.scrollY == 417.25)
         #expect(tab.markdownDocument?.source == tab.text)
+        #expect(tab.diskBaseline == nil)
     }
 
     @Test
@@ -69,7 +70,11 @@ struct SessionStoreTests {
             isDirty: false,
             isMarkdown: true,
             scrollY: 12.75,
-            hasUTF8BOM: true
+            hasUTF8BOM: true,
+            diskBaseline: DocumentDiskBaseline(
+                canonicalPath: "/tmp/README.mdx",
+                bytes: Data([0xEF, 0xBB, 0xBF] + Array("# Saved".utf8))
+            )
         )
         let second = DocumentTab(
             id: secondID,
@@ -559,6 +564,7 @@ struct SessionStoreTests {
         #expect(actual.text == expected.text)
         #expect(actual.isDirty == expected.isDirty)
         #expect(actual.hasUTF8BOM == expected.hasUTF8BOM)
+        #expect(actual.diskBaseline == expected.diskBaseline)
         #expect(actual.isMarkdown == expected.isMarkdown)
         #expect(actual.markdownDocument == expected.markdownDocument)
         #expect(actual.scrollY == expected.scrollY)

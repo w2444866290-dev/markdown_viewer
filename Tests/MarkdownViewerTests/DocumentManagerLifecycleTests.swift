@@ -523,6 +523,187 @@ struct DocumentManagerLifecycleTests {
         }
     }
 
+    @Test("ordinary save rejects external byte changes and preserves the live block draft")
+    func ordinarySaveRejectsExternalChangeWithoutEndingBlockEditing() throws {
+        try withTemporaryRoot { root in
+            let url = root.appendingPathComponent("conflict.md")
+            try Data("before\r\n".utf8).write(to: url)
+            let manager = makeManager(root)
+            guard case .openedFile = manager.openSelection(url, admission: .system) else {
+                Issue.record("fixture did not open")
+                return
+            }
+            let tab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: tab)
+            let blockID = try #require(store.document.blocks.first?.id)
+            store.beginSourceEditing(blockID: blockID)
+            store.updateActiveDraft("local draft", selection: NSRange(location: 5, length: 0))
+            try Data("external\nchange".utf8).write(to: url)
+
+            #expect(!manager.saveActiveDocument())
+
+            #expect(manager.lastSaveFailure == .conflict(.modified))
+            #expect(manager.activeTab?.text == "local draft\r\n")
+            #expect(manager.activeTab?.isDirty == true)
+            #expect(store.activeBlockID == blockID)
+            #expect(store.snapshotSelection == NSRange(location: 5, length: 0))
+            #expect(store.snapshotDocument().source == "local draft\r\n")
+            #expect(try Data(contentsOf: url) == Data("external\nchange".utf8))
+        }
+    }
+
+    @Test("deleted and unreadable current files reject ordinary save before the writer")
+    func unavailableCurrentFileRejectsOrdinarySave() throws {
+        try withTemporaryRoot { root in
+            for unavailable in [ExternalFileConflict.deleted, .unreadable] {
+                let url = root.appendingPathComponent(unavailable == .deleted ? "deleted.md" : "unreadable.md")
+                try Data("baseline".utf8).write(to: url)
+                let manager = makeManager(root)
+                guard case .openedFile = manager.openSelection(url, admission: .system) else {
+                    Issue.record("fixture did not open")
+                    return
+                }
+                manager.pullActiveText = { "draft" }
+                manager.markActiveDirty()
+                if unavailable == .deleted {
+                    try FileManager.default.removeItem(at: url)
+                } else {
+                    try FileManager.default.removeItem(at: url)
+                    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+                }
+                var writeCount = 0
+
+                #expect(!manager.saveActiveDocument { _, _ in writeCount += 1 })
+                #expect(manager.lastSaveFailure == .conflict(unavailable))
+                #expect(manager.activeTab?.text == "draft")
+                #expect(manager.activeTab?.isDirty == true)
+                #expect(writeCount == 0)
+            }
+        }
+    }
+
+    @Test("save as through a symlink to the current file cannot bypass conflict detection")
+    func saveAsCurrentSymlinkStillChecksBaseline() throws {
+        try withTemporaryRoot { root in
+            let url = root.appendingPathComponent("current.md")
+            let alias = root.appendingPathComponent("alias.md")
+            try Data("baseline".utf8).write(to: url)
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: url)
+            let manager = makeManager(root)
+            guard case .openedFile = manager.openSelection(url, admission: .system) else {
+                Issue.record("fixture did not open")
+                return
+            }
+            manager.pullActiveText = { "local draft" }
+            manager.markActiveDirty()
+            try Data("external".utf8).write(to: url)
+            var writeCount = 0
+
+            #expect(!manager.saveActiveDocument(to: alias) { _, _ in writeCount += 1 })
+
+            #expect(manager.lastSaveFailure == .conflict(.modified))
+            #expect(writeCount == 0)
+            #expect(manager.activeTab?.url == url)
+            #expect(manager.activeTab?.text == "local draft")
+            #expect(try Data(contentsOf: url) == Data("external".utf8))
+        }
+    }
+
+    @Test("save as to a different canonical path succeeds despite a current-file conflict")
+    func saveAsNewPathEscapesConflictWithoutChangingOriginal() throws {
+        try withTemporaryRoot { root in
+            let original = root.appendingPathComponent("original.md")
+            let destination = root.appendingPathComponent("copy.md")
+            try Data("baseline".utf8).write(to: original)
+            let manager = makeManager(root)
+            guard case .openedFile = manager.openSelection(original, admission: .system) else {
+                Issue.record("fixture did not open")
+                return
+            }
+            manager.pullActiveText = { "local draft\r\n" }
+            manager.markActiveDirty()
+            try Data("external".utf8).write(to: original)
+
+            #expect(manager.saveActiveDocument(to: destination))
+
+            #expect(manager.lastSaveFailure == nil)
+            #expect(manager.activeTab?.url == destination)
+            #expect(manager.activeTab?.text == "local draft\r\n")
+            #expect(manager.activeTab?.isDirty == false)
+            #expect(try Data(contentsOf: original) == Data("external".utf8))
+            #expect(try Data(contentsOf: destination) == Data("local draft\r\n".utf8))
+        }
+    }
+
+    @Test("dirty session keeps its byte baseline while a legacy dirty session fails safely")
+    func dirtyAndLegacySessionBaselineSafety() throws {
+        try withTemporaryRoot { root in
+            let url = root.appendingPathComponent("session.md")
+            try Data("baseline".utf8).write(to: url)
+            let first = makeManager(root)
+            guard case .openedFile = first.openSelection(url, admission: .system) else {
+                Issue.record("fixture did not open")
+                return
+            }
+            first.pullActiveText = { "session draft" }
+            first.markActiveDirty()
+            let dirtySession = first.snapshotSession()
+            try Data("external".utf8).write(to: url)
+
+            let restored = makeManager(root)
+            restored.restore(from: dirtySession)
+            #expect(!restored.saveActiveDocument())
+            #expect(restored.lastSaveFailure == .conflict(.modified))
+            #expect(restored.activeTab?.text == "session draft")
+            #expect(restored.activeTab?.isDirty == true)
+
+            var legacy = try #require(dirtySession.tabs.first)
+            legacy.diskBaseline = nil
+            let legacySession = Session(
+                tabs: [legacy],
+                activeTabID: legacy.id,
+                fontIndex: 1,
+                sidebarWidth: 216,
+                sidebarOpen: true,
+                directoryPath: nil
+            )
+            let legacyRestored = makeManager(root)
+            legacyRestored.restore(from: legacySession)
+
+            #expect(!legacyRestored.saveActiveDocument())
+            #expect(legacyRestored.lastSaveFailure == .conflict(.baselineUnknown))
+            let copy = root.appendingPathComponent("legacy-copy.md")
+            #expect(legacyRestored.saveActiveDocument(to: copy))
+            #expect(try Data(contentsOf: copy) == Data("session draft".utf8))
+            #expect(try Data(contentsOf: url) == Data("external".utf8))
+        }
+    }
+
+    @Test("clean session reload adopts a fresh byte baseline")
+    func cleanSessionRestoreAdoptsFreshDiskBaseline() throws {
+        try withTemporaryRoot { root in
+            let url = root.appendingPathComponent("clean-baseline.md")
+            try Data("first\n".utf8).write(to: url)
+            let first = makeManager(root)
+            guard case .openedFile = first.openSelection(url, admission: .system) else {
+                Issue.record("fixture did not open")
+                return
+            }
+            let session = first.snapshotSession()
+            try Data("second\r\n".utf8).write(to: url)
+
+            let restored = makeManager(root)
+            restored.restore(from: session)
+            #expect(restored.activeTab?.text == "second\r\n")
+            restored.pullActiveText = { "third\r\n" }
+            restored.markActiveDirty()
+
+            #expect(restored.saveActiveDocument())
+            #expect(try Data(contentsOf: url) == Data("third\r\n".utf8))
+            #expect(restored.activeTab?.isDirty == false)
+        }
+    }
+
     @Test
     func restoreKeepsDirtyBlockStateAndRecoversFromMissingWorkspace() throws {
         try withTemporaryRoot { root in
@@ -712,6 +893,34 @@ struct DocumentManagerLifecycleTests {
         }
     }
 
+    @Test("save preserves LF, mixed line endings, and final-newline presence")
+    func savePreservesLineEndingBytesAndFinalNewline() throws {
+        try withTemporaryRoot { root in
+            let fixtures: [(String, String)] = [
+                ("first\n\nsecond", "changed\n\nsecond"),
+                ("first\n\nsecond\n", "changed\n\nsecond\n"),
+                ("first\r\n\r\nsecond\n", "changed\r\n\r\nsecond\n"),
+            ]
+            for (index, fixture) in fixtures.enumerated() {
+                let url = root.appendingPathComponent("line-endings-\(index).md")
+                try Data(fixture.0.utf8).write(to: url)
+                let manager = makeManager(root)
+                guard case .openedFile = manager.openSelection(url, admission: .system) else {
+                    Issue.record("line-ending fixture did not open")
+                    continue
+                }
+                let tab = try #require(manager.activeTab)
+                let store = manager.blockEditorStore(for: tab)
+                let blockID = try #require(store.document.blocks.first?.id)
+                store.beginSourceEditing(blockID: blockID)
+                store.updateActiveDraft("changed")
+
+                #expect(manager.saveActiveDocument())
+                #expect(try Data(contentsOf: url) == Data(fixture.1.utf8))
+            }
+        }
+    }
+
     @Test
     func undoAndRedoUseBlockStoreWhenFirstResponderDoesNotHandleAction() throws {
         try withTemporaryRoot { root in
@@ -765,6 +974,7 @@ struct DocumentManagerLifecycleTests {
         #expect(actual.text == expected.text)
         #expect(actual.isDirty == expected.isDirty)
         #expect(actual.hasUTF8BOM == expected.hasUTF8BOM)
+        #expect(actual.diskBaseline == expected.diskBaseline)
         #expect(actual.isMarkdown == expected.isMarkdown)
         #expect(actual.markdownDocument == expected.markdownDocument)
         #expect(actual.scrollY == expected.scrollY)

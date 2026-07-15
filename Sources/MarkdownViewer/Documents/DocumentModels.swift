@@ -1,7 +1,27 @@
+import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
 // MARK: - Models
+
+struct DocumentDiskBaseline: Codable, Equatable {
+    let canonicalPath: String
+    let bytes: Data
+}
+
+enum ExternalFileConflict: Equatable {
+    case modified
+    case deleted
+    case unreadable
+    case baselineUnknown
+}
+
+enum DocumentSaveFailure: Equatable {
+    case conflict(ExternalFileConflict)
+    case unsupportedDestination
+    case destinationAlreadyOpen
+    case writeFailed
+}
 
 struct FileNode: Identifiable {
     let url: URL
@@ -23,6 +43,9 @@ struct DocumentTab: Identifiable, Codable {
     /// Whether the file was opened with a UTF-8 byte-order mark.
     /// Kept separately from `text` because Foundation removes the marker while decoding.
     var hasUTF8BOM: Bool = false
+    /// Exact bytes and canonical identity observed at the last successful open or save.
+    /// A missing value is intentionally untrusted and blocks ordinary saves.
+    var diskBaseline: DocumentDiskBaseline?
     /// Whether the document renders as live Markdown. Derived from the file
     /// extension: `.md`/`.markdown` → true; untitled/new docs (url == nil) → true;
     /// everything else (e.g. .yaml/.json) → false, shown as plain source.
@@ -45,13 +68,15 @@ struct DocumentTab: Identifiable, Codable {
     init(id: UUID = UUID(), url: URL?, name: String, text: String,
          isDirty: Bool, isMarkdown: Bool = true, scrollY: CGFloat = 0,
          selectionLocation: Int = 0, selectionLength: Int = 0,
-         markdownDocument: MarkdownDocument? = nil, hasUTF8BOM: Bool = false) {
+         markdownDocument: MarkdownDocument? = nil, hasUTF8BOM: Bool = false,
+         diskBaseline: DocumentDiskBaseline? = nil) {
         self.id = id
         self.url = url
         self.name = name
         self.text = text
         self.isDirty = isDirty
         self.hasUTF8BOM = hasUTF8BOM
+        self.diskBaseline = diskBaseline
         self.isMarkdown = url.map { DocumentFormat(url: $0).isMarkdownRendered }
             ?? isMarkdown
         self.scrollY = scrollY
@@ -74,6 +99,7 @@ struct DocumentTab: Identifiable, Codable {
     enum CodingKeys: String, CodingKey {
         case id, url, name, text, isDirty, isMarkdown, scrollY
         case selectionLocation, selectionLength, markdownDocument, hasUTF8BOM
+        case diskBaseline
     }
 
     init(from decoder: Decoder) throws {
@@ -89,6 +115,10 @@ struct DocumentTab: Identifiable, Codable {
         text = try c.decode(String.self, forKey: .text)
         isDirty = try c.decode(Bool.self, forKey: .isDirty)
         hasUTF8BOM = try c.decodeIfPresent(Bool.self, forKey: .hasUTF8BOM) ?? false
+        diskBaseline = try c.decodeIfPresent(
+            DocumentDiskBaseline.self,
+            forKey: .diskBaseline
+        )
         let persistedMarkdown = try c.decodeIfPresent(Bool.self, forKey: .isMarkdown)
         isMarkdown = url.map { DocumentFormat(url: $0).isMarkdownRendered }
             ?? persistedMarkdown
@@ -129,6 +159,7 @@ struct DocumentTab: Identifiable, Codable {
         try c.encode(text, forKey: .text)
         try c.encode(isDirty, forKey: .isDirty)
         try c.encode(hasUTF8BOM, forKey: .hasUTF8BOM)
+        try c.encodeIfPresent(diskBaseline, forKey: .diskBaseline)
         try c.encode(isMarkdown, forKey: .isMarkdown)
         try c.encode(scrollY, forKey: .scrollY)
         try c.encode(selectionLocation, forKey: .selectionLocation)

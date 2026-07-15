@@ -18,12 +18,73 @@ struct BlockSourceLifecycleTests {
     }
 
     @Test
-    func explicitBoundariesFlushMarkedTextBeforeCommitting() throws {
+    func explicitBoundariesSynchronizeMarkedText() throws {
         for boundary in ExplicitBoundary.allCases {
             let root = try temporaryRoot(named: boundary.rawValue)
             defer { try? FileManager.default.removeItem(at: root) }
             try expectMarkedTextFlush(at: boundary, root: root)
         }
+    }
+
+    @Test("failed save keeps marked source text and native editing state")
+    func failedSavePreservesMarkedSourceEditor() throws {
+        enum WriteFailure: Error { case expected }
+        let root = try temporaryRoot(named: "failed-save")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = makeManager(
+            root: root,
+            sessionURL: root.appendingPathComponent("session.json"),
+            delay: 3_600
+        )
+        let documentURL = root.appendingPathComponent("source.md")
+        try Data("before".utf8).write(to: documentURL)
+        manager.openTab(for: documentURL, text: "before")
+        let tab = try #require(manager.activeTab)
+        let store = manager.blockEditorStore(for: tab)
+        let blockID = try #require(store.document.blocks.first?.id)
+        store.beginSourceEditing(blockID: blockID)
+        let editor = LiveEditor(store: store, blockID: blockID)
+        defer { editor.teardown() }
+        editor.appendMarkedText("输入")
+
+        #expect(!manager.saveActiveDocument { _, _ in throw WriteFailure.expected })
+
+        #expect(manager.lastSaveFailure == .writeFailed)
+        #expect(editor.textView.hasMarkedText())
+        #expect(store.activeBlockID == blockID)
+        #expect(store.snapshotDocument().source == "before输入")
+        #expect(manager.activeTab?.text == "before输入")
+        #expect(manager.activeTab?.isDirty == true)
+        #expect(try Data(contentsOf: documentURL) == Data("before".utf8))
+    }
+
+    @Test("saving an expanded block snapshot does not become dirty again on editor teardown")
+    func expandedBlockSaveAcceptsDurableSnapshot() throws {
+        let root = try temporaryRoot(named: "expanded-save")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = makeManager(
+            root: root,
+            sessionURL: root.appendingPathComponent("session.json"),
+            delay: 3_600
+        )
+        let documentURL = root.appendingPathComponent("source.md")
+        try Data("before".utf8).write(to: documentURL)
+        manager.openTab(for: documentURL, text: "before")
+        let tab = try #require(manager.activeTab)
+        let store = manager.blockEditorStore(for: tab)
+        let blockID = try #require(store.document.blocks.first?.id)
+        store.beginSourceEditing(blockID: blockID)
+        let editor = LiveEditor(store: store, blockID: blockID)
+        editor.replaceText("first\n\nsecond")
+
+        #expect(manager.saveActiveDocument())
+        #expect(store.activeBlockID == nil)
+        #expect(store.source == "first\n\nsecond")
+        #expect(manager.activeTab?.isDirty == false)
+        editor.teardown()
+
+        #expect(manager.activeTab?.isDirty == false)
+        #expect(try Data(contentsOf: documentURL) == Data("first\n\nsecond".utf8))
     }
 
     @Test
@@ -146,6 +207,7 @@ struct BlockSourceLifecycleTests {
             delay: 3_600
         )
         let documentURL = root.appendingPathComponent("source.md")
+        try Data("before".utf8).write(to: documentURL)
         manager.openTab(for: documentURL, text: "before")
         let tab = try #require(manager.activeTab)
         let store = manager.blockEditorStore(for: tab)
@@ -161,8 +223,9 @@ struct BlockSourceLifecycleTests {
             manager.togglePreviewMode()
             #expect(manager.previewMode)
         case .save:
-            #expect(manager.saveActiveDocument { text, _ in
+            #expect(manager.saveActiveDocument { text, url in
                 writtenText = text
+                try Data(text.utf8).write(to: url)
             })
         case .tabSwitch:
             manager.openTab(
@@ -176,9 +239,14 @@ struct BlockSourceLifecycleTests {
             #expect(manager.confirmingCloseTabID == tab.id)
         }
 
-        #expect(!editor.textView.hasMarkedText())
+        if boundary == .save {
+            #expect(editor.textView.hasMarkedText())
+            #expect(store.activeBlockID == blockID)
+        } else {
+            #expect(!editor.textView.hasMarkedText())
+            #expect(store.activeBlockID == nil)
+        }
         #expect(store.source == "before输入")
-        #expect(store.activeBlockID == nil)
         #expect(manager.tabs.first(where: { $0.id == tab.id })?.text == "before输入")
         if boundary == .tabSwitch {
             manager.activateTab(tab.id)
@@ -191,6 +259,7 @@ struct BlockSourceLifecycleTests {
         if boundary == .save {
             #expect(writtenText == "before输入")
             #expect(manager.activeTab?.isDirty == false)
+            #expect(try Data(contentsOf: documentURL) == Data("before输入".utf8))
         }
         editor.teardown()
     }
@@ -367,6 +436,15 @@ struct BlockSourceLifecycleTests {
                 ),
                 replacementRange: NSRange(location: NSNotFound, length: 0)
             )
+        }
+
+        func replaceText(_ source: String) {
+            textView.string = source
+            textView.setSelectedRange(NSRange(
+                location: (source as NSString).length,
+                length: 0
+            ))
+            textView.didChangeText()
         }
 
         func teardown() {

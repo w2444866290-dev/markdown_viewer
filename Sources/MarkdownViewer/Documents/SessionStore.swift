@@ -2,7 +2,7 @@ import Foundation
 
 /// A persisted snapshot of where the user left off.
 struct Session: Codable {
-    static let currentSchemaVersion = 3
+    static let currentSchemaVersion = 4
 
     private(set) var schemaVersion: Int
     var tabs: [DocumentTab]

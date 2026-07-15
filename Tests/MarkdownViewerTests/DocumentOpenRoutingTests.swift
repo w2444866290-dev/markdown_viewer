@@ -272,7 +272,10 @@ struct DocumentOpenRoutingTests {
 
             var written = ""
             restored.pullActiveText = { #"{"saved":true}"# }
-            #expect(restored.saveActiveDocument { text, _ in written = text })
+            #expect(restored.saveActiveDocument { text, url in
+                written = text
+                try Data(text.utf8).write(to: url)
+            })
             #expect(written == #"{"saved":true}"#)
             #expect(restored.activeTab?.isDirty == false)
             #expect(restored.activeTab?.markdownDocument == nil)

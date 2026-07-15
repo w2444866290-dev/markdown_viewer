@@ -130,6 +130,10 @@ struct ContentView: View {
     // for the same isolation reason as scrollModel and hoverURL. Writing it on every
     // edit must not re-render ContentView. Only the bottom-left DiagReadout observes it.
     @State private var diag = DiagModel()
+    // Plain-source diagnostics are published by the shell at tab activation time.
+    // Keep their HUD model separate from EditorCoordinator's Markdown restyle probe,
+    // whose delayed callbacks must never replace the active plain-document readout.
+    @State private var nonMarkdownDiag = DiagModel()
     @State private var isDragging = false
     @State private var dropCoordinator = DocumentDropCoordinator()
     @State private var hasInitialized = false
@@ -213,6 +217,9 @@ struct ContentView: View {
                                 diag: diag  // Debug diagnostics
                             )
                             .id(docManager.activeTabID)
+                            .onAppear {
+                                publishNonMarkdownDiagnosticSurfaceIfNeeded()
+                            }
                         }
                     } else {
                         emptyState
@@ -261,7 +268,11 @@ struct ContentView: View {
                 // alone. Gated to Debug diagnostics so normal launches never show it.
                 .overlay(alignment: .bottomLeading) {
                     if AppEnv.diagnosticsVisible {
-                        DiagReadout(model: diag)
+                        DiagReadout(
+                            model: docManager.activeTab?.isMarkdown == false
+                                ? nonMarkdownDiag
+                                : diag
+                        )
                     }
                 }
             }
@@ -375,7 +386,11 @@ struct ContentView: View {
         // findStateToggle closure set in App.swift; lives here because ContentView
         // owns the findState reference passed to the rest of the UI.
         .onAppear { docManager.findStateOpen = { findState.openFind() } }
-        .onAppear { publishVisualDiagnostics() }
+        .onAppear {
+            installDiagnosticPublicationGate()
+            publishNonMarkdownDiagnosticSurfaceIfNeeded()
+            publishVisualDiagnostics()
+        }
         .onChange(of: docManager.sidebarOpen) { _ in publishVisualDiagnostics() }
         .onChange(of: docManager.paletteOpen) { _ in publishVisualDiagnostics() }
         .onChange(of: palettePresentationMode) { _ in publishVisualDiagnostics() }
@@ -384,8 +399,12 @@ struct ContentView: View {
         .onChange(of: findState.showReplace) { _ in publishVisualDiagnostics() }
         .onChange(of: docManager.activeTabID) { documentID in
             resetDocumentModels(for: documentID)
+            DebugDiagnosticWriter.shared.activeDocumentDidChange()
             publishNonMarkdownDiagnosticSurfaceIfNeeded()
             publishVisualDiagnostics()
+        }
+        .onChange(of: docManager.activeTab?.isDirty) { _ in
+            publishNonMarkdownDiagnosticSurfaceIfNeeded()
         }
         .onDisappear { removeShiftMonitor() }
         .onReceive(NotificationCenter.default.publisher(
@@ -448,14 +467,32 @@ struct ContentView: View {
             return
         }
         guard !active.isMarkdown else { return }
-        DebugDiagnosticWriter.shared.update(.plainSource(
+        let snapshot = DebugDiagnosticSnapshot.plainSource(
             document: active.name,
             selection: active.selectionRange,
             dirty: active.isDirty,
             find: find,
             scrollY: Double(active.scrollY),
             sessionPath: SessionStore.fileURL.path
-        ))
+        )
+        DebugDiagnosticSurfacePublisher.publishPlainSource(
+            snapshot,
+            documentID: active.id,
+            writer: .shared,
+            hud: nonMarkdownDiag
+        )
+    }
+
+    private func installDiagnosticPublicationGate() {
+        guard AppEnv.debug else { return }
+        DebugDiagnosticWriter.shared.installActiveDocumentProvider { [weak docManager] in
+            guard let active = docManager?.activeTab else { return nil }
+            return DebugDiagnosticActiveDocument(
+                id: active.id,
+                isMarkdown: active.isMarkdown
+            )
+        }
+        DebugDiagnosticWriter.shared.activeDocumentDidChange()
     }
 
     private func publishVisualDiagnostics() {

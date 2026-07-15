@@ -6,6 +6,44 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PlainSourceFindCoordinatorTests {
+    @Test("plain-source save reads marked text without ending native editing")
+    func savePreservesMarkedPlainSourceEditor() throws {
+        let root = try temporaryRoot(named: "save-marked")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("source.txt")
+        let harness = try makeNativeSaveHarness(source: "before", url: url)
+        defer { harness.teardown() }
+        appendMarkedText("输入", to: harness.textView)
+
+        #expect(harness.manager.saveActiveDocument())
+
+        #expect(harness.textView.hasMarkedText())
+        #expect(harness.textView.string == "before输入")
+        #expect(harness.manager.activeTab?.text == "before输入")
+        #expect(harness.manager.activeTab?.isDirty == false)
+        #expect(try Data(contentsOf: url) == Data("before输入".utf8))
+    }
+
+    @Test("plain-source conflict preserves marked text, draft, and dirty state")
+    func conflictPreservesMarkedPlainSourceEditor() throws {
+        let root = try temporaryRoot(named: "conflict-marked")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("source.txt")
+        let harness = try makeNativeSaveHarness(source: "before", url: url)
+        defer { harness.teardown() }
+        appendMarkedText("输入", to: harness.textView)
+        try Data("external".utf8).write(to: url)
+
+        #expect(!harness.manager.saveActiveDocument())
+
+        #expect(harness.manager.lastSaveFailure == .conflict(.modified))
+        #expect(harness.textView.hasMarkedText())
+        #expect(harness.textView.string == "before输入")
+        #expect(harness.manager.activeTab?.text == "before输入")
+        #expect(harness.manager.activeTab?.isDirty == true)
+        #expect(try Data(contentsOf: url) == Data("external".utf8))
+    }
+
     @Test("plain-source mount recomputes an existing query")
     func mountRecomputesExistingQuery() {
         let state = FindState()
@@ -216,6 +254,91 @@ struct PlainSourceFindCoordinatorTests {
         }
         coordinator.clearPendingEditedRange()
         return (coordinator, textView)
+    }
+
+    private func makeNativeSaveHarness(
+        source: String,
+        url: URL
+    ) throws -> (
+        manager: DocumentManager,
+        textView: PaperTextView,
+        teardown: () -> Void
+    ) {
+        try Data(source.utf8).write(to: url)
+        let manager = DocumentManager(
+            sessionURL: url.deletingLastPathComponent().appendingPathComponent("session.json"),
+            sessionSaveDelay: 3_600
+        )
+        guard case .openedFile = manager.openSelection(url, admission: .system) else {
+            throw NativeSaveHarnessError.openFailed
+        }
+        let findState = FindState()
+        let editor = EditorView(
+            text: source,
+            scrollY: 0,
+            docManager: manager,
+            fontIndex: .constant(1),
+            isMarkdown: false,
+            isPreviewMode: false,
+            findState: findState,
+            bridge: EditorBridge(),
+            scrollModel: ScrollProgressModel(),
+            activeHeadingModel: ActiveHeadingModel(),
+            hoverURL: HoverURLModel(),
+            docMetrics: DocMetricsModel(),
+            diag: DiagModel()
+        )
+        let coordinator = EditorView.Coordinator(editor)
+        let textView = PaperTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 180))
+        textView.delegate = coordinator
+        textView.textStorage?.delegate = coordinator
+        textView.string = source
+        coordinator.textView = textView
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 180),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = textView
+        _ = window.makeFirstResponder(textView)
+        manager.pullActiveText = { [weak textView] in textView?.string ?? "" }
+        manager.pullActiveSelection = { [weak textView] in textView?.selectedRange() }
+        return (
+            manager,
+            textView,
+            {
+                _ = window.makeFirstResponder(nil)
+                window.contentView = nil
+                textView.delegate = nil
+                textView.textStorage?.delegate = nil
+            }
+        )
+    }
+
+    private func appendMarkedText(_ text: String, to textView: NSTextView) {
+        let location = (textView.string as NSString).length
+        textView.setSelectedRange(NSRange(location: location, length: 0))
+        textView.setMarkedText(
+            text,
+            selectedRange: NSRange(location: (text as NSString).length, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+    }
+
+    private enum NativeSaveHarnessError: Error {
+        case openFailed
+    }
+
+    private func temporaryRoot(named name: String) throws -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MarkdownViewerPlainSourceTests", isDirectory: true)
+            .appendingPathComponent(name + "-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        return root
     }
 
     private func expectFlatPlainAttributes(_ textView: NSTextView) {

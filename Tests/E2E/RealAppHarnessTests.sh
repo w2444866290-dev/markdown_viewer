@@ -32,6 +32,7 @@ PYTHONPYCACHEPREFIX="$TEMP_ROOT/pycache" python3 -m py_compile \
     "$ROOT/scripts/e2e/build-foreground-outline-navigation-plan.py" \
     "$ROOT/scripts/e2e/build-foreground-preview-content-plan.py" \
     "$ROOT/scripts/e2e/build-foreground-preview-footnotes-plan.py" \
+    "$ROOT/scripts/e2e/build-foreground-save-lifecycle-plan.py" \
     "$ROOT/scripts/e2e/build-foreground-sidebar-filter-plan.py" \
     "$ROOT/scripts/e2e/build-foreground-sidebar-layout-plan.py" \
     "$ROOT/scripts/e2e/build-foreground-smoke-plan.py" \
@@ -46,6 +47,7 @@ PYTHONPYCACHEPREFIX="$TEMP_ROOT/pycache" python3 -m py_compile \
     "$ROOT/scripts/e2e/verify-foreground-palette-find.py" \
     "$ROOT/scripts/e2e/verify-foreground-preview-content.py" \
     "$ROOT/scripts/e2e/verify-foreground-preview-footnotes.py" \
+    "$ROOT/scripts/e2e/verify-foreground-save-lifecycle.py" \
     "$ROOT/scripts/e2e/verify-foreground-sidebar.py" \
     "$ROOT/scripts/e2e/verify-palette-find-phase.py" \
     "$ROOT/scripts/e2e/verify-sidebar-resize-phase.py" \
@@ -73,6 +75,12 @@ rg -Fq 'postVisualTestActivationRequest(pid: pid, launchToken: launchToken)' \
 rg -Fq 'DistributedNotificationCenter.default().postNotificationName(' \
     "$ROOT/scripts/e2e/RealAppDriver.swift"
 rg -Fq -- '--launch-token "$CURRENT_LAUNCH_TOKEN"' \
+    "$ROOT/scripts/e2e/run-real-app-e2e.sh"
+rg -Fq 'save-lifecycle) run_foreground_save_lifecycle' \
+    "$ROOT/scripts/e2e/run-real-app-e2e.sh"
+rg -Fq 'save-lifecycle is locked to 1180x760' \
+    "$ROOT/scripts/e2e/run-real-app-e2e.sh"
+rg -Fq 'FOREGROUND_HUD_OPTIONS=(--show-hud)' \
     "$ROOT/scripts/e2e/run-real-app-e2e.sh"
 if rg -Fq 'raiseApplicationWindowForForeground' \
         "$ROOT/scripts/e2e/RealAppDriver.swift" \
@@ -1288,6 +1296,271 @@ PY
 )"
 cp "$CACHED_DRIVER" "$TEMP_ROOT/RealAppDriver"
 chmod +x "$TEMP_ROOT/RealAppDriver"
+
+SAVE_LIFECYCLE_PLAN_ROOT="$TEMP_ROOT/foreground-save-lifecycle-plans"
+mkdir -p "$SAVE_LIFECYCLE_PLAN_ROOT/raw"
+for phase in \
+    markdown-save close-clean table-save conflict-open conflict-save \
+    save-as-new conflict-save-as-current conflict-save-as-symlink \
+    discard-dirty-close session-draft restored-conflict-save \
+    plain-open-diagnostic plain-save; do
+    python3 "$ROOT/scripts/e2e/build-foreground-save-lifecycle-plan.py" \
+        --phase "$phase" \
+        --raw-dir "$SAVE_LIFECYCLE_PLAN_ROOT/raw" \
+        --output "$SAVE_LIFECYCLE_PLAN_ROOT/$phase.json"
+    "$TEMP_ROOT/RealAppDriver" foreground-batch-plan \
+        --plan "$SAVE_LIFECYCLE_PLAN_ROOT/$phase.json" \
+        --budget 4 \
+        > "$SAVE_LIFECYCLE_PLAN_ROOT/$phase-validation.json"
+done
+python3 - "$SAVE_LIFECYCLE_PLAN_ROOT" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+expected = {
+    "markdown-save",
+    "close-clean",
+    "table-save",
+    "conflict-open",
+    "conflict-save",
+    "save-as-new",
+    "conflict-save-as-current",
+    "conflict-save-as-symlink",
+    "discard-dirty-close",
+    "session-draft",
+    "restored-conflict-save",
+    "plain-open-diagnostic",
+    "plain-save",
+}
+for phase in expected:
+    plan = json.loads((root / f"{phase}.json").read_text(encoding="utf-8"))
+    validation = json.loads(
+        (root / f"{phase}-validation.json").read_text(encoding="utf-8")
+    )
+    assert plan["schemaVersion"] == 1
+    assert validation["valid"] is True
+    assert validation["budgetMs"] == 4000
+    assert validation["estimatedForegroundMs"] < 4000
+    assert len(plan["actions"]) == len(validation["actions"])
+assert any(
+    action.get("key") == "command+s"
+    for action in json.loads(
+        (root / "markdown-save.json").read_text(encoding="utf-8")
+    )["actions"]
+)
+assert any(
+    action.get("identifier") == "table-cell-1-1"
+    for action in json.loads(
+        (root / "table-save.json").read_text(encoding="utf-8")
+    )["actions"]
+)
+assert any(
+    action.get("identifier") == "non-markdown-banner"
+    for action in json.loads(
+        (root / "plain-open-diagnostic.json").read_text(encoding="utf-8")
+    )["actions"]
+)
+PY
+
+SAVE_LIFECYCLE_VERIFY_ROOT="$TEMP_ROOT/foreground-save-lifecycle-verifier"
+mkdir -p "$SAVE_LIFECYCLE_VERIFY_ROOT"
+python3 - "$SAVE_LIFECYCLE_VERIFY_ROOT" <<'PY'
+import base64
+import json
+import os
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+bom = b"\xef\xbb\xbf"
+markdown_saved = bom + b"# Save lifecycle\r\n\r\nmarkdown latest\r\n"
+conflict_baseline = b"# Conflict lifecycle\n\nconflict baseline\n"
+conflict_external = b"# Conflict lifecycle\n\nexternal replacement\n"
+session_baseline = b"# Session lifecycle\n\nsession baseline\n"
+plain_baseline = bom + b"model: gpt-4o\r\ntemperature: 0.2\r\n"
+
+
+def baseline(path, payload):
+    return {
+        "canonicalPath": os.path.realpath(path),
+        "bytes": base64.b64encode(payload).decode(),
+    }
+
+
+def tab(identifier, path, text, dirty, markdown, payload):
+    return {
+        "id": identifier,
+        "url": str(path),
+        "name": path.name,
+        "text": text,
+        "isDirty": dirty,
+        "isMarkdown": markdown,
+        "diskBaseline": baseline(path, payload),
+    }
+
+
+def diagnostic(document, mode, dirty, session_path, block_type=None):
+    return {
+        "schemaVersion": 1,
+        "document": document,
+        "mode": mode,
+        "dirty": dirty,
+        "sessionPath": str(session_path),
+        "blockID": "block-id" if block_type else None,
+        "blockType": block_type,
+        "activeTableCell": None,
+        "visual": {
+            "documentVisible": True,
+            "sourceEditorVisible": block_type == "paragraph",
+            "tableGridVisible": block_type == "table",
+        },
+    }
+
+
+report = {
+    "completed": True,
+    "deadlineExceeded": False,
+    "error": None,
+    "actions": [{"status": "completed"}],
+}
+
+stage = root / "markdown-save"
+workspace = stage / "workspace"
+(workspace / "docs").mkdir(parents=True)
+readme = workspace / "README.md"
+readme.write_bytes(markdown_saved)
+session_path = stage / "profile" / "session.json"
+session_path.parent.mkdir()
+active = tab(
+    "markdown",
+    readme,
+    markdown_saved[len(bom):].decode(),
+    False,
+    True,
+    markdown_saved,
+)
+(stage / "session.json").write_text(json.dumps({
+    "activeTabID": "markdown",
+    "tabs": [active],
+}), encoding="utf-8")
+(stage / "diagnostic.json").write_text(json.dumps(
+    diagnostic("README.md", "edit", False, session_path, "paragraph")
+), encoding="utf-8")
+(stage / "report.json").write_text(json.dumps(report), encoding="utf-8")
+
+stage = root / "conflict-save"
+workspace = stage / "workspace"
+(workspace / "docs").mkdir(parents=True)
+readme = workspace / "README.md"
+readme.write_bytes(conflict_external)
+session_path = stage / "profile" / "session.json"
+session_path.parent.mkdir()
+active = tab(
+    "conflict",
+    readme,
+    "# Conflict lifecycle\n\nconflict draft\n",
+    True,
+    True,
+    conflict_baseline,
+)
+(stage / "session.json").write_text(json.dumps({
+    "activeTabID": "conflict",
+    "tabs": [active],
+}), encoding="utf-8")
+(stage / "diagnostic.json").write_text(json.dumps(
+    diagnostic("README.md", "edit", True, session_path, "paragraph")
+), encoding="utf-8")
+(stage / "report.json").write_text(json.dumps(report), encoding="utf-8")
+(stage / "ocr.json").write_text(json.dumps({
+    "recognizedText": ["文件已在磁盘上更改，未覆盖"],
+}), encoding="utf-8")
+
+stage = root / "plain-open-diagnostic"
+workspace = stage / "workspace"
+(workspace / "docs").mkdir(parents=True)
+readme = workspace / "README.md"
+config = workspace / "docs" / "config.yaml"
+readme.write_bytes(b"# Session lifecycle\n\nsession external replacement\n")
+config.write_bytes(plain_baseline)
+session_path = stage / "profile" / "session.json"
+session_path.parent.mkdir()
+inactive = tab(
+    "markdown",
+    readme,
+    "# Session lifecycle\n\nsession conflict draft\n",
+    True,
+    True,
+    session_baseline,
+)
+active = tab(
+    "plain",
+    config,
+    plain_baseline[len(bom):].decode(),
+    False,
+    False,
+    plain_baseline,
+)
+(stage / "session.json").write_text(json.dumps({
+    "activeTabID": "plain",
+    "tabs": [inactive, active],
+}), encoding="utf-8")
+(stage / "diagnostic.json").write_text(json.dumps(
+    diagnostic("config.yaml", "source", False, session_path)
+), encoding="utf-8")
+(stage / "report.json").write_text(json.dumps(report), encoding="utf-8")
+(stage / "ocr.json").write_text(json.dumps({
+    "recognizedText": ["doc=config.yaml · mode=source"],
+}), encoding="utf-8")
+PY
+
+for stage in markdown-save conflict-save plain-open-diagnostic; do
+    stage_root="$SAVE_LIFECYCLE_VERIFY_ROOT/$stage"
+    verifier_args=(
+        --stage "$stage"
+        --session "$stage_root/session.json"
+        --diagnostic "$stage_root/diagnostic.json"
+        --foreground-report "$stage_root/report.json"
+        --workspace-root "$stage_root/workspace"
+        --expected-session-path "$stage_root/profile/session.json"
+        --output-root "$SAVE_LIFECYCLE_VERIFY_ROOT"
+    )
+    if [[ -s "$stage_root/ocr.json" ]]; then
+        verifier_args+=(--ocr "$stage_root/ocr.json")
+    fi
+    python3 "$ROOT/scripts/e2e/verify-foreground-save-lifecycle.py" \
+        "${verifier_args[@]}" --check-only
+    for report_kind in session diagnostic; do
+        python3 "$ROOT/scripts/e2e/verify-foreground-save-lifecycle.py" \
+            "${verifier_args[@]}" \
+            --report-kind "$report_kind" \
+            > "$stage_root/$report_kind-assertion.json"
+    done
+done
+
+printf '# Conflict lifecycle\n\nconflict baseline\n' \
+    > "$SAVE_LIFECYCLE_VERIFY_ROOT/conflict-save/workspace/README.md"
+if python3 "$ROOT/scripts/e2e/verify-foreground-save-lifecycle.py" \
+    --stage conflict-save \
+    --session "$SAVE_LIFECYCLE_VERIFY_ROOT/conflict-save/session.json" \
+    --diagnostic "$SAVE_LIFECYCLE_VERIFY_ROOT/conflict-save/diagnostic.json" \
+    --foreground-report "$SAVE_LIFECYCLE_VERIFY_ROOT/conflict-save/report.json" \
+    --workspace-root "$SAVE_LIFECYCLE_VERIFY_ROOT/conflict-save/workspace" \
+    --expected-session-path "$SAVE_LIFECYCLE_VERIFY_ROOT/conflict-save/profile/session.json" \
+    --output-root "$SAVE_LIFECYCLE_VERIFY_ROOT" \
+    --ocr "$SAVE_LIFECYCLE_VERIFY_ROOT/conflict-save/ocr.json" \
+    --check-only \
+    > "$SAVE_LIFECYCLE_VERIFY_ROOT/invalid-conflict.out" \
+    2> "$SAVE_LIFECYCLE_VERIFY_ROOT/invalid-conflict.err"; then
+    echo "RealAppHarnessTests: overwritten conflict fixture unexpectedly passed" >&2
+    exit 1
+fi
+if ! rg -Fq 'externalBytesNotOverwritten' \
+    "$SAVE_LIFECYCLE_VERIFY_ROOT/invalid-conflict.err"; then
+    echo "RealAppHarnessTests: save lifecycle conflict error was not precise" >&2
+    exit 1
+fi
 
 "$TEMP_ROOT/RealAppDriver" pasteboard-self-test \
     > "$TEMP_ROOT/pasteboard-self-test.json"

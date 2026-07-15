@@ -152,6 +152,39 @@ final class BlockEditorStore: ObservableObject {
         commitActiveEditing()
     }
 
+    /// Adopt the exact document snapshot that reached disk without ending the
+    /// native editor. A later resign with unchanged text becomes a no-op, while
+    /// subsequent native edits diverge from this saved document and mark dirty.
+    func acceptSavedDocument(_ savedDocument: MarkdownDocument) {
+        guard savedDocument != document else { return }
+        let previous = document
+        let affectedBlockIDs = changedBlockIDs(from: previous, to: savedDocument)
+        document = savedDocument
+        registerUndo(from: savedDocument, to: previous, actionName: "编辑块")
+        recordMutation(affectedBlockIDs: affectedBlockIDs)
+
+        if let blockID = activeBlockID {
+            let liveSnapshot = sourceEditorBridge.snapshot()
+            let liveSource = liveSnapshot?.source ?? activeDraftSource
+            if savedDocument.block(id: blockID)?.source == liveSource {
+                activeDraftSource = liveSource
+                activeSelection = liveSnapshot?.selection ?? activeSelection
+            } else {
+                // A multiline draft may expand one source editor into several
+                // durable blocks. The saved document is authoritative, so end
+                // that no-longer-representable single-block editing session.
+                activeBlockID = nil
+                activeDraftSource = nil
+                activeSelection = nil
+            }
+        }
+        if let tableID = activeTableID,
+           let savedGrid = try? savedDocument.tableGrid(for: tableID) {
+            tableDraft = savedGrid
+        }
+        refreshFind(preservingCurrent: true)
+    }
+
     /// Commit the outgoing tab without forgetting which native editor had focus.
     ///
     /// The live AppKit editor still owns the most recent selection at this point,

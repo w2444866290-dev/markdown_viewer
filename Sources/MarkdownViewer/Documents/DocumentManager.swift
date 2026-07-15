@@ -15,6 +15,7 @@ final class DocumentManager: ObservableObject {
     private struct DocumentFileContents {
         let text: String
         let hasUTF8BOM: Bool
+        let rawData: Data?
     }
 
     private enum DocumentFileError: Error {
@@ -48,6 +49,7 @@ final class DocumentManager: ObservableObject {
     @Published var lastClosedTab: DocumentTab?
     /// Tab currently awaiting a confirm-close second click (dirty tabs only).
     @Published var confirmingCloseTabID: UUID?
+    @Published private(set) var lastSaveFailure: DocumentSaveFailure?
     private var blockEditorStores: [UUID: BlockEditorStore] = [:]
     private var autoFocusBlockEditorTabIDs: Set<UUID> = []
     /// The URL-less in-memory tab loaded from the Debug fixture. Its matching
@@ -258,7 +260,12 @@ final class DocumentManager: ObservableObject {
 
     // MARK: - Actions
 
-    func openTab(for url: URL, text: String, hasUTF8BOM: Bool = false) {
+    func openTab(
+        for url: URL,
+        text: String,
+        hasUTF8BOM: Bool = false,
+        diskBaseline: DocumentDiskBaseline? = nil
+    ) {
         let canonical = canonicalPath(for: url)
         if let existing = tabs.first(where: {
             $0.url.map(canonicalPath(for:)) == canonical
@@ -266,13 +273,19 @@ final class DocumentManager: ObservableObject {
             activateTab(existing.id)
             return
         }
+        let resolvedBaseline = diskBaseline ?? matchingDiskBaseline(
+            at: url,
+            text: text,
+            hasUTF8BOM: hasUTF8BOM
+        )
         let tab = DocumentTab(
             url: url,
             name: url.lastPathComponent,
             text: text,
             isDirty: false,
             isMarkdown: DocumentTab.isMarkdownExtension(of: url),
-            hasUTF8BOM: hasUTF8BOM
+            hasUTF8BOM: hasUTF8BOM,
+            diskBaseline: resolvedBaseline
         )
         tabs.append(tab)
         activateTab(tab.id)
@@ -668,9 +681,14 @@ final class DocumentManager: ObservableObject {
         let contents: DocumentFileContents
         do {
             if let documentReader {
+                let text = try documentReader(url)
+                let rawData = try? Data(contentsOf: url)
                 contents = DocumentFileContents(
-                    text: try documentReader(url),
-                    hasUTF8BOM: false
+                    text: text,
+                    hasUTF8BOM: false,
+                    rawData: rawData == Self.encodedUTF8Data(text, hasBOM: false)
+                        ? rawData
+                        : nil
                 )
             } else {
                 contents = try Self.readDocumentFile(at: url)
@@ -684,7 +702,10 @@ final class DocumentManager: ObservableObject {
         openTab(
             for: url,
             text: contents.text,
-            hasUTF8BOM: contents.hasUTF8BOM
+            hasUTF8BOM: contents.hasUTF8BOM,
+            diskBaseline: contents.rawData.map {
+                DocumentDiskBaseline(canonicalPath: canonical, bytes: $0)
+            }
         )
         guard let activeTabID else { return .failedToRead }
         return .openedFile(activeTabID)
@@ -706,7 +727,7 @@ final class DocumentManager: ObservableObject {
             if saveActiveDocument() {
                 Toaster.shared.flash("已保存 " + tab.name)
             } else {
-                Toaster.shared.flash("保存失败")
+                Toaster.shared.flash(saveFailureMessage)
             }
         } else {
             saveAsCurrent()
@@ -714,8 +735,8 @@ final class DocumentManager: ObservableObject {
     }
 
     func saveAsCurrent() {
-        // Reconcile live editor text into the snapshot before reading tabs[idx].text.
-        reconcileActiveText()
+        // Capture native marked text before the panel can move first responder.
+        _ = synchronizeActiveEditorForSave()
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = DocumentFormat.openPanelContentTypes
         savePanel.nameFieldStringValue = activeTab?.name ?? "未命名.md"
@@ -723,7 +744,7 @@ final class DocumentManager: ObservableObject {
         if saveActiveDocument(to: url) {
             Toaster.shared.flash("已保存 " + url.lastPathComponent)
         } else {
-            Toaster.shared.flash("保存失败")
+            Toaster.shared.flash(saveFailureMessage)
         }
     }
 
@@ -731,11 +752,9 @@ final class DocumentManager: ObservableObject {
     /// performs Save As and updates tab identity only after the write succeeds.
     @discardableResult
     func saveActiveDocument(to destinationURL: URL? = nil) -> Bool {
-        reconcileActiveText()
-        guard let current = activeTab else { return false }
-        let hasUTF8BOM = current.hasUTF8BOM
         return saveActiveDocument(to: destinationURL) { text, url in
-            try Self.encodedUTF8Data(text, hasBOM: hasUTF8BOM)
+            guard let current = self.activeTab else { throw DocumentFileError.invalidUTF8 }
+            try Self.encodedUTF8Data(text, hasBOM: current.hasUTF8BOM)
                 .write(to: url, options: .atomic)
         }
     }
@@ -746,37 +765,94 @@ final class DocumentManager: ObservableObject {
         to destinationURL: URL? = nil,
         writer: DocumentWriter
     ) -> Bool {
-        reconcileActiveText()
-        guard let idx = activeIdx else { return false }
+        lastSaveFailure = nil
+        guard let snapshot = synchronizeActiveEditorForSave(),
+              let idx = tabs.firstIndex(where: { $0.id == snapshot.id }) else {
+            lastSaveFailure = .writeFailed
+            return false
+        }
         let current = tabs[idx]
-        guard let target = destinationURL ?? current.url else { return false }
+        guard let requestedTarget = destinationURL ?? current.url else {
+            lastSaveFailure = .unsupportedDestination
+            return false
+        }
+        let currentCanonical = current.url.map(canonicalPath(for:))
+        let requestedCanonical = canonicalPath(for: requestedTarget)
+        let savesCurrentCanonicalPath = currentCanonical == requestedCanonical
+        let target = savesCurrentCanonicalPath ? (current.url ?? requestedTarget) : requestedTarget
         let format = DocumentFormat(url: target)
-        guard format.isOpenable else { return false }
+        guard format.isOpenable else {
+            lastSaveFailure = .unsupportedDestination
+            return false
+        }
 
         let canonicalTarget = canonicalPath(for: target)
+        let writeTarget = URL(fileURLWithPath: canonicalTarget)
         guard !tabs.contains(where: { candidate in
             candidate.id != current.id
                 && candidate.url.map(canonicalPath(for:)) == canonicalTarget
         }) else {
             MVLog.warn("save as target already open: \(target.path)", category: "document")
+            lastSaveFailure = .destinationAlreadyOpen
             return false
         }
+
+        if savesCurrentCanonicalPath,
+           let conflict = externalFileConflict(for: current, canonicalPath: canonicalTarget) {
+            MVLog.warn(
+                "save rejected by external-file conflict: \(conflict)",
+                category: "document"
+            )
+            lastSaveFailure = .conflict(conflict)
+            return false
+        }
+
+        let expectedBytes = Self.encodedUTF8Data(
+            current.text,
+            hasBOM: current.hasUTF8BOM
+        )
 
         do {
-            try writer(current.text, target)
+            try writer(current.text, writeTarget)
         } catch {
             MVLog.warn("save failed: \(error)", category: "document")
+            lastSaveFailure = .writeFailed
             return false
         }
 
-        var saved = tabs[idx]
+        let writtenBytes: Data
+        do {
+            writtenBytes = try Data(contentsOf: writeTarget)
+            guard writtenBytes == expectedBytes else {
+                MVLog.warn("save verification failed: bytes differ", category: "document")
+                lastSaveFailure = .writeFailed
+                return false
+            }
+        } catch {
+            MVLog.warn("save verification failed: \(error)", category: "document")
+            lastSaveFailure = .writeFailed
+            return false
+        }
+
+        guard let savedIndex = tabs.firstIndex(where: { $0.id == current.id }) else {
+            lastSaveFailure = .writeFailed
+            return false
+        }
+        var saved = tabs[savedIndex]
         saved.url = target
         saved.name = target.lastPathComponent
         saved.isDirty = false
         saved.isMarkdown = format.isMarkdownRendered
+        saved.diskBaseline = DocumentDiskBaseline(
+            canonicalPath: canonicalTarget,
+            bytes: writtenBytes
+        )
         if saved.isMarkdown {
             if saved.markdownDocument?.source != saved.text {
                 saved.markdownDocument = MarkdownDocument(source: saved.text)
+            }
+            if let document = saved.markdownDocument {
+                blockEditorStores[saved.id]?.acceptSavedDocument(document)
             }
         } else {
             saved.markdownDocument = nil
@@ -784,7 +860,7 @@ final class DocumentManager: ObservableObject {
             pullActiveMarkdownDocument = nil
             commitActiveEditing = nil
         }
-        tabs[idx] = saved
+        tabs[savedIndex] = saved
         scheduleSessionSave()
         return true
     }
@@ -902,6 +978,110 @@ final class DocumentManager: ObservableObject {
         }
     }
 
+    /// Read the live native editor into the tab snapshot without ending editing.
+    /// This includes marked text because both native bridges expose their current
+    /// NSTextView or field-editor string directly.
+    private func synchronizeActiveEditorForSave() -> DocumentTab? {
+        guard let idx = activeIdx else { return nil }
+        var updated = tabs[idx]
+        var changed = false
+        let originalText = updated.text
+
+        if updated.isMarkdown,
+           let document = pullActiveMarkdownDocument?() {
+            if updated.text != document.source {
+                updated.text = document.source
+                changed = true
+            }
+            if updated.markdownDocument != document {
+                updated.markdownDocument = document
+                changed = true
+            }
+        } else if let liveText = pullActiveText?(), updated.text != liveText {
+            updated.text = liveText
+            updated.markdownDocument = updated.isMarkdown
+                ? MarkdownDocument(source: liveText)
+                : nil
+            changed = true
+        }
+
+        if updated.text != originalText, !updated.isDirty {
+            updated.isDirty = true
+            changed = true
+        }
+        if let selection = pullActiveSelection?(),
+           updated.selectionLocation != selection.location
+            || updated.selectionLength != selection.length {
+            updated.selectionLocation = max(0, selection.location)
+            updated.selectionLength = max(0, selection.length)
+            changed = true
+        }
+        if let pullY = pullActiveScrollY {
+            let y = pullY()
+            if updated.scrollY != y {
+                updated.scrollY = y
+                changed = true
+            }
+        }
+        if changed {
+            tabs[idx] = updated
+        }
+        return updated
+    }
+
+    private var saveFailureMessage: String {
+        switch lastSaveFailure {
+        case .conflict(.modified):
+            return "文件已在磁盘上更改，未覆盖"
+        case .conflict(.deleted):
+            return "文件已在磁盘上删除，未保存"
+        case .conflict(.unreadable):
+            return "无法读取磁盘文件，未覆盖"
+        case .conflict(.baselineUnknown):
+            return "无法确认磁盘版本，请另存为新文件"
+        case .destinationAlreadyOpen:
+            return "目标文件已打开，未保存"
+        case .unsupportedDestination:
+            return "不支持此保存位置"
+        case .writeFailed, .none:
+            return "保存失败"
+        }
+    }
+
+    private func externalFileConflict(
+        for tab: DocumentTab,
+        canonicalPath: String
+    ) -> ExternalFileConflict? {
+        guard let baseline = tab.diskBaseline,
+              baseline.canonicalPath == canonicalPath else {
+            return .baselineUnknown
+        }
+        guard FileManager.default.fileExists(atPath: canonicalPath) else {
+            return .deleted
+        }
+        do {
+            let currentBytes = try Data(contentsOf: URL(fileURLWithPath: canonicalPath))
+            return currentBytes == baseline.bytes ? nil : .modified
+        } catch {
+            return .unreadable
+        }
+    }
+
+    private func matchingDiskBaseline(
+        at url: URL,
+        text: String,
+        hasUTF8BOM: Bool
+    ) -> DocumentDiskBaseline? {
+        guard let bytes = try? Data(contentsOf: url),
+              bytes == Self.encodedUTF8Data(text, hasBOM: hasUTF8BOM) else {
+            return nil
+        }
+        return DocumentDiskBaseline(
+            canonicalPath: canonicalPath(for: url),
+            bytes: bytes
+        )
+    }
+
     private func reconciledRestoredTab(_ persisted: DocumentTab) -> DocumentTab {
         guard !persisted.isDirty, let url = persisted.url else { return persisted }
         var restored = persisted
@@ -909,6 +1089,12 @@ final class DocumentManager: ObservableObject {
             let contents = try Self.readDocumentFile(at: url)
             restored.text = contents.text
             restored.hasUTF8BOM = contents.hasUTF8BOM
+            restored.diskBaseline = contents.rawData.map {
+                DocumentDiskBaseline(
+                    canonicalPath: canonicalPath(for: url),
+                    bytes: $0
+                )
+            }
             restored.isMarkdown = DocumentFormat(url: url).isMarkdownRendered
             restored.markdownDocument = restored.isMarkdown
                 ? MarkdownDocument(source: contents.text)
@@ -921,6 +1107,7 @@ final class DocumentManager: ObservableObject {
             )
         } catch {
             restored.isDirty = true
+            restored.diskBaseline = nil
             MVLog.warn(
                 "clean session tab could not be refreshed: \(url.path), \(error)",
                 category: "session"
@@ -942,7 +1129,11 @@ final class DocumentManager: ObservableObject {
         guard let text = String(data: Data(payload), encoding: .utf8) else {
             throw DocumentFileError.invalidUTF8
         }
-        return DocumentFileContents(text: text, hasUTF8BOM: hasUTF8BOM)
+        return DocumentFileContents(
+            text: text,
+            hasUTF8BOM: hasUTF8BOM,
+            rawData: data
+        )
     }
 
     private static func encodedUTF8Data(_ text: String, hasBOM: Bool) -> Data {
