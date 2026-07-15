@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 2,
+  "kind": "markdown-viewer-visual-acceptance-contract",
+  "authoritativeHTMLSHA256": "269489c87cef02a29006410cb5a1901a60af918fb7d5ec9de2411ae0e711cd9d",
+  "coordinateSpace": "viewportPixels",
+  "requiredSizes": [
+    "1180x760",
+    "860x560",
+    "1440x900"
+  ],
+  "tolerancePolicy": {
+    "1180x760": 1,
+    "otherSizes": 2
+  },
+  "pixelAcceptancePolicy": {
+    "analysis": {
+      "algorithm": "full-frame-spatial-diff-v1",
+      "changedPixelThreshold": 8,
+      "edgeLocalRangeThreshold": 12,
+      "edgeRadiusPixels": 1,
+      "highMagnitudeThreshold": 48,
+      "componentConnectivity": 8,
+      "tileSizePixels": 16,
+      "partialTilePolicy": "zero-pad-to-full-tile"
+    },
+    "limits": {
+      "maximumChangedPixelRatio": 0.015,
+      "maximumStructuralPixelRatio": 0.0001,
+      "maximumHighMagnitudePixelRatio": 0.0001,
+      "maximumMeanAbsoluteChannelDifference": 1.0,
+      "maximumRootMeanSquareChannelDifference": 6.0,
+      "maximumChangedComponentPixels": 64,
+      "maximumChangedComponentWidthPixels": 24,
+      "maximumChangedComponentHeightPixels": 32,
+      "maximumChangedHorizontalRunPixels": 24,
+      "maximumChangedVerticalRunPixels": 32,
+      "maximumChangedTilePixelRatio": 0.35,
+      "maximumStructuralComponentPixels": 8,
+      "maximumStructuralComponentWidthPixels": 8,
+      "maximumStructuralComponentHeightPixels": 8,
+      "maximumStructuralHorizontalRunPixels": 8,
+      "maximumStructuralVerticalRunPixels": 8,
+      "maximumStructuralTilePixelRatio": 0.03125
+    },
+    "antiAliasPolicy": {
+      "classification": "changed pixels near luminance edges in both images and at or below the high-magnitude threshold",
+      "pixelsRemainInChangedAggregate": true,
+      "pixelsRemainInSpatialChecks": true,
+      "masking": "none"
+    }
+  },
+  "states": {
+    "default": {
+      "appLabel": "baseline",
+      "requiredStateAssertions": [
+        "document-visible",
+        "sidebar-visible",
+        "palette-hidden",
+        "find-panel-hidden",
+        "source-editor-hidden",
+        "table-grid-hidden"
+      ],
+      "requiredGeometryAnchors": [
+        "sidebar-frame",
+        "tab-bar-frame",
+        "document-surface-frame",
+        "document-page-frame",
+        "outline-rail-frame"
+      ]
+    },
+    "palette": {
+      "appLabel": "palette-open",
+      "requiredStateAssertions": [
+        "document-visible",
+        "palette-visible"
+      ],
+      "requiredGeometryAnchors": [
+        "sidebar-frame",
+        "tab-bar-frame",
+        "document-surface-frame",
+        "document-page-frame",
+        "outline-rail-frame",
+        "palette-panel-frame"
+      ]
+    },
+    "find": {
+      "appLabel": "find-open",
+      "requiredStateAssertions": [
+        "document-visible",
+        "find-panel-visible"
+      ],
+      "requiredGeometryAnchors": [
+        "sidebar-frame",
+        "tab-bar-frame",
+        "document-surface-frame",
+        "document-page-frame",
+        "outline-rail-frame",
+        "find-panel-frame"
+      ]
+    },
+    "replace": {
+      "appLabel": null,
+      "requiredStateAssertions": [
+        "document-visible",
+        "find-panel-visible",
+        "replace-row-visible"
+      ],
+      "requiredGeometryAnchors": [
+        "sidebar-frame",
+        "tab-bar-frame",
+        "document-surface-frame",
+        "document-page-frame",
+        "outline-rail-frame",
+        "find-panel-frame"
+      ]
+    },
+    "preview": {
+      "appLabel": "preview-on",
+      "requiredStateAssertions": [
+        "document-visible",
+        "preview-active",
+        "source-editor-hidden",
+        "table-grid-hidden"
+      ],
+      "requiredGeometryAnchors": [
+        "sidebar-frame",
+        "tab-bar-frame",
+        "document-surface-frame",
+        "document-page-frame",
+        "outline-rail-frame",
+        "preview-control-frame"
+      ]
+    },
+    "sidebar-hidden": {
+      "appLabel": "sidebar-hidden",
+      "requiredStateAssertions": [
+        "document-visible",
+        "sidebar-hidden"
+      ],
+      "requiredGeometryAnchors": [
+        "tab-bar-frame",
+        "document-surface-frame",
+        "document-page-frame",
+        "outline-rail-frame"
+      ]
+    },
+    "source-editor": {
+      "appLabel": "source-editing",
+      "requiredStateAssertions": [
+        "document-visible",
+        "source-editor-visible",
+        "table-grid-hidden"
+      ],
+      "requiredGeometryAnchors": [
+        "sidebar-frame",
+        "tab-bar-frame",
+        "document-surface-frame",
+        "document-page-frame",
+        "outline-rail-frame",
+        "source-editor-frame"
+      ]
+    },
+    "table-editor": {
+      "appLabel": "table-grid",
+      "requiredStateAssertions": [
+        "document-visible",
+        "table-grid-visible",
+        "source-editor-hidden"
+      ],
+      "requiredGeometryAnchors": [
+        "sidebar-frame",
+        "tab-bar-frame",
+        "document-surface-frame",
+        "document-page-frame",
+        "outline-rail-frame",
+        "table-grid-frame"
+      ]
+    }
+  },
+  "allowedEvidenceSources": {
+    "referenceState": [
+      "authoritative-dom"
+    ],
+    "referenceGeometry": [
+      "authoritative-dom"
+    ],
+    "appState": [
+      "macos-accessibility",
+      "debug-diagnostics",
+      "image-analysis",
+      "combined-machine-probes"
+    ],
+    "appGeometry": [
+      "macos-accessibility",
+      "image-analysis",
+      "combined-machine-probes"
+    ]
+  },
+  "maskingPolicy": {
+    "mode": "none",
+    "ordinaryUIRegionsMasked": false,
+    "antialiasMaskRadiusPixels": 0
+  }
+}

@@ -2,6 +2,15 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+enum EditorHeaderLayout {
+    static let previewControlWidth: CGFloat = 41
+    static let editControlWidth: CGFloat = 51
+
+    static func previewModeControlWidth(isPreviewMode: Bool) -> CGFloat {
+        isPreviewMode ? editControlWidth : previewControlWidth
+    }
+}
+
 // MARK: - Editor header (44px): sidebar toggle + tabs + actions
 
 struct EditorHeader: View {
@@ -12,8 +21,9 @@ struct EditorHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             // Sidebar toggle — spec: 26×26, radius 6, color #aeaeb2, hover bg rgba(0,0,0,0.05) + #6e6e73
-            HeaderIconButton(action: { docManager.sidebarOpen.toggle() },
+            HeaderIconButton(action: { docManager.toggleSidebar() },
                              frame: CGSize(width: 26, height: 26),
+                             identifier: "toggle-sidebar",
                              tip: "显示 / 隐藏侧栏") { color in
                 CIcon { CustomIcons.sidebarToggle }
                     .frame(width: 16, height: 13)
@@ -29,6 +39,7 @@ struct EditorHeader: View {
                     // + button — spec: 26×26, radius 6, font-size 16, hover bg rgba(0,0,0,0.05) + #6e6e73
                     HeaderIconButton(action: { docManager.newDocument() },
                                      frame: CGSize(width: 26, height: 26),
+                                     identifier: "new-document",
                                      tip: "新建文档 · ⌘N") { color in
                         Text("＋")
                             .font(.system(size: 16))
@@ -37,10 +48,15 @@ struct EditorHeader: View {
                 }
             }
 
-            // Find + Open buttons — spec: gap 2px, 28×26, hover bg rgba(0,0,0,0.05) + #6e6e73
+            // Preview + Find + Open controls share the authoritative 2pt gap.
             HStack(spacing: 2) {
+                if docManager.activeTab?.isMarkdown == true {
+                    PreviewModeButton()
+                }
+
                 HeaderIconButton(action: { findState.openFind() },
                                  frame: CGSize(width: 28, height: 26),
+                                 identifier: "open-find",
                                  tip: "查找 / 替换 · ⌘F") { color in
                     CIcon { CustomIcons.find }
                         .frame(width: 14, height: 14)
@@ -49,6 +65,7 @@ struct EditorHeader: View {
 
                 HeaderIconButton(action: { docManager.openDocument() },
                                  frame: CGSize(width: 28, height: 26),
+                                 identifier: "open-document",
                                  tip: "打开 · ⌘O") { color in
                     CIcon { CustomIcons.openFolder }
                         .frame(width: 15, height: 14)
@@ -57,6 +74,44 @@ struct EditorHeader: View {
             }
         }
         .padding(.trailing, 12)
+    }
+}
+
+private struct PreviewModeButton: View {
+    @EnvironmentObject var docManager: DocumentManager
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: { docManager.togglePreviewMode() }) {
+            Text(docManager.previewMode ? "✐ 编辑" : "预览")
+                .font(.system(size: 11.5))
+                .foregroundColor(
+                    docManager.previewMode
+                        ? DesignTokens.swiftUI.accent
+                        : (hovered
+                            ? DesignTokens.swiftUI.secondaryText
+                            : DesignTokens.swiftUI.placeholderText)
+                )
+                .frame(
+                    width: EditorHeaderLayout.previewModeControlWidth(
+                        isPreviewMode: docManager.previewMode
+                    ),
+                    height: 26
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(
+                            docManager.previewMode
+                                ? DesignTokens.swiftUI.accent.opacity(0.12)
+                                : (hovered ? Color.black.opacity(0.05) : Color.clear)
+                        )
+                )
+                .debugVisualAnchor("preview-control-frame")
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("toggle-preview")
+        .onHover { hovered = $0 }
+        .mvTip(docManager.previewMode ? "返回编辑 · ⌘⇧P" : "纯预览（隐藏语法）· ⌘⇧P")
     }
 }
 
@@ -81,6 +136,7 @@ private struct HeaderButtonStyle: ButtonStyle {
 private struct HeaderIconButton<Label: View>: View {
     let action: () -> Void
     let frame: CGSize
+    let identifier: String
     let tip: String
     @ViewBuilder let label: (Color) -> Label
     @State private var hover = false
@@ -97,6 +153,7 @@ private struct HeaderIconButton<Label: View>: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(HeaderButtonStyle())
+        .accessibilityIdentifier(identifier)
         .mvTip(tip)
         .onHover { hover = $0 }
     }
@@ -139,6 +196,11 @@ private struct EditorTabPill: View {
                     : (isHovered ? Color.black.opacity(0.05) : .clear))
         )
         .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("tab-\(tab.id.uuidString)")
+        .accessibilityLabel(tab.name)
+        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : [.isButton])
+        .accessibilityAction { docManager.activateTab(tab.id) }
         // Route through activateTab so the OUTGOING tab's live edits reconcile first.
         .onTapGesture { docManager.activateTab(tab.id) }
         .onHover { isHovered = $0 }
@@ -147,18 +209,22 @@ private struct EditorTabPill: View {
     // spec L105: red pill "确认关闭?" — height 18, padding 0 7px, radius 6,
     // font 11/500, color #C7482E, bg rgba(199,72,46,0.10), line-height 1.
     private var confirmCapsule: some View {
-        Text("确认关闭?")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundColor(DesignTokens.swiftUI.danger)
-            .lineLimit(1)
-            .padding(.horizontal, 7)
-            .frame(height: 18)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(DesignTokens.swiftUI.danger.opacity(0.10))
-            )
-            .contentShape(Rectangle())
-            .onTapGesture { docManager.requestClose(tab) }
+        Button(action: { docManager.requestClose(tab) }) {
+            Text("确认关闭?")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(DesignTokens.swiftUI.danger)
+                .lineLimit(1)
+                .padding(.horizontal, 7)
+                .frame(height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(DesignTokens.swiftUI.danger.opacity(0.10))
+                )
+                .contentShape(Rectangle())
+        }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("tab-confirm-close-\(tab.id.uuidString)")
+            .accessibilityLabel("确认关闭 \(tab.name)")
             .help("再点一次关闭，未保存的更改将丢弃")
     }
 
@@ -174,18 +240,22 @@ private struct EditorTabPill: View {
             }
             if isHovered {
                 // spec L112: × font-size 13, no weight; color #aeaeb2; hover bg rgba(0,0,0,0.08) + color #1d1d1f
-                Text("×")
-                    .font(.system(size: 13))
-                    .foregroundColor(closeHovered
-                        ? DesignTokens.swiftUI.titleText
-                        : DesignTokens.swiftUI.placeholderText)
-                    .frame(width: 16, height: 16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(closeHovered ? Color.black.opacity(0.08) : Color.clear)
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture { docManager.requestClose(tab) }
+                Button(action: { docManager.requestClose(tab) }) {
+                    Text("×")
+                        .font(.system(size: 13))
+                        .foregroundColor(closeHovered
+                            ? DesignTokens.swiftUI.titleText
+                            : DesignTokens.swiftUI.placeholderText)
+                        .frame(width: 16, height: 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(closeHovered ? Color.black.opacity(0.08) : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("tab-close-\(tab.id.uuidString)")
+                    .accessibilityLabel("关闭 \(tab.name)")
                     .onHover { closeHovered = $0 }
             }
         }

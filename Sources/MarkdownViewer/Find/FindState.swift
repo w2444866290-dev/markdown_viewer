@@ -53,5 +53,6 @@ final class FindState: ObservableObject {
         currentIndex = 0
         isError = false
         showReplace = false
+        replaceText = ""
     }
 }

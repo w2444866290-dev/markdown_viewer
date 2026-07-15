@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -8,12 +9,29 @@ import UniformTypeIdentifiers
 /// never per keystroke.
 @MainActor
 final class DocumentManager: ObservableObject {
+    typealias DocumentWriter = (_ text: String, _ url: URL) throws -> Void
+    typealias DocumentReader = (_ url: URL) throws -> String
+
+    private let sessionURL: URL
+    private let sessionSaveDelay: TimeInterval
+    private let visualTestEnabled: Bool
+
+    init(
+        sessionURL: URL = SessionStore.fileURL,
+        sessionSaveDelay: TimeInterval = 1.0,
+        visualTestEnabled: Bool = AppEnv.visualTest
+    ) {
+        self.sessionURL = sessionURL
+        self.sessionSaveDelay = sessionSaveDelay
+        self.visualTestEnabled = visualTestEnabled
+    }
+
     // MARK: - Sidebar
     @Published var sidebarWidth: CGFloat = DesignTokens.sidebarWidth
     @Published var sidebarOpen: Bool = true
     @Published var directoryURL: URL?
     @Published var fileTree: [FileNode] = []
-    @Published var expandedFolders: Set<UUID> = []
+    @Published var expandedFolders: Set<String> = []
 
     // MARK: - Tabs (single source of truth)
     @Published var tabs: [DocumentTab] = []
@@ -21,12 +39,43 @@ final class DocumentManager: ObservableObject {
     @Published var lastClosedTab: DocumentTab?
     /// Tab currently awaiting a confirm-close second click (dirty tabs only).
     @Published var confirmingCloseTabID: UUID?
+    private var blockEditorStores: [UUID: BlockEditorStore] = [:]
+    private var autoFocusBlockEditorTabIDs: Set<UUID> = []
+    /// The URL-less in-memory tab loaded from the Debug fixture. Its matching
+    /// workspace sidebar row is identified by name without assigning the tab a URL,
+    /// so Save still cannot overwrite the bundled read-only fixture.
+    private var visualTestFixtureTabID: UUID?
 
     // MARK: - Font
     @Published var fontIndex: Int = 1
 
+    // MARK: - Reading / editing mode
+    @Published var previewMode: Bool = false
+
     // MARK: - Overlays
-    @Published var paletteOpen: Bool = false
+    @Published private(set) var paletteOpen: Bool = false
+
+    /// Open the command palette only after the active editor has crossed its
+    /// lifecycle boundary. This keeps block drafts, native table fields, and
+    /// plain-source selections coherent before the palette takes key focus.
+    func openCommandPalette() {
+        guard !paletteOpen else { return }
+        reconcileActiveText()
+        paletteOpen = true
+    }
+
+    func closeCommandPalette() {
+        guard paletteOpen else { return }
+        paletteOpen = false
+    }
+
+    func toggleCommandPalette() {
+        if paletteOpen {
+            closeCommandPalette()
+        } else {
+            openCommandPalette()
+        }
+    }
 
     /// Set by App to let the command palette toggle findState.
     var findStateToggle: (() -> Void)?
@@ -60,6 +109,14 @@ final class DocumentManager: ObservableObject {
     /// this to refresh the snapshot.
     var pullActiveText: (() -> String)?
 
+    /// Returns the active block store's lossless document, including stable block
+    /// IDs. Lifecycle snapshots use this instead of reparsing the source string.
+    var pullActiveMarkdownDocument: (() -> MarkdownDocument?)?
+
+    /// Commits an active block source editor or table grid before a lifecycle
+    /// boundary reads or switches the document.
+    var commitActiveEditing: (() -> Void)?
+
     /// Set by the editor coordinator on mount (like `pullActiveText`): returns the
     /// live vertical scroll offset (document-space y of the viewport top) of the
     /// active editor. Pulled into `tabs[].scrollY` at discrete reconcile points and
@@ -67,41 +124,136 @@ final class DocumentManager: ObservableObject {
     /// scroll without a per-frame write-back.
     var pullActiveScrollY: (() -> CGFloat)?
 
+    /// Returns the live AppKit UTF-16 selection for the active plain-source tab.
+    /// It is sampled only at lifecycle boundaries, like text and scroll position.
+    var pullActiveSelection: (() -> NSRange?)?
+
     /// Pull the editor's live text (and scroll offset) into the active tab's
     /// snapshot, each ONLY when it actually differs — self-guarded single `@Published`
     /// mutations. Call at every discrete read point BEFORE reading `tabs[]`.
     func reconcileActiveText() {
+        let liveSelection = pullActiveSelection?()
+        commitActiveEditing?()
         guard let idx = activeIdx else { return }
-        if let pull = pullActiveText {
+        var updated = tabs[idx]
+        var changed = false
+        if updated.isMarkdown,
+           let document = pullActiveMarkdownDocument?() {
+            if updated.text != document.source {
+                updated.text = document.source
+                changed = true
+            }
+            if updated.markdownDocument != document {
+                updated.markdownDocument = document
+                changed = true
+            }
+        } else if let pull = pullActiveText {
             let live = pull()
-            if tabs[idx].text != live { tabs[idx].text = live }
+            if updated.text != live {
+                updated.text = live
+                updated.markdownDocument = updated.isMarkdown
+                    ? MarkdownDocument(source: live)
+                    : nil
+                changed = true
+            }
         }
         if let pullY = pullActiveScrollY {
             let y = pullY()
-            if tabs[idx].scrollY != y { tabs[idx].scrollY = y }
+            if updated.scrollY != y {
+                updated.scrollY = y
+                changed = true
+            }
+        }
+        if let selection = liveSelection,
+           updated.selectionLocation != selection.location
+            || updated.selectionLength != selection.length {
+            updated.selectionLocation = max(0, selection.location)
+            updated.selectionLength = max(0, selection.length)
+            changed = true
+        }
+        if changed {
+            tabs[idx] = updated
         }
     }
 
     /// Flip the active tab to dirty as a discrete transition — one publish. Self-
     /// guards so repeated calls (e.g. every keystroke) never re-publish.
     func markActiveDirty() {
-        guard let idx = activeIdx, !tabs[idx].isDirty else { return }
-        tabs[idx].isDirty = true
+        guard let activeTabID else { return }
+        markTabDirty(activeTabID)
+    }
+
+    private func markTabDirty(_ tabID: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }),
+              !tabs[index].isDirty else { return }
+        tabs[index].isDirty = true
     }
 
     /// Single entry point for changing the active tab. Reconciles the OUTGOING
     /// tab's live text into its snapshot FIRST (so its edits survive the switch),
     /// then assigns `activeTabID`. ALL `activeTabID` writes route through here.
     func activateTab(_ id: UUID?) {
+        guard id != activeTabID else { return }
+        if let activeTabID {
+            blockEditorStores[activeTabID]?.suspendEditingForTabSwitch()
+        }
         reconcileActiveText()
+        commitActiveEditing = nil
+        pullActiveText = nil
+        pullActiveMarkdownDocument = nil
+        pullActiveScrollY = nil
+        pullActiveSelection = nil
         activeTabID = id
+        if let id, let store = blockEditorStores[id] {
+            store.restoreEditingAfterTabSwitch()
+            wireActiveBlockStore(store)
+        }
         scheduleSessionSave()
+    }
+
+    func blockEditorStore(for tab: DocumentTab) -> BlockEditorStore {
+        if let existing = blockEditorStores[tab.id] {
+            if tab.id == activeTabID { wireActiveBlockStore(existing) }
+            return existing
+        }
+        let store = BlockEditorStore(
+            tabID: tab.id,
+            document: tab.markdownDocument ?? MarkdownDocument(source: tab.text),
+            onDraftDivergence: { [weak self] in
+                guard let self else { return }
+                self.markTabDirty(tab.id)
+                self.scheduleSessionSave()
+            }
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.markTabDirty(tab.id)
+            self.scheduleSessionSave()
+        }
+        blockEditorStores[tab.id] = store
+        if autoFocusBlockEditorTabIDs.remove(tab.id) != nil,
+           let firstBlockID = store.document.blocks.first?.id {
+            store.beginSourceEditing(blockID: firstBlockID, selection: NSRange(location: 0, length: 0))
+        }
+        if tab.id == activeTabID { wireActiveBlockStore(store) }
+        return store
+    }
+
+    private func wireActiveBlockStore(_ store: BlockEditorStore) {
+        commitActiveEditing = { [weak store] in
+            store?.flushActiveEditingForLifecycleBoundary()
+        }
+        pullActiveText = { [weak store] in store?.snapshotDocument().source ?? "" }
+        pullActiveMarkdownDocument = { [weak store] in store?.snapshotDocument() }
+        pullActiveSelection = { [weak store] in store?.snapshotSelection }
     }
 
     // MARK: - Actions
 
     func openTab(for url: URL, text: String) {
-        if let existing = tabs.first(where: { $0.url?.path == url.path }) {
+        let canonical = canonicalPath(for: url)
+        if let existing = tabs.first(where: {
+            $0.url.map(canonicalPath(for:)) == canonical
+        }) {
             activateTab(existing.id)
             return
         }
@@ -114,10 +266,62 @@ final class DocumentManager: ObservableObject {
     }
 
     func newDocument(text: String = "") {
-        let tab = DocumentTab(url: nil, name: "未命名.md", text: text, isDirty: true)
+        // A new untitled document is an editing action. Leave the global reading
+        // mode before activating the new tab so its auto-focused first block is
+        // visible as an editor on the first render.
+        if previewMode { previewMode = false }
+        let existingNames = Set(tabs.map(\.name))
+        var ordinal = 1
+        var name = "未命名.md"
+        while existingNames.contains(name) {
+            ordinal += 1
+            name = "未命名 \(ordinal).md"
+        }
+        let tab = DocumentTab(url: nil, name: name, text: text, isDirty: true)
         tabs.append(tab)
+        autoFocusBlockEditorTabIDs.insert(tab.id)
         activateTab(tab.id)
         MVLog.info("new document", category: "document")
+    }
+
+    /// Replace the workspace with an editable in-memory copy of a Debug fixture.
+    /// The tab deliberately has no file URL, so Save can never overwrite the
+    /// read-only fixture bundled into the Debug app.
+    func loadVisualTestDocument(name: String, text: String, scrollY: CGFloat) {
+        guard visualTestEnabled else { return }
+        let tab = DocumentTab(
+            url: nil,
+            name: name,
+            text: text,
+            isDirty: false,
+            isMarkdown: true,
+            scrollY: scrollY
+        )
+        tabs = [tab]
+        visualTestFixtureTabID = tab.id
+        blockEditorStores.removeAll()
+        autoFocusBlockEditorTabIDs.removeAll()
+        activeTabID = tab.id
+        lastClosedTab = nil
+        confirmingCloseTabID = nil
+        MVLog.info("visual-test fixture loaded: \(name)", category: "document")
+        scheduleSessionSave()
+    }
+
+    func togglePreviewMode() {
+        togglePreviewMode(toaster: .shared)
+    }
+
+    func togglePreviewMode(toaster: Toaster) {
+        guard activeTab?.isMarkdown == true else { return }
+        reconcileActiveText()
+        previewMode.toggle()
+        toaster.flash(previewMode ? "纯预览 · 点击笔重新编辑" : "编辑模式")
+    }
+
+    func toggleSidebar() {
+        sidebarOpen.toggle()
+        scheduleSessionSave()
     }
 
     /// Two-stage close. A dirty tab's first × shows the "确认关闭?" capsule and
@@ -125,9 +329,13 @@ final class DocumentManager: ObservableObject {
     /// clean tab) closes for real. Designed as the single close entry point so
     /// ⌘W (future C5) can reuse it.
     func requestClose(_ tab: DocumentTab) {
-        if tab.isDirty && confirmingCloseTabID != tab.id {
-            confirmingCloseTabID = tab.id
-            let armedID = tab.id
+        if tab.id == activeTabID {
+            reconcileActiveText()
+        }
+        guard let current = tabs.first(where: { $0.id == tab.id }) else { return }
+        if current.isDirty && confirmingCloseTabID != current.id {
+            confirmingCloseTabID = current.id
+            let armedID = current.id
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
                 guard let self else { return }
                 if self.confirmingCloseTabID == armedID {
@@ -136,25 +344,27 @@ final class DocumentManager: ObservableObject {
             }
             return
         }
-        doClose(tab)
+        doClose(current)
     }
 
     func doClose(_ tab: DocumentTab) {
+        guard let idx = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         MVLog.info("close document: \(tab.name)", category: "document")
         // If the closing tab is the active one, pull its LIVE editor text into the
         // snapshot first so a later reopen restores the just-typed (unsaved) text,
         // then capture that fresh snapshot as lastClosedTab.
         if tab.id == activeTabID { reconcileActiveText() }
-        let closing = tabs.first { $0.id == tab.id } ?? tab
-        let idx = tabs.firstIndex(where: { $0.id == tab.id })
+        let closing = tabs[idx]
         lastClosedTab = closing
         tabs.removeAll { $0.id == tab.id }
+        blockEditorStores.removeValue(forKey: tab.id)
+        autoFocusBlockEditorTabIDs.remove(tab.id)
         if confirmingCloseTabID == tab.id { confirmingCloseTabID = nil }
         if activeTabID == tab.id {
             // Activate the tab that slid into the same slot, else the last one.
             // The closed tab is already gone (and reconciled above), so activateTab's
             // reconcile of the outgoing tab is a no-op here — routed for consistency.
-            if let idx, !tabs.isEmpty {
+            if !tabs.isEmpty {
                 activateTab(tabs[min(idx, tabs.count - 1)].id)
             } else {
                 activateTab(nil)
@@ -168,8 +378,42 @@ final class DocumentManager: ObservableObject {
     func reopenClosed() {
         guard let tab = lastClosedTab else { return }
         lastClosedTab = nil
+        guard !tabs.contains(where: { $0.id == tab.id }) else { return }
         tabs.append(tab)
         activateTab(tab.id)
+    }
+
+    /// Route undo through AppKit first so an active text field gets first refusal,
+    /// then fall back to the active block document's per-tab undo history.
+    @discardableResult
+    func undoActiveEdit(
+        sendingFirstResponderAction send: ((Selector) -> Bool)? = nil
+    ) -> Bool {
+        let action = NSSelectorFromString("undo:")
+        let handled = send?(action)
+            ?? NSApplication.shared.sendAction(action, to: nil, from: nil)
+        if handled { return true }
+        guard let id = activeTabID,
+              let store = blockEditorStores[id],
+              store.undoManager.canUndo else { return false }
+        store.undoManager.undo()
+        return true
+    }
+
+    /// Route redo through AppKit first, with the active block store as a fallback.
+    @discardableResult
+    func redoActiveEdit(
+        sendingFirstResponderAction send: ((Selector) -> Bool)? = nil
+    ) -> Bool {
+        let action = NSSelectorFromString("redo:")
+        let handled = send?(action)
+            ?? NSApplication.shared.sendAction(action, to: nil, from: nil)
+        if handled { return true }
+        guard let id = activeTabID,
+              let store = blockEditorStores[id],
+              store.undoManager.canRedo else { return false }
+        store.undoManager.redo()
+        return true
     }
 
     // MARK: - Session persistence
@@ -191,8 +435,22 @@ final class DocumentManager: ObservableObject {
     func snapshotSession() -> Session {
         var snap = tabs  // local value copy — mutating it never touches @Published tabs
         if let idx = activeIdx {
-            if let pull = pullActiveText { snap[idx].text = pull() }
+            if snap[idx].isMarkdown,
+               let document = pullActiveMarkdownDocument?() {
+                let diverged = snap[idx].text != document.source
+                snap[idx].text = document.source
+                snap[idx].markdownDocument = document
+                if diverged { snap[idx].isDirty = true }
+            } else if let pull = pullActiveText {
+                let liveText = pull()
+                if snap[idx].text != liveText { snap[idx].isDirty = true }
+                snap[idx].text = liveText
+            }
             if let pullY = pullActiveScrollY { snap[idx].scrollY = pullY() }
+            if let selection = pullActiveSelection?() {
+                snap[idx].selectionLocation = max(0, selection.location)
+                snap[idx].selectionLength = max(0, selection.length)
+            }
         }
         return Session(
             tabs: snap,
@@ -200,14 +458,15 @@ final class DocumentManager: ObservableObject {
             fontIndex: fontIndex,
             sidebarWidth: sidebarWidth,
             sidebarOpen: sidebarOpen,
-            directoryPath: directoryURL?.path
+            directoryPath: directoryURL?.path,
+            expandedFolderPaths: Array(expandedFolders).sorted()
         )
     }
 
     /// Persist the current session NOW (synchronous, best-effort). Used by the
     /// terminate hook and by the debounce block.
     func saveSession() {
-        SessionStore.save(snapshotSession())
+        SessionStore.save(snapshotSession(), to: sessionURL)
     }
 
     /// Debounced session save (~1s) for high-frequency triggers (typing, scrolling)
@@ -220,7 +479,7 @@ final class DocumentManager: ObservableObject {
             self?.saveSession()
         }
         sessionSaveWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + sessionSaveDelay, execute: work)
     }
 
     /// Rebuild in-memory state from a saved session. Sets tabs/active/font/sidebar;
@@ -231,19 +490,67 @@ final class DocumentManager: ObservableObject {
     /// `lastStyledBodySize` seeding in makeNSView reads the current fontIndex).
     func restore(from s: Session) {
         fontIndex = max(0, min(DesignTokens.bodyFontSizes.count - 1, s.fontIndex))
-        sidebarWidth = s.sidebarWidth
+        sidebarWidth = max(
+            DesignTokens.sidebarMinWidth,
+            min(DesignTokens.sidebarMaxWidth, s.sidebarWidth)
+        )
         sidebarOpen = s.sidebarOpen
         tabs = s.tabs
+        visualTestFixtureTabID = nil
+        blockEditorStores.removeAll()
+        autoFocusBlockEditorTabIDs.removeAll()
+        commitActiveEditing = nil
+        pullActiveText = nil
+        pullActiveMarkdownDocument = nil
+        pullActiveScrollY = nil
+        pullActiveSelection = nil
+        lastClosedTab = nil
+        confirmingCloseTabID = nil
         // Fall back to the first tab if the saved active id no longer matches.
         activeTabID = (s.activeTabID.flatMap { id in tabs.first { $0.id == id }?.id })
             ?? tabs.first?.id
         // Rebuild the sidebar tree from the saved folder if it still exists. tabs is
         // already non-empty, so loadDirectory's first-file auto-open never fires.
-        if let path = s.directoryPath,
-           FileManager.default.fileExists(atPath: path) {
-            loadDirectory(URL(fileURLWithPath: path))
+        directoryURL = nil
+        fileTree = []
+        expandedFolders = []
+        if let path = s.directoryPath {
+            let savedDirectory = URL(fileURLWithPath: path, isDirectory: true)
+            let isDirectory = (try? savedDirectory.resourceValues(
+                forKeys: [.isDirectoryKey]
+            ).isDirectory) ?? false
+            if isDirectory {
+                loadDirectory(savedDirectory)
+                if let saved = s.expandedFolderPaths {
+                    expandedFolders = Set(saved)
+                }
+            }
         }
         MVLog.info("session restored: \(tabs.count) tab(s), font \(fontIndex)", category: "session")
+    }
+
+    /// Restore an isolated visual-test session and reconnect its URL-less fixture
+    /// tab to the matching workspace row. The binding is accepted only when both
+    /// the restored tabs and restored file tree contain one unambiguous match.
+    func restoreVisualTestSession(from session: Session, fixtureName: String) {
+        guard visualTestEnabled else { return }
+        restore(from: session)
+
+        let tabMatches = tabs.filter {
+            $0.url == nil && $0.isMarkdown && $0.name == fixtureName
+        }
+        let workspaceMatches = matchingWorkspaceFiles(
+            named: fixtureName,
+            in: fileTree
+        )
+        guard tabMatches.count == 1, workspaceMatches.count == 1 else {
+            MVLog.warn(
+                "visual-test fixture binding is ambiguous after restore",
+                category: "session"
+            )
+            return
+        }
+        visualTestFixtureTabID = tabMatches[0].id
     }
 
     // MARK: - Font
@@ -264,35 +571,79 @@ final class DocumentManager: ObservableObject {
 
     // MARK: - File I/O
 
+    /// Shared admission and loading path for the system panel, Finder open events,
+    /// and drag-and-drop. Duplicate canonical paths activate the existing tab before
+    /// touching disk, preserving any unsaved in-memory source.
+    @discardableResult
+    func openSelection(
+        _ url: URL?,
+        admission: DocumentOpenAdmission,
+        reader: DocumentReader = { url in
+            try String(contentsOf: url, encoding: .utf8)
+        }
+    ) -> DocumentOpenResult {
+        guard let url else { return .cancelled }
+        guard url.isFileURL else {
+            Toaster.shared.flash(admission.unsupportedMessage)
+            return .rejectedUnsupported
+        }
+
+        let isDirectory = (try? url.resourceValues(
+            forKeys: [.isDirectoryKey]
+        ).isDirectory) == true
+        if isDirectory {
+            guard admission.allowsDirectories else {
+                Toaster.shared.flash(admission.unsupportedMessage)
+                return .rejectedUnsupported
+            }
+            loadDirectory(url)
+            return .openedDirectory(url)
+        }
+
+        guard admission.acceptsFile(url) else {
+            Toaster.shared.flash(admission.unsupportedMessage)
+            return .rejectedUnsupported
+        }
+
+        let canonical = canonicalPath(for: url)
+        if let existing = tabs.first(where: {
+            $0.url.map(canonicalPath(for:)) == canonical
+        }) {
+            activateTab(existing.id)
+            return .activatedExisting(existing.id)
+        }
+
+        let text: String
+        do {
+            text = try reader(url)
+        } catch {
+            MVLog.warn("open failed: \(url.path), \(error)", category: "document")
+            Toaster.shared.flash("无法打开文件")
+            return .failedToRead
+        }
+
+        openTab(for: url, text: text)
+        guard let activeTabID else { return .failedToRead }
+        return .openedFile(activeTabID)
+    }
+
     func openDocument() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        if url.hasDirectoryPath {
-            loadDirectory(url)
-        } else {
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
-            openTab(for: url, text: text)
-        }
+        panel.allowedContentTypes = DocumentFormat.openPanelContentTypes
+        let selection = panel.runModal() == .OK ? panel.url : nil
+        openSelection(selection, admission: .openPanel)
     }
 
     func saveCurrent() {
-        // Reconcile the live editor text into the snapshot BEFORE reading it, so we
-        // write the current (just-typed, unsaved) content to disk.
-        reconcileActiveText()
         guard let tab = activeTab else { return }
-        if let url = tab.url {
-            do {
-                try tab.text.write(to: url, atomically: true, encoding: .utf8)
-                if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
-                    tabs[idx].isDirty = false
-                }
+        if tab.url != nil {
+            if saveActiveDocument() {
                 Toaster.shared.flash("已保存 " + tab.name)
-                scheduleSessionSave()
-            } catch {
-                return
+            } else {
+                Toaster.shared.flash("保存失败")
             }
         } else {
             saveAsCurrent()
@@ -303,29 +654,79 @@ final class DocumentManager: ObservableObject {
         // Reconcile live editor text into the snapshot before reading tabs[idx].text.
         reconcileActiveText()
         let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = [UTType.plainText, UTType(filenameExtension: "md")!]
+        savePanel.allowedContentTypes = DocumentFormat.openPanelContentTypes
         savePanel.nameFieldStringValue = activeTab?.name ?? "未命名.md"
         guard savePanel.runModal() == .OK, let url = savePanel.url else { return }
-        if let idx = tabs.firstIndex(where: { $0.id == activeTabID }) {
-            do {
-                try tabs[idx].text.write(to: url, atomically: true, encoding: .utf8)
-                tabs[idx].url = url
-                tabs[idx].name = url.lastPathComponent
-                tabs[idx].isDirty = false
-                Toaster.shared.flash("已保存 " + tabs[idx].name)
-                scheduleSessionSave()
-            } catch {
-                return
-            }
+        if saveActiveDocument(to: url) {
+            Toaster.shared.flash("已保存 " + url.lastPathComponent)
+        } else {
+            Toaster.shared.flash("保存失败")
         }
+    }
+
+    /// Save the active document without presenting UI. Supplying a destination
+    /// performs Save As and updates tab identity only after the write succeeds.
+    @discardableResult
+    func saveActiveDocument(to destinationURL: URL? = nil) -> Bool {
+        saveActiveDocument(to: destinationURL) { text, url in
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// Writer-injected variant used by lifecycle tests and non-UI callers.
+    @discardableResult
+    func saveActiveDocument(
+        to destinationURL: URL? = nil,
+        writer: DocumentWriter
+    ) -> Bool {
+        reconcileActiveText()
+        guard let idx = activeIdx else { return false }
+        let current = tabs[idx]
+        guard let target = destinationURL ?? current.url else { return false }
+        let format = DocumentFormat(url: target)
+        guard format.isOpenable else { return false }
+
+        let canonicalTarget = canonicalPath(for: target)
+        guard !tabs.contains(where: { candidate in
+            candidate.id != current.id
+                && candidate.url.map(canonicalPath(for:)) == canonicalTarget
+        }) else {
+            MVLog.warn("save as target already open: \(target.path)", category: "document")
+            return false
+        }
+
+        do {
+            try writer(current.text, target)
+        } catch {
+            MVLog.warn("save failed: \(error)", category: "document")
+            return false
+        }
+
+        var saved = tabs[idx]
+        saved.url = target
+        saved.name = target.lastPathComponent
+        saved.isDirty = false
+        saved.isMarkdown = format.isMarkdownRendered
+        if saved.isMarkdown {
+            if saved.markdownDocument?.source != saved.text {
+                saved.markdownDocument = MarkdownDocument(source: saved.text)
+            }
+        } else {
+            saved.markdownDocument = nil
+            blockEditorStores.removeValue(forKey: saved.id)
+            pullActiveMarkdownDocument = nil
+            commitActiveEditing = nil
+        }
+        tabs[idx] = saved
+        scheduleSessionSave()
+        return true
     }
 
     func openFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType.plainText, UTType(filenameExtension: "md")!]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
-        openTab(for: url, text: text)
+        panel.allowedContentTypes = DocumentFormat.openPanelContentTypes
+        let selection = panel.runModal() == .OK ? panel.url : nil
+        openSelection(selection, admission: .openPanel)
     }
 
     func openDirectory() {
@@ -346,6 +747,7 @@ final class DocumentManager: ObservableObject {
     func loadDirectory(_ url: URL) {
         directoryURL = url
         fileTree = buildFileTree(at: url)
+        expandedFolders = Set(allFolderIDs(in: fileTree))
         if let first = firstTextFile(in: fileTree), tabs.isEmpty {
             if let text = try? String(contentsOf: first, encoding: .utf8) {
                 openTab(for: first, text: text)
@@ -354,8 +756,34 @@ final class DocumentManager: ObservableObject {
     }
 
     func openFileNode(_ node: FileNode) {
+        if let fixture = tabs.first(where: { tabRepresentsFileNode($0, node: node) }) {
+            activateTab(fixture.id)
+            return
+        }
         guard !node.isDirectory, let text = try? String(contentsOf: node.url, encoding: .utf8) else { return }
         openTab(for: node.url, text: text)
+    }
+
+    /// Whether a tab is represented by a concrete sidebar row. Normal documents
+    /// match by canonical URL. The one URL-less visual fixture tab matches only its
+    /// same-named workspace row.
+    func tabRepresentsFileNode(_ tab: DocumentTab, node: FileNode) -> Bool {
+        guard !node.isDirectory else { return false }
+        if let url = tab.url {
+            return canonicalPath(for: url) == canonicalPath(for: node.url)
+        }
+        return visualTestEnabled
+            && tab.id == visualTestFixtureTabID
+            && tab.name == node.name
+    }
+
+    func isActiveFileNode(_ node: FileNode) -> Bool {
+        guard let activeTab else { return false }
+        return tabRepresentsFileNode(activeTab, node: node)
+    }
+
+    func fileNodeHasDirtyTab(_ node: FileNode) -> Bool {
+        tabs.contains { $0.isDirty && tabRepresentsFileNode($0, node: node) }
     }
 
     private func buildFileTree(at url: URL) -> [FileNode] {
@@ -370,7 +798,17 @@ final class DocumentManager: ObservableObject {
             }
             guard isTextFile(childURL) else { return nil }
             return FileNode(url: childURL, name: childURL.lastPathComponent, isDirectory: false)
-        }.sorted { ($0.isDirectory && !$1.isDirectory) || $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }.sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
+            let order = lhs.name.compare(
+                rhs.name,
+                options: [.caseInsensitive, .numeric],
+                range: nil,
+                locale: Locale(identifier: "en_US_POSIX")
+            )
+            if order != .orderedSame { return order == .orderedAscending }
+            return lhs.url.path < rhs.url.path
+        }
     }
 
     private func firstTextFile(in nodes: [FileNode]) -> URL? {
@@ -381,9 +819,30 @@ final class DocumentManager: ObservableObject {
         return nil
     }
 
+    private func allFolderIDs(in nodes: [FileNode]) -> [String] {
+        nodes.flatMap { node in
+            node.isDirectory ? [node.id] + allFolderIDs(in: node.children) : []
+        }
+    }
+
+    private func matchingWorkspaceFiles(
+        named name: String,
+        in nodes: [FileNode]
+    ) -> [FileNode] {
+        nodes.flatMap { node in
+            if node.isDirectory {
+                return matchingWorkspaceFiles(named: name, in: node.children)
+            }
+            return node.name == name ? [node] : []
+        }
+    }
+
     private func isTextFile(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        return ["md", "markdown", "mdown", "mkd", "txt", "text", "yaml", "yml", "json", "toml", "swift", "sh", "py", "js", "ts", "html", "css", "xml", "rb", "go", "rs", "java", "kt"].contains(ext)
+        DocumentFormat(url: url).isOpenable
+    }
+
+    private func canonicalPath(for url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     // MARK: - Vim-like navigation

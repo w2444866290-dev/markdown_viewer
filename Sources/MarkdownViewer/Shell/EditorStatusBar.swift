@@ -1,19 +1,23 @@
 import SwiftUI
 import AppKit
+import Combine
 import UniformTypeIdentifiers
 
 // MARK: - Status bar — isolated so scroll only re-renders THIS view
 //
 // spec: bottom 14px, right 20px, "{千分位字数} 字 · {行数} 行 · {pct}%",
-// font 11.5 monospaced, statusText color, fade out 0.8s after scrolling stops.
+// font 11.5 with tabular numerals, statusText color, hidden during scrolling,
+// then restored 0.8 seconds after scrolling stops.
 //
 // Observes ScrollProgressModel (the per-frame scroll sink) and DocMetricsModel
 // (char/line counts, changed only on edit). Both are held by ContentView via
 // @State and NOT observed there, so scrolling / editing re-evaluate only this view.
 struct EditorStatusBar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var scrollModel: ScrollProgressModel
     @ObservedObject var metrics: DocMetricsModel
-    @State private var faded = false
+    let docToken: UUID?
+    @State private var visibility = StatusVisibilityPolicy()
 
     // Shared formatter avoids a fresh allocation on every render.
     private static let numberFormatter: NumberFormatter = {
@@ -34,18 +38,28 @@ struct EditorStatusBar: View {
             .font(.system(size: 11.5))
             .monospacedDigit()
             .foregroundColor(DesignTokens.swiftUI.statusText)
-            .opacity(faded ? 0 : 1)
-            .animation(.easeInOut(duration: 0.3), value: faded)
+            .opacity(visibility.isFaded ? 0 : 1)
+            .animation(
+                MotionPolicy.animation(.easeInOut(duration: 0.3), reduceMotion: reduceMotion),
+                value: visibility.isFaded
+            )
             .padding(.horizontal, 20)
             .padding(.bottom, 14)
-            .onReceive(
-                scrollModel.$value.debounce(for: .seconds(0.8), scheduler: DispatchQueue.main)
-            ) { _ in
-                faded = false
+            .accessibilityIdentifier("document-status")
+            .onReceive(scrollModel.$activityRevision.dropFirst()) { _ in
+                registerScrollActivity()
             }
-            .onReceive(scrollModel.$value) { _ in
-                faded = true
-            }
+            .onChange(of: docToken) { _ in visibility.reset() }
+            .onAppear { visibility.reset() }
+    }
+
+    private func registerScrollActivity() {
+        let generation = visibility.registerScrollActivity()
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + StatusVisibilityPolicy.recoveryDelay
+        ) {
+            visibility.recover(ifCurrent: generation)
+        }
     }
 }
 
@@ -70,21 +84,26 @@ struct HoverURLPreview: View {
                     .padding(.leading, 20)
                     .padding(.bottom, 14)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .accessibilityIdentifier(
+                        MarkdownAccessibilitySurface.hoverURLPreview(
+                            blockIndex: model.sourceBlockIndex
+                        )
+                    )
+                    .accessibilityLabel("链接地址")
+                    .accessibilityValue(model.url)
             }
         }
         .allowsHitTesting(false)
     }
 }
 
-// DIAG (temporary) ----------------------------------------------------------
-// On-screen restyle-path readout for the "whole-document styling flashes for one
-// frame while typing/deleting" bug. Shows the LAST re-style path plus cumulative
-// per-path tallies, updated on every keystroke by EditorView.Coordinator.diagRecord.
+// MARK: - Debug diagnostics
+// On-screen source-editor restyle and find readout.
+// It shows the latest restyle path plus cumulative per-path tallies.
 //
 // Observes the isolated DiagModel. ContentView holds that model via @State and does
-// NOT observe it, so the instrumentation re-renders ONLY this yellow leaf - it can
-// never itself trigger the whole-ContentView re-render we are hunting. Deliberately
-// loud debug styling. Rip out with the rest of the `// DIAG (temporary)` markers.
+// not observe it, so the instrumentation re-renders only this yellow leaf.
+// The deliberately loud styling keeps the Debug-only HUD easy to distinguish.
 struct DiagReadout: View {
     @ObservedObject var model: DiagModel
     // Collapse to a tiny chip so it never blocks the editor / find bar. Session-only.

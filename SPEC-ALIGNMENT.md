@@ -1,201 +1,251 @@
-# UI 规约对齐 — 跟踪表
+# UI 规约对齐与验证矩阵
 
-> 设计真相源：`ui/Markdown Viewer.dc.html`
-> 主分支：`main` @ `b145e22`（已 push origin，本地=远程）　当前发布 **v1.1.2**
-> 版本从仓库根 `VERSION` 单一来源，`scripts/build.sh` 注入 `CFBundleShortVersionString`；`CFBundleVersion` = git 短 SHA（build 号）。
-> 最近更新：2026-07-09（补记渲染层测试扩展暂缓 TODO）
+`ui/Markdown Viewer.dc.html` 是界面布局、视觉状态和交互细节的唯一设计真相源。
+`AGENTS.md` 记录产品定位和已经拍板的业务交互，代码记录实现细节，本文件记录当前实现范围、直接验证入口和真实 App 证据边界。
+本文件不绑定分支、提交号、发布版本或固定测试数量，因为这些信息会快速失效。
+任何一次构建或测试是否通过，都以该次命令输出及其生成的证据文件为准。
 
-质检共 30 条，已逐条对源核验。状态分：✅完成 / 🔧进行中 / ⏳待办 / ❓待拍板 / ⛔不做(已拍板)。**当前:可做项全部完成,仅剩长期项(见文末)。**
+## 当前实现基线
 
----
-
-## 📦 版本变更归档（v1.0.0 → v1.1.2 · 2026-07-06 收尾）
-
-> 升级口径：bug / 打磨 / 技术债 = **patch**；新的用户可见能力 = **minor**。
-
-| 版本 | SHA | 变更 |
-|---|---|---|
-| v1.0.0 | `41c49b2` | 基线：P0 · P1 11 项 · 会话持久化 #29 · 打字性能（性能-1 + ②节流）· 状态栏版本标签 |
-| v1.0.1 | `e00db6d` | 引入 `VERSION` 单一来源；**查找「所见即所搜」**——只搜可见正文（`.mvNonBody` + 正文↔原文映射，`d492785`）|
-| v1.0.2 | `b36184d` | 查找：**代码块内容恢复可搜**（初版误整块排除）|
-| v1.0.3 | `4f835ab` | 查找：兜底排除不可见字形（size≤1.5/透明）；**debug find 诊断 HUD**（独立指标 + 点击复制，移左下可折叠）|
-| v1.0.4 | `4bf7ba5` | **加粗渲染修**：强调匹配前遮罩代码区 → 含 `*`/行内代码的加粗不再漏 `**`、`__` 不再误加粗 |
-| v1.0.5 | `cc1b855` | 查找高亮调深（0.55/0.22 → 0.85/0.34）——代码卡片上也看得清当前项 |
-| v1.0.6 | `d6f2128` | **查找滚动定位修**：`scrollRangeToVisible` 在自定义 scroll view 失效 → 直接滚 clip view + 居中 |
-| v1.0.7 | `5ad2664` | **C·UI 打磨 5 项**：#8 tab padding · #13 查找芯片 hover · #25 复制按钮 hover · #7 resize 三态蓝线 · #20 coach key + 删死变量 |
-| v1.0.8 | `226e5c5` | **C·perf 隔离**：性能-3 字数/行数 · 性能-5 侧栏筛选（拆独立模型，不再整树重渲）|
-| v1.0.9 | `84d57e0` | **#6** 侧栏筛选命中显示暗淡相对路径（搜嵌套本就具备）|
-| v1.1.0 | `463f61c` | **D·技术债**：删 `toggleOpen` · 正则替换 `$1` 反向引用 + 「没有可替换的匹配」toast · **D3 修真泄漏**（非 md 里 ``` 会冒出复制按钮）|
-| v1.1.1 | `fae5aa1` | **修替换卡死**：`replaceCurrent` 自匹配替换时不再卡第一处，改为前进到替换后的下一个匹配 |
-| v1.1.2 | `51e5b2c` | **目录重构**：平铺 24 文件 → 10 个一层目录(App/Shell/Editor/Styling/Documents/Find/Outline/Sidebar/Palette/UI)；4 大文件按顶层类型粗拆(零逻辑改动，仅 5 处必要 private→internal)；AGENTS.md 收敛为单一来源 + CLAUDE.md 软链；README 加 Project Structure、清 `--self-test`/命令行传路径两处文档漂移 |
-
-## ⏳ 长期 TODO（保留 · 各自单独立项，不夹带）
-
-- **B Phase 3**：编辑器复用，切 tab 保留每 tab 撤销历史（tab/编辑器生命周期改造，L）。
-- **⑤ 块级模型**：大文档终极解（等价重写编辑器内核 + 文档模型，XL；用户 2026-07-03 拍板「长期必做」）。
-- **渲染层视觉回归测试扩展（暂缓）**：UI 稿未最终敲定前不做；后续按 pixel sentinel 补齐、RenderProbe 失败导出 PNG、少量 golden snapshot、App 级截图 smoke 四步单独立项（M→L）。
-- **性能-4**：查找输入整树重渲隔离（拆 `FindFieldModel`，M；用户「不提前」按住，想做随时开）。
-- **#15 cosmetic**（可选）：命令面板文档列表加「文件夹分组/缩进」或路径显示——功能已达成，仅观感。
-
----
-
-## ✅ 近期工程收口（2026-07-08）
-
-- **LiveMarkdownStyler 拆分安全网**：PR #7 建特征测试网，PR #8 按 CodeFence/Table/Inline/Incremental 拆分并收窄 helper 可见性。
-- **渲染层视觉回归测试**：新增 offscreen `CardLayoutManager` pixel checks，覆盖 code card full-width fill 与 table header/body hairline。
-
-## 分支约定
-
-- 每个批次单独成支：`p0` / `p1` / … 各自命名，验收后 fast-forward 合 `main`。
-- `wave3-C`（前序对齐 + 打磨 WIP，止于 `c51a901`）与 `p0`（P0 批次 8 提交）均已合入 **`main`**（顶 `bb13201`）。
-- `p0` 分支保留作批次记录；下一批次从 `main` 新拉。
-
-## P0 — 行为正确性 / 首屏观感（✅ 已完成并合入 main，用户已验收）
-
-分支 `p0` @ `bb13201`，已 fast-forward 合入 `main`。功能 + #18 滚动顺滑度均经用户确认。
-
-| # | 问题 | 工作量 | 执行单元 | 状态 |
-|---|---|---|---|---|
-| 9 | ⌘F 重复按会关掉查找；应永远 open+focus+select+recompute | S | Exec1 查找&面板 | ✅ |
-| 10 | 关闭查找未清 query/count/error/replace/高亮 | S | Exec1 查找&面板 | ✅ |
-| 14 | 命令面板"查找/替换"会把已开查找关掉；应 openFind | S | Exec1 查找&面板 | ✅ |
-| 15 | 命令面板看不到打开的 tab/未命名文档（最小版：union tabs） | S→M | Exec1 查找&面板 | ✅（完整 buildDefs 对齐留待数据流波次，已留 TODO 标记） |
-| 5 | 侧栏筛选无键盘导航/高亮/Enter 打开 | M | Exec2 侧栏 | ✅ |
-| 18 | 滚动时右侧目录当前项不更新（只更新进度条） | S | Exec3 目录 | ✅ |
-| 18-perf | 滚动同步卡顿 | S | Exec 性能 | ✅ 两层修复：① 计算——缓存标题偏移+二分查找（`OutlineController.swift`，`60a01c4`）；② 渲染——`activeHeadingIndex` 拆成独立 `ActiveHeadingModel`（`@State` 持有、仅目录条观察），滚动跨标题只重渲目录条不重渲整个 ContentView（`bb13201`）。待用户验证 |
-
-> 注：`hoveredURL` 等同源「整树重渲」问题已作为性能项并入下方 P1/P2 优先级（见 性能-1..5）。
-
-冲突域：Exec1=FindState/FindBarView/CommandPalette/DocumentManager/ContentView；Exec2=SidebarView；Exec3=EditorView。三者文件互不重叠，独立 worktree 开发，owner 统一核验合并。
-
-### P0 引入的技术债（需后续清理）
-- **`FindState.toggleOpen()` 已成误名**：⌘F 菜单绑定在 `App.swift`（不在 Exec1 文件范围内），为实现 #9「永远 open」，Exec1 把 `toggleOpen()` 改成调用 `openFind()`（不再 toggle）。行为正确，但命名误导。**后续应**：把 `App.swift` 的 ⌘F 绑定直接指向 `openFind()`，删除 `toggleOpen()`。归入"查找&面板补全波次"。
-
----
-
-## p1 — P1 档批次（✅ 完成，待用户验收）
-
-分支 `p1` @ `7f42ae6`（从 main，4 个并行 worktree 合并），集成构建 + 打包通过。含 11 项；延后的 {#29, 性能-1} 不在内。
-
-| 项 | 内容 | 波 |
-|---|---|---|
-| #22 | 非 Markdown 文件源码视图 + `非 Markdown 文件 · 以源码形式查看` banner（`DocumentTab.isMarkdown`） | W1 |
-| #1/#2 | 首启 / 新建空白 untitled，不塞 demo | W1 |
-| #26 | 状态栏字体改 tabular-digit（去 monospaced 家族） | W1 |
-| #27 | 底部 padding 响应式 33vh（`ResponsiveScrollView.tile` 动态 contentInset） | W1 |
-| #28 | 拖拽仅 .md/.markdown/.txt，不支持 toast | W1 |
-| 性能-2 | hoveredURL 隔离到 `HoverURLModel`，hover 不再整树重渲 | W1 |
-| #11 | 查找 Shift+Enter 上一个 / Esc 关闭（含替换框，NSEvent 监听） | W2 |
-| #12 | 查找面板白 .97+blur、输入底 .045（本地，不动 DesignTokens） | W2 |
-| #17 | 命令面板行单行 ellipsis | W2 |
-| #6 | 侧栏筛选递归 flatten 匹配嵌套文件 | W3 |
-| #21 | 目录跳转 300ms 滚动 + 900ms wash（滚动结束后触发） | W4 |
-
-合入 `main`：待用户验收后进行。
-
-### p1 验证轮发现并修复（@ `900c63b`）
-- **日志**：`MVLog` 内存环形缓冲 200 条，崩溃（NSException + 6 信号）flush 到 `~/Library/Logs/MarkdownViewer/crash/`。搜索/缩放路径已加日志点。
-- **崩溃**：不盲修——靠日志抓真实堆栈。疑因（诊断）：find 匹配范围在文档长度变化后被使用 → 越界；#27 `tile()` 重入为协同因素。已加范围越界保护 + 修了 tile 重入，若仍复现等 crash log。
-- **#27 滚动漂移**：inset 计算移出 `tile()`，缩放时保存/恢复滚动位置。
-- **inline 代码不高亮**：绘制顺序——填完代码底色后补描 find/目录临时高亮。
-- **搜索闪白/卡顿**：debounce 120ms + 只清上次匹配范围（不再全文清/重扫）+ 范围越界保护。
-- 性能-4（查找输入整树重渲）：用户确认**不提前**，留原 todo。
-- **非 md 打开卡死**（打开 .toml 无响应）：根因——大纲未按 `isMarkdown` 关闭，TOML/YAML 的 `#` 注释被当成几百个 H1 标题 + 每个做布局查询。修复：非 md 文件四个出口（打开/文本变更/滚动/ContentView 渲染）全部不构建/不渲染大纲（`cac718a`）。这是 #22 的遗漏（当时只 gate 了样式器）。
-- **非 md 扫描同类隐患**：`refreshTextCaches()` 也按 `isMarkdown` gate 了——非 md 跳过 `fencedCodeBlocks/linkRanges` 全文扫描并清空缓存（`6537d78`）。
-- **#27 收缩漂移**：根因——`frameDidChange` 在 AppKit 已移动 `bounds.origin.y` 之后才触发，捕获的是漂移后的值。修法：`viewWillStartLiveResize` 拖拽前快照锚点、`viewDidEndLiveResize` 重钉（`13df4c8`）。
-- **删除闪白**：根因——`clearHighlights` 调 `removeTemporaryAttribute` 没配 `invalidateDisplay`，清除被推迟后一次性重绘全部旧高亮。修法：每次 remove 配 `invalidateDisplay`（`13df4c8`）。
-
-> p1 当前顶 `d74aede`（含上述全部修复 + 日志），合 main 待用户验收。
-
-### 闪白（✅ 真因确认 = 编辑正文时整篇重排，非查找）
-- 用户确认"整篇样式消失一帧" → 是 `LiveMarkdownStyler.apply` 对**整篇** textStorage 重着色+重排，**只在正文编辑（`textDidChange`，`EditorView.swift:271`，每键全文重排）时触发**，与查找高亮无关。正文打字/删除都闪，删除更明显；查找框本身不触发。
-- 教训：前两次（invalidateDisplay、视口化高亮）都盯着 find 改，方向错，视口化还引入"打字也闪"的回归已 `reset` 回退到 `d74aede`。
-- 修法：**增量重排**（✅ 已修，`f9ba385`，待用户验）——`applyIncremental` 只重排被编辑块（按 fenced 容器/段落+空行边界扩展），结构性编辑（围栏```/空行增删/表格`|`/HR、贴近围栏、无 editedRange）**回退全篇**。编辑范围经 `NSTextStorageDelegate.didProcessEditing` 捕获。load/font/replace 仍走全篇 `apply`。
-- **验证亮点**：执行者用属性逐字符 diff harness 证明 `applyIncremental` 输出与全篇 `apply` **逐字节一致**（覆盖纯编辑/标题↔正文/取消加粗/围栏内/列表/引用/行内码/空行合并/贴近围栏），即无陈旧/错误样式。仅合成验证，未跑 GUI。
-- layer-backed（#4）未用，增量重排已治本。
-
-### 查找只匹配正文「所见即所搜」（✅ 完成，用户逐版真机验，末版「没问题了」· v1.0.1→v1.0.6）
-- **边界拍板（用户 2026-07-03）= 所见即所搜**：查找只命中屏幕上可见的正文；隐藏语法符号、链接 URL、图片路径、列表符号、代码语言标签均不参与匹配。**行内代码/代码块内容可搜**（它们可见），仅围栏/反引号/语言标签排除。
-- **实现**：styler 给非正文区间盖可查询属性 `.mvNonBody`（单一事实来源，随全量 `apply` / 增量 `applyIncremental` 的 `setAttributes` 重置天然同步）；`FindController.BodyMap` 据此 **+ 兜底排除不可见字形**（字号≤1.5 或前景近透明——任何隐藏机制都盖住，不依赖每个隐藏点都记得盖标记）拼出"正文串"、建正文↔原文 range 映射，在正文串上跑现有正则（含区分大小写/全词/正则+非法正则报错）再映射回原文做高亮/跳转/替换。
-- **一路修复链（每步真机验）**：v1.0.1 body-only 映射（`d492785`）→ v1.0.2 代码块**内容**恢复可搜（初版误把整块排除）→ v1.0.4 **加粗渲染 bug**（强调 `**`/`__`/`*`/`~~` 解析无视代码边界：`*` 在 `` `reader__*` `` 里破坏整行 `**` 配对→漏成可见字面量；`__` 在 `mcp__reader__x` 里被误加粗。修：强调匹配前把行内代码+代码块区遮罩成空格，长度不变、位置对齐）→ v1.0.5 查找高亮调深（`accentStrong` 0.55→0.85 / `accentSoft` 0.22→0.34，灰代码卡片上也看得清；当前项醒目即"跳到这了"的信号）→ v1.0.6 **滚动定位 bug**（`NSTextView.scrollRangeToVisible` 在自定义 `ResponsiveScrollView` 里对文档深处匹配失效→页面不滚；修：改用会话恢复同款 clip-view 直接滚 + 相同 maxY 钳制 + **居中**匹配）。
-- **调试工具（用户要求，保留）**：`--debug` HUD 移到**左下、可折叠**（× 收起 / ▸DIAG 展开）；新增 find 诊断读数 = `shown/raw/filtered` + **独立**健康计数 `zeroRect`（布局引擎实测渲染高度，真·可见性，不复用排除规则）/`inCode` + 逐条明细（offset/code/size/fgA/rectH/上下文）+ `SCROLL` 数值（target/before/after/viewport）；**点击 HUD 复制整份诊断**（免截图）。全部 gated 于 `AppEnv.debug`，USER 模式不显示。
-- 验证：真 `LiveMarkdownStyler`+`FindController` harness 16/16 用例（含加粗×行内代码交叉、代码块内容、code-then-body 双命中）；真机 E2E 用户逐版确认。
-- **教训**：中途"零宽隐身字符"的判断被 debug 的独立 `zeroRect`（rectH≈27，全可见）推翻——真因是加粗渲染漏 `**` + 滚动失效 + 高亮太淡，不是隐身。**独立于修复规则的诊断指标**是关键（用户点破了自证式的旧 `leak` 校验）。
-
-### 架构演进候选（后续可选，不进当前批）
-- **⭐ 块级模型（block-based）— 用户 2026-07-03 拍板为「长期必做」，记为 TODO**：文档=独立块列表，改一块只重渲一块，计算+布局与文档大小解耦（Notion / Craft / Bear 2 方向）。是"大文档布局"的终极解，等价重写编辑器内核 + 文档模型。**后续单独立项**，不在当前性能收尾内。
-- **TextKit 2 迁移**（`NSTextLayoutManager` + viewport 渲染）：把"只渲染可视区"内建进底层，根治整篇布局/重绘类问题。成本=项目级重写（`CardLayoutManager` 等自绘逻辑全部重做）。**不为单个 bug 立项。**
-- **业界现状结论（2026-07-03 联网调研，详见 artifact 对照文档）**：想要大文档规模的原生编辑器都**绕开 TextKit 2**（实测对编辑型 UI 不成熟——STTextView/ChimeHQ/CodeEdit 均弃用）。终极解走「自研 CoreText 视口引擎」(CodeEdit) 或「块级模型 / 重写解析器」(Notion / Bear 2)，**不是 TextKit 2**。
-- **触发线（撞够再提迁移）**：① 反复出现整篇重绘/重排类闪烁卡顿；② 大文档（MB 级）整体卡（TextKit 1 全量排版固有）；③ 绕 `NSLayoutManager` 子类的 hack 持续增多。
-
----
-
-## 已拍板的决策
-
-| # | 问题 | 决策 |
-|---|---|---|
-| 4 | 侧栏文件夹默认应展开（设计） | ⛔ **不改**，保留现状（默认折叠），用户认为现状更好。有意偏离规约。 |
-| 2 | 新建文档：空白 vs 预填 | ✅ **空白**。新建 / 首启 untitled 均为空文档。 |
-| 1 | 首屏种子 demo 文件 | ✅ **不塞**。设计稿的 SKILL.md/agents/… 仅示意（与 #3 同类）；首启开空白 untitled，侧栏靠打开文件夹填充。 |
-| 29 + 性能-1 | 会话持久化 / 打字整树重构（=「B 文本模型统一」） | **性能-1 打字隔离 ✅**(`a524823`,用户已验) · **会话持久化 #29 ✅**(并入 `303edf4` 前,用户验"没大问题":tabs含未存/active/字号/侧栏宽/每tab滚动/文件夹 → 会话文件) · **Phase3 编辑器复用·保留切tab撤销 ⏳**降级最后,未开工。<br>**打字性能收尾(新线程)**:实测每键重排过多 `inc:9 full:75` → **②节流/合并渲染 ✅**(每帧≤1次重排,`0f9efa9`,用户已验"没问题":`full` 仍高但连打已顺——频率封顶即治本) · **①局部增量去全文扫描 ⏳**(用户 07-03 定"先不做";当前文档体量下不需要,留大文档再上) · `303edf4` 已修 `requiresFullRestyle` 空行邻近误触发。业界 6 类方案对照见 artifact。 |
-| 23/24 | H2 / 代码语言标签 uppercase | ✅ **保持原状**（不转大写，实时编辑器不篡改源文本）。 |
-| 3 | 自绘红绿灯 | ⛔ **不做**，保留系统原生红绿灯。 |
-| 16 | 命令面板蒙层 0.4 vs 设计 0.6 | ✅ **改，对齐设计稿 0.6**（配套调毛玻璃材质，使 0.6 观感符合设计、非近乎不透明）。归样式波次。 |
-| 19 | 目录 hover 优先级 | ✅ **不改**，当前项始终**琥珀**（用户偏好，有意偏离设计稿 hover 胜出）。 |
-
-> **用户原则（默认）**：所有 UI 类变更都需**对齐设计稿**（#3/#16 均按此定）；个别项经用户明确拍板可偏离（如 #4 折叠、#19 琥珀）。样式/打磨波次一律以设计稿数值为准。
-
----
-
-## P1 — 明确保真差距（✅ 已对账 2026-07-06，逐项到代码核实）
-
-**✅ 已完成**（对账时逐一验过代码位置）：
-- **#22** 非 md 走源码视图（`EditorView.isMarkdown` gate）· **#29** 会话持久化（本会话 B，`SessionStore`）· **#11** 查找 Shift+Enter/Esc（`FindBarView:11`）· **#12** 查找面板 白.97+blur（`FindBarView:211`）· **#17** 面板行 `lineLimit(1)`+truncation（`CommandPalette:287`）· **#26** 状态栏 `.monospacedDigit()` tabular 非 monospaced（`ContentView:323`）· **#21** 目录跳转 0.3s ease 滚动 + 0.9s amber wash（`OutlineController.jumpTo`/`washHeading`）· **#27** 底部 33vh 响应式（`ResponsiveScrollView`）· **#28** 拖入只 `.md/.markdown/.txt` + toast「仅支持 Markdown / 文本文件」（`ContentView.handleDrop`）· **性能-1** 打字隔离（本会话，`a524823`）· **性能-2** `HoverURLModel` 隔离
-- **#1** 首屏种子 → ⛔ 已决策为**不塞**（空白首启，见下「已拍板 #1/#2」），非待办
-
-**✅ 完成（对账后）**：
-- **#6**（v1.0.9 `84d57e0`）：侧栏筛选命中行名称旁显示暗淡相对路径（`SidebarView.relativeFolderPath` + `SidebarNodeRow.relativePath`）。搜嵌套本就具备（`flattenFiles`）。
-
-**🟡 基本已达成（可视为完成）**：
-- **#15 命令面板文档列表** — 核心已做：`allDocs`（`CommandPalette.swift:61`）= 开着的 tab + 未命名 + 打开文件夹的**全部磁盘文件**（去重），⌘K 可跳任意已知文档。残留的"full buildDefs parity（`extraOrder`）"是**设计稿无文件系统的模拟产物**（mockup 硬编码 demo 列表 + `extraOrder` 假装文件列表），真机有真实文件、不需要。唯一 cosmetic 差异：mockup 按文件夹分组+缩进，真机扁平列表。**建议视为已达成**，除非要给面板加"文件夹分组/缩进"或路径显示。
-
----
-
-## P2 — 打磨 / 低影响（= 批 C，已对账 2026-07-06）
-
-**✅ v1.0.7 已交（UI 打磨 5 项，`de808a6`）**：**#7** resize 三态蓝线（拖=rgba(10,132,255,.6)）· **#25** 复制按钮 hover 变深（`contentTintColor`）· **#13** 查找芯片 OFF 态 hover 底 · **#8** 删 tab 条多余 8px padding · **#20** coach key 统一常量 + 删死变量 `pulse`
-
-**⬜ 仍待办（C 剩余 = perf 隔离，下一步）**：
-
-| # | 问题 | 工作量 | 修复方式 |
+| 范围 | 当前实现与主要代码 | 直接自动验证 | 当前真实 App 证据边界 |
 |---|---|---|---|
-| 性能-3 | `EditorBridge.charCount/lineCount` → 编辑整树重渲（仅状态栏用） | S | 挪到独立指标模型，仅 `EditorStatusBar` 观察 |
-| 性能-5 | `DocumentManager.sideFilter` → 侧栏筛选每键整树重渲（CV 没读它） | S | 挪到 `@State` 模型，仅 `SidebarView` 观察 |
-| 性能-4 | `FindState.query/replaceText` → 查找每键整树重渲 | M | ⏸ 用户 2026-07-03 定「**不提前**」，按住；将来拆 `FindFieldModel` 仅 `FindBarView` 观察 |
+| 设计真相源 | 生产界面以 `ui/Markdown Viewer.dc.html` 为准，参考捕获器位于 `scripts/visual/`。 | `Tests/Visual/VisualToolTests.sh` 校验权威 HTML 哈希、截图绑定、状态断言、几何锚点、严格像素合同和验收失败路径。 | 默认 passive 生成三个尺寸乘七个状态的 21 对真实 App 证据；严格比较器自动校验状态、非文字几何、全帧像素比例与空间差异。 |
+| 文档模型 | `Sources/MarkdownViewer/Documents/MarkdownDocument.swift` 使用稳定 UUID 和无损源码切片，保留混合换行、空白、围栏和无末尾换行。 | `Tests/MarkdownViewerTests/MarkdownDocumentTests.swift`。 | 静态截图只能证明 fixture 被真实 App 打开，不能证明 round-trip 或局部重解析。 |
+| 块级编辑 | `Sources/MarkdownViewer/Editor/BlockEditorStore.swift`、`Sources/MarkdownViewer/Editor/BlockSourceEditor.swift` 和 `Sources/MarkdownViewer/Editor/MarkdownBlockEditorView.swift` 提供单块源码编辑与提交。 | `Tests/MarkdownViewerTests/BlockEditorStoreTests.swift`、`Tests/MarkdownViewerTests/BlockSourceHighlighterTests.swift` 和 `Tests/MarkdownViewerTests/BlockSourceLifecycleTests.swift`。 | passive 在三个尺寸确定性捕获真实原生源码编辑器、选区和可见性；`palette-find` bounded batch 还真实点击首块、输入 marker 并在打开 palette 前提交。其他编辑命令仍缺逐项真实 App 覆盖。 |
+| 编辑命令 | `Sources/MarkdownViewer/Documents/MarkdownEditingCommands.swift` 处理 Enter、Backspace、Tab、Shift+Tab、上下边界移动和常用行内格式快捷键。 | `Tests/MarkdownViewerTests/MarkdownEditingCommandsTests.swift`。 | `editor-structure` 已规划引用与列表结构命令；`editor-boundaries` 已规划上下边界移动、斜体、行内代码、块首 Backspace 合并和 Esc 提交。后者的计划、harness 和单元用例已离线通过，但当前源树匹配的真实 App 动作证据仍待运行。 |
+| 表格编辑 | `Sources/MarkdownViewer/Editor/MarkdownTableGridEditor.swift` 和 `Sources/MarkdownViewer/Documents/MarkdownDocument.swift` 提供单元格编辑、焦点移动、增删行列和对齐序列化。 | `Tests/MarkdownViewerTests/BlockEditorStoreTests.swift`、`Tests/MarkdownViewerTests/MarkdownDocumentTests.swift` 和 `Tests/MarkdownViewerTests/MarkdownTableLifecycleTests.swift`。 | passive 在三个尺寸验证真实网格、首个表头焦点、177 pt 网格高度、可见性和确定性滚动；`table-controls` 已规划编辑与工具栏操作，`table-navigation` 已规划 Tab、Shift+Tab、Return、末格自动增行和精确焦点序列。后者的计划、harness 和单元用例已离线通过，但当前源树匹配的真实 App 动作证据仍待运行。 |
+| 被动格式化 | `Sources/MarkdownViewer/Editor/MarkdownBlockRenderer.swift` 和 `Sources/MarkdownViewer/Editor/PassiveMarkdownFormatting.swift` 渲染块结构和行内 token。 | `Tests/MarkdownViewerTests/PassiveMarkdownFormattingTests.swift` 和 `Tests/MarkdownViewerTests/MarkdownDocumentTests.swift`。 | fixture 基线截图包含多种格式，但没有逐格式交互断言，因此不能据此声称全部格式 E2E 通过。 |
+| 代码、任务、链接和脚注 | `Sources/MarkdownViewer/Editor/MarkdownBlockRenderer.swift` 和 `Sources/MarkdownViewer/Editor/MarkdownBlockEditorView.swift` 实现复制、任务切换、链接反馈和脚注行为。 | `Tests/MarkdownViewerTests/PassiveMarkdownFormattingTests.swift`、`Tests/MarkdownViewerTests/MarkdownDocumentTests.swift` 和 `Tests/MarkdownViewerTests/BlockEditorStoreTests.swift` 验证相关模型、格式化、持久化 AX 链接和目标任务切换序列。 | `preview-content` 已规划预览内真实任务点击、Bash 代码卡 hover、复制点击、精确剪贴板校验与原样恢复；`preview-footnotes` 已规划脚注引用 hover、物理点击、定义跳转和返回。两者的离线 plan 与 harness 均通过，但当前源树匹配的真实 App 动作证据仍待运行，普通外链点击仍未覆盖。 |
+| 纯预览 | `Sources/MarkdownViewer/Documents/DocumentManager.swift`、`Sources/MarkdownViewer/Shell/EditorHeader.swift`、`Sources/MarkdownViewer/Editor/MarkdownBlockRenderer.swift` 和 `Sources/MarkdownViewer/App/App.swift` 在同一文档页面切换预览状态，禁用块源码与表格网格编辑，同时保留代码复制、任务切换、链接和脚注交互。 | `Tests/MarkdownViewerTests/DocumentFormatTests.swift`、`Tests/MarkdownViewerTests/PreviewInteractionTests.swift`、`Tests/MarkdownViewerTests/PassiveMarkdownFormattingTests.swift` 和 `Tests/MarkdownViewerTests/LaunchConfigurationTests.swift`。 | passive 在三个尺寸走生产预览切换并捕获真实 1.6 秒产品 toast；`preview-content` 与 `preview-footnotes` 分别规划预览内任务和代码交互以及脚注导航，当前仅离线验证通过，当前源树匹配的真实动作证据仍待运行。 |
+| 即时查找替换 | `Sources/MarkdownViewer/Find/BlockFindEngine.swift`、`Sources/MarkdownViewer/Find/FindState.swift` 和 `Sources/MarkdownViewer/Find/FindBarView.swift` 搜索可见文本并支持替换。 | `Tests/MarkdownViewerTests/BlockFindEngineTests.swift`、`Tests/MarkdownViewerTests/BlockEditorStoreTests.swift` 和 `Tests/MarkdownViewerTests/PlainSourceFindCoordinatorTests.swift`。 | passive 在三个尺寸捕获空 query 的真实面板和几何；`palette-find` 有历史导航证据。`find-options` 与 `find-regex-replace` 已规划大小写、全词、正则捕获组、单次替换和全部替换，计划、harness 和单元用例已离线通过，但当前源树匹配的真实 App 动作证据仍待运行。 |
+| 内容大纲 | `Sources/MarkdownViewer/Outline/OutlineRailView.swift` 和 `Sources/MarkdownViewer/Editor/MarkdownBlockEditorView.swift` 提供左侧大纲、当前项和跳转。 | `Tests/MarkdownViewerTests/OutlineStatusPolicyTests.swift`。 | passive 验证三个尺寸的静止大纲几何；`outline-navigation` 已规划真实 hover 展开、精确 AX 标题点击、300 ms 跳转与 900 ms wash 的峰值、渐隐和清除证据。离线 plan、harness 和策略单元测试通过，当前源树匹配的真实 App 动作证据仍待运行。 |
+| 文件侧栏 | `Sources/MarkdownViewer/Sidebar/SidebarView.swift` 和 `Sources/MarkdownViewer/Documents/DocumentManager.swift` 提供目录树、名称与相对路径过滤、键盘导航、调宽和隐藏，并为 workspace-relative 行、空结果、resize handle 与侧栏 surface 提供稳定 AX ID。 | `Tests/MarkdownViewerTests/AccessibilitySurfaceTests.swift`、`Tests/MarkdownViewerTests/DocumentManagerLifecycleTests.swift`、`Tests/MarkdownViewerTests/SessionStoreTests.swift` 和 `Tests/E2E/RealAppHarnessTests.sh` 覆盖稳定 ID、计划预算、严格 session、diagnostic、AX 序列与合成 fixture 失败路径。 | passive 在三个尺寸验证 fixture 行、active 行、active tab 与 sidebar-hidden；`sidebar-filter-navigation` 规划真实过滤与键盘打开，`sidebar-layout-controls` 使用两段独立前台阶段覆盖文件夹折叠展开、两端 resize clamp 和整体隐藏恢复。离线 plan、aggregate、harness 和 verifier 通过，当前源树匹配的真实 App 动作证据仍待运行。 |
+| 标签页和文件生命周期 | `Sources/MarkdownViewer/Documents/DocumentManager.swift` 和 `Sources/MarkdownViewer/Shell/EditorHeader.swift` 提供多标签、脏标签确认关闭、相邻标签和恢复关闭标签。 | `Tests/MarkdownViewerTests/DocumentManagerLifecycleTests.swift` 和 `Tests/E2E/RealAppHarnessTests.sh` 覆盖模型、五段计划预算、AX 顺序与严格合成 session verifier。 | `tab-session-lifecycle` 规划真实标签切换提交、dirty 二次关闭、左右相邻选择和恢复关闭标签；当前源树匹配的真实 App 动作证据仍待运行，保存和另存为仍未覆盖。 |
+| 会话恢复 | `Sources/MarkdownViewer/Documents/SessionStore.swift` 和 `Sources/MarkdownViewer/Documents/DocumentModels.swift` 保存标签、无损块、dirty 内容、活动标签、字号、侧栏、目录展开和滚动位置。 | `Tests/MarkdownViewerTests/SessionStoreTests.swift`、`Tests/MarkdownViewerTests/DocumentManagerLifecycleTests.swift` 和 `Tests/E2E/RealAppHarnessTests.sh` 覆盖 session 模型、正常终止合同、五段预算、严格重启 verifier 与失败路径。 | `tab-session-lifecycle` 在四段前台动作后规划正常 Cocoa 终止和精确 session flush，再以无输入 offscreen 方式恢复同一 profile，验证后运行第五段并再次正常终止；当前源树匹配的真实 App 证据仍待运行。 |
+| 文件格式 | `Sources/MarkdownViewer/Documents/DocumentFormat.swift` 把 `.md`、`.markdown` 和 `.mdx` 归为 Markdown，并把支持的源码扩展名归为纯源码。 | `Tests/MarkdownViewerTests/DocumentFormatTests.swift`。 | 当前 harness 只启动 Markdown fixture，没有真实 App 非 Markdown、系统打开面板或拖放覆盖。 |
+| 命令面板 | `Sources/MarkdownViewer/Palette/CommandPalette.swift` 和 `Sources/MarkdownViewer/App/App.swift` 提供文档和命令入口。 | `Tests/MarkdownViewerTests/CommandPaletteTests.swift`。 | passive 在三个尺寸用同一个生产面板视图捕获 inline ordered-out 状态；`palette-find` batch 覆盖 Command+K、双 Shift、文本过滤、hover、键盘选择、Enter 和 backdrop 关闭。 |
+| 性能隔离 | `Sources/MarkdownViewer/Editor/BlockEditorStore.swift` 记录解析次数、局部 mutation 次数和按块 revision，`Sources/MarkdownViewer/App/DebugDiagnosticSnapshot.swift` 记录真实 block renderer view-update 回调。 | `Tests/MarkdownViewerTests/BlockEditorPerformanceTests.swift` 和 `Tests/MarkdownViewerTests/DebugDiagnosticSnapshotTests.swift`。 | 真实 App 结构化 snapshot 导出进程内累计的总计和按块 UUID 计数，但这些计数不是 WindowServer paint 或屏幕像素 redraw。 |
+| Debug 隔离 | `Sources/MarkdownViewer/App/AppEnv.swift`、`Sources/MarkdownViewer/App/DebugFixtureLoader.swift`、`Sources/MarkdownViewer/App/DebugDiagnosticSnapshot.swift`、`scripts/build-debug.sh` 和 `scripts/run-debug.sh` 使用独立 bundle、session、临时 workspace、诊断 snapshot、PID marker 和 crash 目录。 | `Tests/MarkdownViewerTests/DebugFixtureTests.swift`、`Tests/MarkdownViewerTests/LaunchConfigurationTests.swift` 和 `Tests/MarkdownViewerTests/DebugDiagnosticSnapshotTests.swift`。 | 所有 E2E tier 都经 `run-debug.sh --background` 启动；证据明确记录 passive、bounded foreground smoke 或 legacy 模式。 |
+| USER 隔离 | `scripts/build.sh` 和 `scripts/release-smoke.sh` 让 Release 忽略 Debug 参数并排除 Debug fixture 和设计资源。 | `./scripts/release-smoke.sh`。 | Release smoke 是隔离 USER 启动检查，不是 Debug App E2E。 |
 
----
+## 已拍板的产品偏差与解释
 
-## ❓ 待拍板（✅ 已清零 2026-07-06 — 全部方向已定）
+- 使用系统原生窗口控制按钮，不在内容层伪造红黄绿按钮。
+- 首次启动只创建一个空白未命名文档，设计稿中的示例文件只用于隔离的 Debug 视觉工作区。
+- 新打开的文件夹默认展开以匹配当前终稿，恢复会话时使用保存的展开状态。
+- 大纲位于内容画布左侧，而文件侧栏仍位于窗口最左侧。
+- 查找在输入时立即重算，Return 和 Shift+Return 只负责结果导航。
+- `.mdx` 与 `.md`、`.markdown` 使用同一块级渲染和编辑体验。
+- 纯预览是同一文档页面的无编辑器状态，不是单独预览窗格；代码复制、任务切换、链接和脚注导航继续可用。
 
-- **#23/24、#3、#16、#19** — 见上方「已拍板的决策」（用户重申:已定的别再问，见 [[dont-reask-decided]]）。
-- **#30 tooltip 全局 mousedown 隐藏 → 用户定「搁置」**。现有行为「鼠标移开即隐」（`MVTooltip` `.onHover` 退出 → `cancelAndHide`）已够用；未覆盖的仅「悬停中直接点击目标」这一窄场景（规约要 mousedown 即隐），收益低。记 TODO，不做。
+## 验证层级
 
----
+### 1. Swift 单元、模型、格式化和性能测试
 
-## 剩余路线（✅ 已对账 2026-07-06 · 可做项已清零）
+```bash
+./scripts/test.sh
+```
 
-> 计划序 **BACDEF**：B（文本模型+打字性能）✅ 除 Phase3 · A（查找）✅ v1.0.6 · **C（打磨）✅ v1.0.7-1.0.8** · **D（技术债）✅ v1.1.0**。
+可以把额外 SwiftPM 参数继续传给脚本，例如：
 
-**✅ 已完成（本轮）**
-1. **C · perf 隔离** ✅ v1.0.8：性能-3 字数、性能-5 侧栏筛选（性能-4 用户「不提前」按住，作为唯一显式挂起项）。
-2. **D · 技术债** ✅ v1.1.0：`toggleOpen` 删除并直指 `openFind()` · 正则替换 `$1` 反向引用（`replacementString(for:in:offset:template:)`，保留正文映射的捕获组）+ 「没有可替换的匹配」空态 toast · **D3 发现真泄漏**并修（非 md 文件里 ``` 会让复制浮层冒出——`handleMouseAt` 已按 `isMarkdown` gate）。
-3. **保真** ✅：#6 筛选相对路径 v1.0.9 · #15 基本达成（真机有真实文件，`extraOrder` 是 mockup 模拟产物）。
-4. **E 待拍板** ✅ 全部定案。
+```bash
+./scripts/test.sh --filter MarkdownDocumentTests
+```
 
-**⏳ 仅剩 长期（后置，各自单独立项，不夹带）**
-- **B Phase 3**：编辑器复用，切 tab 保留每 tab 撤销历史（tab/编辑器生命周期改造，L）。
-- **⑤ 块级模型**：大文档终极解（等价重写内核 + 文档模型，XL）。
-- **渲染层视觉回归测试扩展（暂缓，M→L）**：UI 稿未最终敲定前不做；后续补 pixel sentinel、失败 PNG、少量 snapshot、App 级截图 smoke。
-- **性能-4**（查找输入隔离，M）：用户「不提前」按住,想做时随时可开。
+E2E harness、增量 Debug 构建与隔离启动身份的基础设施回归入口是：
 
-> 低风险性能项（性能-2/3/4/5）彼此独立、不依赖 #2，需要的话可从所属波次拆出提前做。
+```bash
+bash Tests/E2E/RealAppHarnessTests.sh
+bash Tests/E2E/BuildDebugIncrementalTests.sh
+bash Tests/E2E/RunDebugLaunchIdentityTests.sh
+```
+
+前两项不启动 Markdown Viewer，启动身份回归只打开隔离的 background Debug 实例。
+
+### 2. Debug 构建与确定性视觉 fixture
+
+```bash
+./scripts/build-debug.sh
+./scripts/run-debug.sh --reset --visual-test-hide-hud
+```
+
+默认视觉配置使用 `1180x760` 窗口和 `格式示例.md`。
+Application Support、session、临时 workspace、PID marker 和 crash-only 日志目录都位于独立 profile。
+正常日志只保存在内存 ring buffer 中，只有 crash 才尝试写入 profile 的 `Logs/crash/`。
+更多参数见 `./scripts/run-debug.sh --help`。
+
+Debug HUD 持续提供当前文档、活动块 UUID 与类型、编辑或预览模式、源码 selection、活动表格单元格、dirty、find、outline、scroll、session 路径、parse 次数、local mutation 次数和 block renderer view-update 次数。
+隔离 Debug 视觉 profile 会把最新状态原子写入 `Profile/Diagnostics/state.json`，其中 `Profile` 是 `--visual-test-root` 指定的根目录。
+结构化 schema 包含可为空的 `blockID` 与 `blockType`，带 `location` 与 `length` 的 UTF-16 `selection`，带 `row` 与 `column` 的 `activeTableCell`，以及当前 `document`、`mode`、`dirty`、`scrollY`、`sessionPath`、计数和 `updatedAt`。
+`find` 包含 `query`、`display`、`matchCount`、`currentIndex`、`invalidRegex`、`replaceExpanded`、`caseSensitive`、`wholeWord` 和 `regex`，`outline` 包含 `headingCount` 和 `activeIndex`。
+`renderedBlockUpdateCount` 是当前 App 进程累计的 block renderer view-update 回调总数，`activeBlockRenderUpdateCount` 是当前活动块的累计数，`renderedBlockUpdates` 是按 block UUID 汇总的累计计数。
+这些计数在隔离 profile session 的当前 App 进程生命周期内持续累加，并在新进程启动时重新开始。
+这些字段是实际 renderer update 证据，但不是 WindowServer paint、合成次数或屏幕像素 redraw 计数。
+local mutation 次数也不等同于 renderer update 或屏幕重绘次数。
+`--visual-test-hide-hud` 只隐藏 HUD 像素，不关闭 Debug instrumentation。
+E2E harness 会等待目标状态，检查精确顶层 schema、目标文档、隔离 session 路径和非空正数 renderer 计数，并把带标签的 snapshot 复制到每个尺寸的 evidence manifest。
+没有隔离视觉 profile 的 Debug 启动和所有 Release 启动都不会写这个 snapshot 文件。
+
+### 3. 原生应用 E2E
+
+```bash
+./scripts/e2e/run-real-app-e2e.sh
+./scripts/e2e/run-real-app-e2e.sh --foreground-smoke
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch table-controls
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch editor-structure
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch editor-boundaries
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch table-navigation
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch find-options
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch find-regex-replace
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch preview-content
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch preview-footnotes
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch outline-navigation
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch sidebar-filter-navigation
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch sidebar-layout-controls
+./scripts/e2e/run-real-app-e2e.sh --foreground-batch tab-session-lifecycle
+./scripts/e2e/run-real-app-e2e.sh --keyboard-only
+./scripts/e2e/run-real-app-e2e.sh --extended-full-pointer
+```
+
+默认 passive tier 只需要屏幕录制权限，始终经 `run-debug.sh --background` 启动，并且不发输入、不激活 App、不移动鼠标、不调用 `reset-sidebar-filter`。
+它在 `1180x760`、`860x560` 和 `1440x900` 分别捕获 `default`、`palette`、`find`、`preview`、`sidebar-hidden`、`source-editor` 和 `table-editor`，每个 pair 使用独立 profile 和 PID。
+这七个状态是验证稳定渲染与几何的 Debug launch-state 预置，不是用户通过点击、输入、hover 或拖拽到达状态的动作证据。
+passive 侧栏检查强制使用 `sidebar --passive` 和 Vision OCR，不能因为已有辅助功能权限而切换到会激活窗口的路径。
+每次进程启动前到退出后都有 activation notification 加约 25 ms frontmost 采样的生命周期观察器。
+被测 Debug App 任何时刻成为前台、窗口出现在屏幕上、观察器提前退出或进程生命周期前后的鼠标坐标不同都会失败，包括用户在运行期间把鼠标留在不同位置。
+开发迭代可用 `--probe-sizes` 和 `--probe-states` 只运行选定 canonical pairs。
+probe 执行所选尺寸与状态的笛卡尔积；只指定一个 filter 时，未指定的轴保留完整 canonical 列表。
+任意显式 probe filter 都让证据固定标为 `runScope=development-probe` 与 `strictVisualAcceptanceEligible=false`，即使显式枚举完整矩阵也不能替代未过滤的 21-pair 验收。
+`--foreground-smoke` 是 `--foreground-batch palette-find` 的别名，只运行 `1180x760`，覆盖块点击与提交、Find、双 Shift、palette hover 和键盘操作。
+该 suite 拆分为 `block-find` 与 `palette-keyboard` 两段独立 foreground driver call，保守估算分别为 2190 ms 和 1690 ms，每段单独受 4000 ms 硬上限与最后 400 ms 清理保留约束。
+第一段恢复桌面后，runner 在后台验证并快照已提交 marker、字号、Find query、全词和替换展开状态。
+第二段先重复 `Command+F`，明确重建 Find 已打开且聚焦的阶段前置状态，再执行双 Shift、palette 过滤、hover、键盘选择、字号快捷键和 backdrop 关闭。
+严格 aggregate 要求完整动作序列、恰好两次 activation、两段无干扰、两次 focus 与 pointer restore、相同 PID 与隔离 session，以及中间和最终 session/diagnostic 状态。
+`--foreground-batch table-controls` 从阅读态表格真实点击进入网格，覆盖输入、Tab、对齐、增删行列和 Esc，且使用独立 profile 与同样的 4 秒预算。
+`--foreground-batch editor-structure` 从阅读态引用和列表真实点击进入源码编辑器，覆盖续行、Tab、Shift+Tab、粗体、Esc、undo 和 redo，且使用独立 profile 与同样的 4 秒预算。
+`--foreground-batch editor-boundaries` 从精确阅读态块进入源码编辑器，覆盖上下边界移动、斜体、行内代码、块首 Backspace 合并和 Esc 提交，使用同样的固定 4 秒预算。
+`--foreground-batch table-navigation` 从阅读态表格进入网格，覆盖 Tab、Shift+Tab、Return、末格自动增行、精确焦点序列和 Esc 提交，使用同样的固定 4 秒预算。
+`--foreground-batch find-options` 在受控文本中覆盖 query 聚焦、大小写敏感和全词选项，使用同样的固定 4 秒预算。
+`--foreground-batch find-regex-replace` 在受控文本中覆盖正则捕获组、当前项替换、剩余项全部替换和精确最终源码，使用同样的固定 4 秒预算。
+`--foreground-batch preview-content` 在 scroll 1600 通过快捷键进入纯预览，真实点击任务，hover 并点击 Bash 代码复制，精确校验剪贴板内容并原样恢复，再通过快捷键返回编辑。
+`preview-content` 的保守前台估算为 2.00 秒，并使用同样的固定 4 秒预算与最后 400 ms 清理保留。
+`--foreground-batch preview-footnotes` 在 scroll 3000 通过快捷键进入纯预览，移动并物理点击第一个脚注引用，跳转到定义，点击原生返回按钮，再通过快捷键返回编辑。
+`preview-footnotes` 的保守前台估算为 2.76 秒，并使用同样的固定 4 秒预算与最后 400 ms 清理保留。
+`--foreground-batch outline-navigation` 在 scroll 650 使用真实 hover 展开左侧大纲，通过精确 AX ID 物理点击第 12 个 heading，并捕获 300 ms 跳转中、900 ms wash 峰值、渐隐和完全清除状态。
+`outline-navigation` 的保守前台估算为 3.21 秒，并使用同样的固定 4 秒预算与最后 400 ms 清理保留。
+`--foreground-batch sidebar-filter-navigation` 通过精确 AX ID 聚焦侧栏筛选，覆盖名称、相对路径和空结果，使用 Down、Up 与 Return 打开 README 并返回 fixture，最后清空 query 并保持筛选框焦点。
+`sidebar-filter-navigation` 的保守前台估算为 3.15 秒，并使用同样的固定 4 秒预算与最后 400 ms 清理保留。
+`--foreground-batch sidebar-layout-controls` 通过精确 AX ID 折叠和展开 `docs`，第一段拖动 resize handle 命中 176 pt clamp，第二段从已验证的 176 pt 窗口坐标拖到 440 pt clamp，再用 `Command+\` 隐藏并恢复整个侧栏。
+`sidebar-layout-controls` 拆分为 `collapse-minimum` 与 `maximum-toggle`，保守前台估算分别为 1450 ms 和 1690 ms，每段独立使用固定 4 秒预算与最后 400 ms 清理保留。
+runner 在每段后分别校验 drag 两端 routing readiness、两层 delivery receipt、focus restore 与 pointer restore，然后后台等待 debounce session、diagnostic `sidebar-frame` 和最新 resize trace segment 一致，再生成严格扁平 aggregate；最终 verifier 要求恰好两次 activation、两段均恢复成功并逐层复核两个内嵌 `resize-state`。
+`--foreground-batch tab-session-lifecycle` 使用 `switch-commit`、`close-right-reopen`、`close-left-seed`、`seed-layout` 和 `relaunch-scroll-check` 五段独立前台阶段，验证标签切换提交、dirty 二次关闭、左右相邻选择、恢复关闭标签和重启后的工作区绑定。
+五段的 validator 保守估算依次是 1640 ms、2690 ms、2000 ms、1660 ms 和 1880 ms，每段都有独立 4000 ms 硬上限并另保留最后 400 ms 清理时间。
+前四段后，runner 通过正常 Cocoa terminate 要求 App 重建精确 session JSON，再在 passive observer 下无输入、offscreen 重启相同隔离 profile。
+严格 verifier 逐项断言精确 session 与 dirty 源码、tab 顺序、非首位 active tab、字号、侧栏宽度与显隐、目录展开状态、每个 tab 的 scroll 和 fixture workspace row 到原 tab 的绑定，并拒绝重复 tab。
+第五段验证恢复状态后，runner 再执行一次正常 Cocoa terminate 并再次要求精确 session flush。
+当前共有 `palette-find`、`find-options`、`find-regex-replace`、`preview-content`、`preview-footnotes`、`outline-navigation`、`sidebar-filter-navigation`、`sidebar-layout-controls`、`tab-session-lifecycle`、`table-controls`、`table-navigation`、`editor-structure` 和 `editor-boundaries` 十三个命名 bounded foreground suite。
+`palette-find` 与 `sidebar-layout-controls` 各使用两段独立 foreground driver call，`tab-session-lifecycle` 使用五段，其余 suite 使用单次 call；所有单次 suite 和多段 suite 的每一段都独立受 4 秒预算约束。
+这九个较新批次的计划、固定预算校验和 harness 已离线通过，并有对应的模型、AX 或严格合成 fixture 覆盖；`preview-content` 还通过了不触碰通用剪贴板的 named pasteboard 多 item、多 type 与空状态原样恢复自测。
+控制台锁屏状态由每次运行的 preflight 即时采样，不是持续不变的 harness 状态。
+最近一次只读 preflight 报告 `sessionLocked=false`，但当前源树匹配的真实 App 动作证据仍待执行，本文不据此声称任何 foreground suite 已通过。
+driver 会为每次单调用和 `tab-session-lifecycle` 的每段保留最后 400 ms，用于释放合成输入并恢复焦点和鼠标，不使用会绕过清理逻辑的进程级强杀超时。
+foreground driver 正常完成时必须在返回前恢复原焦点和鼠标位置，之后只进行截图归一化、diff、OCR 和结构化状态读取。
+检测到用户输入时批次立即失败，不覆盖用户刚移动到的新鼠标位置，并且只在被测 App 仍持有前台时恢复原焦点。
+所有 bounded foreground batch 都额外要求 Input Monitoring 的 listen-event 权限来运行只读干扰监视器；extended full-pointer 不使用这项 monitor。
+`--keyboard-only` 是会反复抢焦点的 legacy keyboard 矩阵，`--extended-full-pointer` 是还会反复移动系统鼠标的 legacy 完整矩阵，两者都只能显式选择。
+`--static-only` 仅作为默认 passive tier 的废弃兼容别名保留。
+根证据用 `interactionTier`、`foregroundBatchName`、`mode`、`runScope`、`strictVisualAcceptanceEligible`、动态尺寸与状态列表、`coverage`、`interactionCoverage` 和 `foregroundReport` 记录真实执行边界。
+`tab-session-lifecycle` 的根 foreground 证据还聚合 `foregroundPhases`、`sessionRelaunch`，以及包围首次正常终止、无输入 offscreen 重启和第二次正常终止的 passive lifecycle assertions。
+bounded foreground 证据固定把 `visualCoverageApplicable` 与 `requestedPairsComplete` 标为 false，并用独立 interaction coverage 记录计划与完成动作数、一次激活、干扰、超时和桌面恢复，避免空视觉集合被误读为完整覆盖。
+更多模式、权限和证据语义见 `scripts/e2e/README.md`。
+
+### 4. 设计稿捕获与视觉差异
+
+```bash
+./scripts/visual/capture-reference.sh
+./scripts/visual/compare-real-app.sh
+```
+
+参考图写入 `build/visual-reference/`，真实应用对比默认写入 `build/visual-diff/real-app-latest/`。
+更多状态、依赖和判定规则见 `scripts/visual/README.md`。
+
+### 5. Release USER 冒烟
+
+```bash
+./scripts/release-smoke.sh
+```
+
+该脚本构建 Release 包，检查包内没有 Debug 或设计资源，以临时 bundle 身份启动隔离副本，并确认 Release 不接受视觉测试参数且首启会话为空白文档。
+
+## 当前真实 App 状态与尺寸矩阵
+
+最近一轮完整 passive 3x7 矩阵与严格状态和几何门禁曾通过，但后续源码变化已使其 source-tree hash 过期，最终树仍需重跑。
+passive 的 Debug 状态预置用于复现可观察 UI，不等同于真实点击、键盘输入、hover 或拖拽动作。
+严格视觉门禁通过只证明这 21 个稳定状态的机器断言、非文字几何和全帧像素差异符合合同，不等于完整交互 DoD 已达成。
+控制台是否锁屏是每次运行的 preflight 事实，不作为持久实现状态写死。
+最近一次只读 preflight 报告 `sessionLocked=false`，但该读取不启动 App，也不是 foreground suite 的动作通过证据。
+旧的单段 `palette-find` 曾在 4 秒预算内通过，但该证据不仅因源码变化而过期，也不再匹配当前两段式计划。
+新的 `block-find` 与 `palette-keyboard` 需要在最终树上分别运行并生成聚合证据。
+旧的 `table-controls` 证据曾在 `sessionLocked=true` 的 preflight 安全阻塞，该历史结果不代表当前控制台状态，也不构成动作通过证据。
+`editor-structure`、`editor-boundaries`、`table-navigation`、`find-options`、`find-regex-replace`、`preview-content`、`preview-footnotes`、`outline-navigation`、`sidebar-filter-navigation` 和 `sidebar-layout-controls` 的离线计划、固定预算校验与 harness 已通过，并有对应的模型、AX 或严格合成 fixture 覆盖。
+`tab-session-lifecycle` 已具有五段预算、正常终止、无输入 offscreen 重启、严格 session verifier 和根证据聚合合同，但同样不能替代当前源树真实 App 运行。
+当前十三个 foreground suite 都仍需生成与最终当前源树匹配的真实 App 动作证据。
+只有 source-tree hash 与当前 worktree 匹配的 `evidence.json` 才能作为当前结论。
+
+| 真实 App 场景 | 默认 passive 三尺寸 | bounded foreground `1180x760` | 显式 legacy tier | 当前证据状态 |
+|---|---|---|---|---|
+| fixture 基线、窗口、侧栏 fixture 行、active 行、active tab | 真实 App 截图、Vision OCR、诊断和 lifecycle 全部覆盖 | 批次前也会捕获 | 也保留 | 历史最近一次 passive 通过，最终 source tree 待重跑 |
+| palette、Find、纯预览与预览 toast、侧栏隐藏 | 每个状态独立 profile 与 PID，三个尺寸均捕获并通过严格几何 | `palette-find` 覆盖 Find 和 palette；`preview-content` 与 `preview-footnotes` 规划快捷键进入预览、内容交互和返回编辑 | keyboard 与 extended 保留动作路径 | 历史视觉状态通过；两个预览交互批次仅离线验证通过，当前源树匹配的真实动作仍待运行 |
+| 单块源码编辑器 | 三尺寸捕获首块源码、source selection、可见性和几何 | `palette-find` 点击首块、输入并提交 | extended 在 `1180x760` 还有旧流程 | bounded 成功证据需在最终 source tree 重跑 |
+| 表格网格 | 三尺寸捕获首表头焦点、确定性滚动、177 pt 网格和可见性 | `table-controls` 规划输入与工具栏操作；`table-navigation` 规划 Tab、Shift+Tab、Return、末格自动增行、精确焦点序列和 Esc | extended 保留旧的单元格流程 | 两个短批次都需在当前源树上运行；`table-navigation` 目前仅离线计划、harness 和单元用例通过 |
+| 大纲静止态 | 三尺寸捕获并验证几何 | `outline-navigation` 规划精确 AX hover、物理点击、跳转中、wash 峰值、渐隐和清除 | extended 保留三尺寸 hover | 历史静止态通过但最终树待重跑；新批次的 plan、harness 和策略测试离线通过，当前源树匹配的真实动作仍待运行 |
+| Find 全词点击、输入、替换和导航 | 只捕获空 query 面板 | `palette-find` 规划导航；`find-options` 规划大小写与全词；`find-regex-replace` 规划捕获组单次替换和剩余项全部替换 | extended 覆盖完整 find-and-replace 路径 | 两个新 Find 短批次目前仅离线计划、harness 和单元用例通过，当前源树匹配的真实动作仍待运行 |
+| 结构化块编辑命令与提交 | 三尺寸只捕获确定性源码编辑器 | `editor-structure` 规划引用与列表命令；`editor-boundaries` 规划上下边界移动、斜体、行内代码、块首 Backspace 合并和 Esc | extended 保留旧的单块输入流程 | `editor-boundaries` 目前仅离线计划、harness 和单元用例通过，当前源树匹配的真实动作仍待运行 |
+| 标签关闭与恢复、块和表格提交、session 源码断言 | 不执行动作 | `tab-session-lifecycle` 用五段独立 4 秒前台阶段覆盖标签切换提交、dirty 二次关闭、左右相邻选择、恢复关闭标签、正常终止、无输入 offscreen 重启、恢复后 workspace row 绑定和第二次正常终止；编辑器与表格 suite 规划各自提交 | keyboard 或 extended 保留部分流程 | tab 和 relaunch 已有短 suite、严格 verifier 与根 passive lifecycle 聚合，但当前源树匹配的真实 App 动作仍待运行；保存和另存为仍未覆盖 |
+| 侧栏过滤与 resize、保存重开、系统面板和 drag/drop | 不覆盖动作 | `sidebar-filter-navigation` 规划名称与相对路径过滤、空结果、键盘打开与清空；`sidebar-layout-controls` 规划文件夹折叠展开、176/440 pt resize clamp 和隐藏恢复；`tab-session-lifecycle` 规划重启后侧栏与 workspace 绑定恢复 | legacy 仍保留较弱的侧栏开关路径 | 短 suite 的 plan、预算、harness、严格 session、diagnostic 和 AX verifier 离线覆盖已建立；当前源树匹配的真实动作仍待运行，保存重开、系统面板和 drag/drop 仍无覆盖 |
+| 代码复制、任务点击、链接与脚注 hover 或跳转、tooltip 和 drag overlay | 不覆盖动作 | `preview-content` 规划预览内任务点击、Bash 卡片 hover、复制点击、精确剪贴板校验与恢复；`preview-footnotes` 规划脚注引用 hover、物理点击、定义跳转和返回 | 当前 runner 未完整覆盖 | 两个预览批次的离线 plan 与 harness 通过，AX 和相关模型单元覆盖通过；当前源树匹配的真实动作仍待运行，普通外链、tooltip 和 drag overlay 仍无覆盖 |
+
+## 视觉证据语义与验收门槛
+
+参考捕获器校验权威 HTML 的 SHA-256、`ui/support.js` 中的 React URL 与 SRI pins、缓存或下载后的 runtime bytes，并使用非持久 WebKit data store。
+WebKit 只存在于独立参考工具中，不进入产品 target。
+
+默认参考捕获和默认 real-app compare 都请求七个映射状态的三个尺寸，共二十一个 pair。
+默认 passive E2E 使用确定性状态入口生成相同的七状态三尺寸矩阵，并为每个 pair 记录独立 PID、profile、offscreen window identity、lifecycle 和 screenshot-bound visual evidence。
+只有未过滤的完整 passive 矩阵能产生这二十一个严格视觉 pair；任何显式 probe filter 生成的笛卡尔积都保持 strict-ineligible。
+compare 会检查两个 manifest、权威哈希、验收合同哈希、完整 coverage、每个请求 pair 的记录与文件路径、像素尺寸、状态断言、几何锚点和严格像素合同。
+任何 pair 缺失、状态不符、锚点缺失、证据 blocked 或 probe 不具备严格资格时都会失败。
+映射是 `default`、`palette`、`find`、`preview`、`sidebar-hidden`、`source-editor` 和 `table-editor`，而 reference-only 的 `replace` 没有真实 App 映射。
+
+`scripts/visual/compose-diff.py` 把任一 RGB channel 差值大于固定 threshold 8 的像素计为 changed pixel。
+输出包括 exact changed ratio、thresholded changed ratio、mean absolute channel difference、RMS、PSNR、最大 channel 差值、连通区域、横纵连续长度、局部 tile 密度、50 percent overlay 和 heatmap。
+`scripts/visual/compare-real-app.sh` 拒绝任何非 8 的 threshold，不能通过命令行放宽合同。
+评估器直接从截图哈希绑定的两张 PNG 重算完整像素分析，并拒绝被修改或伪造的 metrics JSON。
+`scripts/visual/compare-real-app.sh` 自动计算每个 required geometry anchor 的最大分量误差，并把根验收状态写为 `passed` 或 `failed`。
+`1180x760` 的每个非文字矩形分量容差为 1 px，其他验证尺寸为 2 px，边界值包含在允许范围内。
+缺失矩形、非法数字、重复或未评估锚点、未允许的 probe source 和缺失状态断言都会失败。
+
+验收同时要求 changed-pixel ratio、结构差异比例、高幅差异比例、MAE、RMS、最大连通区域、长直线和局部 tile 密度全部不超过合同上限，不能用一个较好的总像素比例抵消成片背景、边框、图标或布局差异。
+当前合同的 changed-pixel ratio 上限为 1.5%，结构差异与高幅差异比例上限均为 0.01%，其余固定空间上限见 `scripts/visual/README.md`。
+当前工具不使用 mask 或 ignored region。
+只有两张图在同一像素附近都存在亮度边缘且最大 channel 差值不超过 48 时，该像素才会被标记为抗锯齿候选，但它仍计入 changed aggregate、连通区域、长直线和 tile 密度。
+因此视觉复核仍应同时检查 App 图、参考图、overlay、heatmap、metrics 和非文字几何锚点，不只看单一像素比率。
+
+## 依赖
+
+- Swift 构建、Debug App、E2E driver 和 WebKit reference runner 需要 Xcode Command Line Tools 或完整 Xcode。
+- E2E evidence JSON、Release smoke 和视觉脚本需要 Python 3。
+- `scripts/visual/compose-diff.py` 和 `Tests/Visual/VisualToolTests.sh` 需要 Pillow，可用 `python3 -m pip install Pillow` 安装。
+- `Tests/E2E/RealAppHarnessTests.sh`、`Tests/E2E/BuildDebugIncrementalTests.sh`、`Tests/E2E/RunDebugLaunchIdentityTests.sh` 和 `Tests/Visual/VisualToolTests.sh` 需要 `rg`；实际 real-app E2E runner 与视觉 compare 不依赖 `rg`。
+- 每次 reference capture 都需要 `openssl` 校验 SRI，只有本地 pinned runtime cache 缺失或无效时才需要网络和 `curl`。
+
+## 证据判定规则
+
+- 不把仓库中某次历史运行的测试数量或提交号当作当前结论。
+- 单元测试结论以 `./scripts/test.sh` 的当前退出状态为准。
+- E2E 结论以当前运行生成的 `evidence.json`、各尺寸 `manifest.json`、截图和直接 session assertion 为准。
+- E2E 内部 before-and-after `changedPixelRatio` 只是状态变化下限保护，不是设计稿对比。
+- 视觉结论需要同时检查数值指标、overlay、heatmap、真实截图和非文字几何锚点，不只看单一像素比率。
+- Release 隔离结论以 `./scripts/release-smoke.sh` 的当前退出状态为准。
+- 任何没有直接证据、只有间接证据或验证范围更窄的要求都保持 `uncovered`，不能从实现意图外推为已通过。
+- 任何可见偏差都应先复现在真实 `.app` 中，再修改实现；不得修改权威设计终稿来迁就 App。

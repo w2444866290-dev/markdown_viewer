@@ -8,6 +8,7 @@ APP_DIR="$DIST_DIR/MarkdownViewer.app"
 cd "$ROOT_DIR"
 swift build -c release
 
+rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$ROOT_DIR/.build/arm64-apple-macosx/release/MarkdownViewer" "$APP_DIR/Contents/MacOS/" 2>/dev/null || \
 cp "$ROOT_DIR/.build/release/MarkdownViewer" "$APP_DIR/Contents/MacOS/"
@@ -19,16 +20,19 @@ cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 # letting the user verify they relaunched the latest binary.
 PLIST="$APP_DIR/Contents/Info.plist"
 BUILD_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD)"
-# Marketing version is a single source of truth in the repo-root VERSION file, bumped
-# per release; the build SHA stays the CFBundleVersion so the user can confirm they
-# relaunched the exact binary. Fall back to 1.0.0 if VERSION is missing/empty.
+BUILD_NUMBER="$(git -C "$ROOT_DIR" rev-list --count HEAD)"
+# Marketing version is a single source of truth in the repo-root VERSION file.
+# CFBundleVersion uses the numeric Git commit count, while MVGitCommit stores the
+# short SHA for identifying the exact binary. Fall back to 1.0.0 if VERSION is empty.
 MARKETING_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION" 2>/dev/null)"
 [[ -n "$MARKETING_VERSION" ]] || MARKETING_VERSION="1.0.0"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$PLIST" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $MARKETING_VERSION" "$PLIST"
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_SHA" "$PLIST" 2>/dev/null \
-    || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_SHA" "$PLIST"
-echo "injected version: v$MARKETING_VERSION ($BUILD_SHA)"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$PLIST" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUMBER" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :MVGitCommit $BUILD_SHA" "$PLIST" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :MVGitCommit string $BUILD_SHA" "$PLIST"
+echo "injected version: v$MARKETING_VERSION ($BUILD_SHA, build $BUILD_NUMBER)"
 
 codesign --force --deep --sign - "$APP_DIR"
 

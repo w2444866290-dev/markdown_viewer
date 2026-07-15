@@ -18,11 +18,11 @@ final class PaperTextView: NSTextView {
     override func layout() {
         super.layout()
         let w = max(bounds.width, 1)
-        let pw = min(DesignTokens.paperWidth, max(240, w - 140))
+        let pw = min(DesignTokens.paperWidth, max(240, w - 132))
         textContainer?.widthTracksTextView = false
         textContainer?.containerSize = NSSize(width: pw, height: .greatestFiniteMagnitude)
         textContainer?.lineFragmentPadding = 0
-        textContainerInset = NSSize(width: max(70, (w - pw) / 2), height: DesignTokens.editorTopInset)
+        textContainerInset = NSSize(width: max(66, (w - pw) / 2), height: DesignTokens.editorTopInset)
     }
     override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); layout() }
 }
@@ -117,7 +117,7 @@ final class ResponsiveScrollView: NSScrollView {
         }
         lastVisibleHeight = visibleH
 
-        let target = (0.33 * visibleH).rounded()
+        let target = (0.34 * visibleH).rounded()
         // The anchor (document y at the top of the viewport) is what we hold fixed.
         // It is invariant to the inset, so capture it independent of the write.
         let anchorY = liveResizeAnchorY ?? contentView.bounds.origin.y

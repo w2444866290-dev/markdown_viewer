@@ -10,23 +10,55 @@ import SwiftUI
 final class Toaster: ObservableObject {
     static let shared = Toaster()
 
+    static let automaticDismissDelayNanoseconds: UInt64 = 1_600_000_000
+
     @Published var message: String = ""
     @Published var visible: Bool = false
 
     private var dismissTask: Task<Void, Never>?
 
-    private init() {}
+    var hasPendingDismissal: Bool {
+        dismissTask != nil
+    }
+
+    init() {}
 
     func flash(_ s: String) {
         message = s
-        withAnimation(.easeOut(duration: 0.18)) { visible = true }
+        MotionPolicy.perform(
+            reduceMotion: MotionPolicy.systemReduceMotion,
+            animation: .easeOut(duration: 0.18)
+        ) {
+            visible = true
+        }
 
         dismissTask?.cancel()
         dismissTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            try? await Task.sleep(nanoseconds: Self.automaticDismissDelayNanoseconds)
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.18)) { self?.visible = false }
+            self?.dismissTask = nil
+            MotionPolicy.perform(
+                reduceMotion: MotionPolicy.systemReduceMotion,
+                animation: .easeOut(duration: 0.18)
+            ) {
+                self?.visible = false
+            }
         }
+    }
+
+    /// Keeps only the currently visible feedback on screen until another
+    /// `flash` replaces it. The next flash still receives the ordinary 1.6 s
+    /// lifetime, so deterministic visual capture cannot disable production
+    /// auto-dismiss behavior globally.
+    func pinCurrentToastUntilNextFlash() {
+        dismissTask?.cancel()
+        dismissTask = nil
+    }
+
+    func dismiss() {
+        dismissTask?.cancel()
+        dismissTask = nil
+        visible = false
     }
 }
 
@@ -34,6 +66,7 @@ final class Toaster: ObservableObject {
 /// `✓ {{ toast }}` over rgba(28,28,30,0.9), white text, radius 99,
 /// padding 7×16, font-size 12, shadow 0 8px 28px rgba(0,0,0,0.2).
 struct ToastView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let message: String
 
     var body: some View {
@@ -47,6 +80,7 @@ struct ToastView: View {
                     .fill(Color(red: 28/255, green: 28/255, blue: 30/255).opacity(0.9))
             )
             .shadow(color: .black.opacity(0.2), radius: 14, y: 8)
-            .transition(.opacity)
+            .accessibilityIdentifier("toast")
+            .transition(MotionPolicy.transition(.opacity, reduceMotion: reduceMotion))
     }
 }

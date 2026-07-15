@@ -38,12 +38,11 @@ extension EditorView {
         /// re-render). `-1` means "never styled" → first pass restyles once.
         var lastStyledBodySize: CGFloat = -1
 
-        // DIAG (temporary) ---------------------------------------------------
+        // MARK: - Debug diagnostics
         /// Per-restyle-path cumulative tallies + last-event, for the typing-flash
         /// diagnostic. Every re-style path funnels through `diagRecord(_:)`, which
         /// bumps the matching counter, logs the path, and pushes a formatted line
-        /// into the isolated DiagModel (rendered top-center). Remove together with
-        /// the rest of the `// DIAG (temporary)` markers.
+        /// into the isolated `DiagModel` rendered by the optional Debug HUD.
         private var diagInc = 0, diagFull = 0, diagSetStr = 0, diagPlain = 0, diagFont = 0
         func diagRecord(_ event: String) {
             // USER mode: no HUD, so skip every counter/log/format cost entirely.
@@ -56,7 +55,7 @@ extension EditorView {
             default: diagFull += 1   // "FULL" and "FULL(norange)" both count as full
             }
             MVLog.debug("restyle path: \(event)", category: "diag")
-            // DIAG (temporary): also surface the raw values behind the font-change
+            // Also surface the raw values behind the font-change
             // decision, so if FONT ever fires again we can read WHY at a glance:
             //   sz   = the body size currently requested (fontIndex → size)
             //   tvpt = tv.font?.pointSize (first-char font — the misleading old signal)
@@ -74,6 +73,12 @@ extension EditorView {
         /// Last scroll progress published to the model — used to throttle
         /// per-frame publishes (only emit when the delta is perceptible).
         private var lastPublishedProgress: Double = -1
+        private var scrollActivityTracker = ScrollActivityTracker()
+        var suppressScrollActivity = false
+
+        func recordScrollBaseline(_ y: CGFloat) {
+            _ = scrollActivityTracker.observe(y, suppressed: true)
+        }
 
         /// Per-text-version caches for the mouse-hover hot path. Recomputed only
         /// when the document text changes (see `refreshTextCaches`), so each
@@ -111,64 +116,121 @@ extension EditorView {
         private func wireFindState() {
             guard let fs = parent.findState else { return }
             fs.onSearch = { [weak self] q in
-                self?.findController.search(FindController.Options(
-                    query: q,
-                    caseSensitive: fs.caseSensitive,
-                    wholeWord: fs.wholeWord,
-                    useRegex: fs.useRegex
-                ))
-                fs.isError = self?.findController.lastPatternInvalid ?? false
-                fs.matchCount = self?.findController.matches.count ?? 0
-                fs.currentIndex = 0
-                // DIAG (temporary): surface the find summary on the HUD's 2nd line;
-                // stash the full per-match dump (+ scroll math) for click-to-copy.
-                if AppEnv.debug {
-                    self?.parent.diag.findText = self?.findController.lastDebugDiagnostic ?? ""
-                    self?.parent.diag.findDetail = ((self?.findController.lastDebugDetail ?? "")
-                        + "\n" + (self?.findController.lastScrollDiagnostic ?? ""))
-                }
+                self?.search(q, state: fs)
             }
             fs.onNavigate = { [weak self] d in
                 self?.findController.navigate(d)
-                fs.currentIndex = self?.findController.currentIndex ?? 0
-                // DIAG (temporary): show the live scroll math on the HUD as you
+                self?.synchronizeFindState(fs)
+                // Show the live scroll math on the Debug HUD as you
                 // step through matches, and make it the click-to-copy payload.
                 if AppEnv.debug {
                     let s = self?.findController.lastScrollDiagnostic ?? ""
                     self?.parent.diag.findText = s
                     self?.parent.diag.findDetail = s
                 }
+                self?.publishPlainSourceDiagnostic()
             }
             fs.onReplaceCurrent = { [weak self] in
-                self?.findController.replaceCurrent(
+                guard let self else { return }
+                self.findController.replaceCurrent(
                     with: fs.replaceText,
                     restyle: {
-                        if let s = self?.textView?.textStorage { LiveMarkdownStyler.apply(to: s) }
+                        self.restyleAfterFindReplacement()
                         // The replace mutated storage → didChangeText already scheduled a
                         // per-frame incremental. This full apply supersedes it: cancel the
                         // now-redundant pass and drop its stale unioned range.
-                        self?.clearPendingEditedRange()
-                    },
-                    redo: {
-                        self?.findController.search(FindController.Options(
-                            query: fs.query, caseSensitive: fs.caseSensitive,
-                            wholeWord: fs.wholeWord, useRegex: fs.useRegex
-                        ))
-                        fs.matchCount = self?.findController.matches.count ?? 0
+                        self.clearPendingEditedRange()
                     })
+                self.synchronizeFindState(fs)
+                self.publishPlainSourceDiagnostic()
             }
             fs.onReplaceAll = { [weak self] in
-                self?.findController.replaceAll(
+                guard let self else { return }
+                self.findController.replaceAll(
                     with: fs.replaceText,
                     restyle: {
-                        if let s = self?.textView?.textStorage { LiveMarkdownStyler.apply(to: s) }
+                        self.restyleAfterFindReplacement()
                         // Full apply supersedes the per-frame incremental that the
                         // replace's didChangeText just scheduled — cancel it + its range.
-                        self?.clearPendingEditedRange()
+                        self.clearPendingEditedRange()
                     }
                 )
-                fs.matchCount = 0
-                fs.currentIndex = 0
+                self.synchronizeFindState(fs)
+                self.publishPlainSourceDiagnostic()
+            }
+        }
+
+        /// Recompute a query that was already open when this per-tab editor mounted.
+        /// A tab switch creates a new Coordinator and FindController, so wiring the
+        /// callbacks alone is insufficient: without this explicit first search the
+        /// shared FindState would continue showing the previous tab's result count.
+        func searchCurrentFindQueryIfNeeded() {
+            guard let fs = parent.findState, !fs.query.isEmpty else { return }
+            search(fs.query, state: fs)
+        }
+
+        private func search(_ query: String, state: FindState) {
+            findController.search(FindController.Options(
+                query: query,
+                caseSensitive: state.caseSensitive,
+                wholeWord: state.wholeWord,
+                useRegex: state.useRegex
+            ))
+            synchronizeFindState(state)
+            // Surface the find summary on the Debug HUD's second line;
+            // stash the full per-match dump (+ scroll math) for click-to-copy.
+            if AppEnv.debug {
+                parent.diag.findText = findController.lastDebugDiagnostic
+                parent.diag.findDetail = findController.lastDebugDetail
+                    + "\n" + findController.lastScrollDiagnostic
+            }
+            publishPlainSourceDiagnostic()
+        }
+
+        func publishPlainSourceDiagnostic() {
+            guard AppEnv.debug, !parent.isMarkdown else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.publishPlainSourceDiagnosticOnMainActor()
+            }
+        }
+
+        @MainActor
+        private func publishPlainSourceDiagnosticOnMainActor() {
+            guard !parent.isMarkdown,
+                  let active = parent.docManager.activeTab,
+                  active.id == parent.diagnosticDocumentID else { return }
+            DebugDiagnosticWriter.shared.update(.plainSource(
+                document: parent.diagnosticDocumentName.isEmpty
+                    ? active.name
+                    : parent.diagnosticDocumentName,
+                selection: textView?.selectedRange() ?? active.selectionRange,
+                dirty: active.isDirty,
+                find: .current(parent.findState),
+                scrollY: Double(scrollView?.contentView.bounds.origin.y ?? active.scrollY),
+                sessionPath: SessionStore.fileURL.path
+            ))
+        }
+
+        private func synchronizeFindState(_ state: FindState) {
+            state.isError = findController.lastPatternInvalid
+            state.matchCount = findController.matches.count
+            state.currentIndex = findController.matches.isEmpty
+                ? 0
+                : min(findController.currentIndex, findController.matches.count - 1)
+        }
+
+        /// Restore attributes after a find replacement without changing the document's
+        /// rendering mode. Plain-source files must remain one flat monospaced run and
+        /// must never acquire hidden Markdown-marker attributes.
+        private func restyleAfterFindReplacement() {
+            guard let textView, let storage = textView.textStorage else { return }
+            if parent.isMarkdown {
+                LiveMarkdownStyler.apply(to: storage)
+            } else {
+                let fallback = NSFont.systemFont(
+                    ofSize: DesignTokens.bodyFontSizes[parent.fontIndex]
+                )
+                parent.applyPlainSource(to: storage, font: textView.font ?? fallback)
             }
         }
 
@@ -184,6 +246,7 @@ extension EditorView {
                          range editedRange: NSRange,
                          changeInLength delta: Int) {
             guard editedMask.contains(.editedCharacters) else { return }
+            findController.invalidateForTextMutation()
             // `editedRange` here is already the POST-edit range of the changed
             // characters (length reflects the inserted text). Union successive
             // character edits that arrive before `textDidChange` consumes them
@@ -234,7 +297,7 @@ extension EditorView {
             // #22: non-Markdown source files are never live-styled — keep them flat.
             guard parent.isMarkdown else {
                 parent.applyPlainSource(to: s, font: tv.font ?? NSFont.systemFont(ofSize: DesignTokens.bodyFontSizes[parent.fontIndex]))
-                diagRecord("PLAIN")  // DIAG (temporary): non-Markdown flat source
+                diagRecord("PLAIN")  // Debug diagnostic: non-Markdown flat source
                 return
             }
             // INCREMENTAL re-style: scope the work to the block(s) the batched edits
@@ -249,13 +312,13 @@ extension EditorView {
             let edited = pendingEditedRange
             pendingEditedRange = nil
             if let edited {
-                // DIAG (temporary): true = a block-scoped incremental ran, false = it
-                // fell back to a full-document apply.
+                // A true diagnostic means a block-scoped incremental ran.
+                // False means the styler fell back to a full-document apply.
                 let didIncremental = LiveMarkdownStyler.applyIncremental(to: s, editedCharRange: edited)
                 diagRecord(didIncremental ? "INC" : "FULL")
             } else {
                 LiveMarkdownStyler.apply(to: s)
-                diagRecord("FULL(norange)")  // DIAG (temporary): no captured range → full restyle
+                diagRecord("FULL(norange)")  // Debug diagnostic: no range means full restyle
             }
         }
 
@@ -268,6 +331,15 @@ extension EditorView {
         }
 
         func textDidChange(_ n: Notification) {
+            // Plain-source find is instant, so every source mutation immediately
+            // rebuilds ranges and publishes a count/index from the same snapshot.
+            // The storage delegate already invalidated the prior snapshot before
+            // this callback, including for undo, paste, and programmatic replacement.
+            if !parent.isMarkdown,
+               let findState = parent.findState,
+               !findState.query.isEmpty {
+                search(findState.query, state: findState)
+            }
             // The live text now lives ONLY in tv.string — NO per-keystroke write-back
             // through docManager (that re-rendered the whole ContentView every
             // keystroke, 性能-1). tabs[].text is reconciled at discrete points instead.
@@ -286,6 +358,7 @@ extension EditorView {
                 // state. scheduleSessionSave only cancels/reschedules a work item and
                 // mutates NO @Published, so it stays cheap and never re-renders.
                 dm.scheduleSessionSave()
+                self.publishPlainSourceDiagnostic()
 
                 // Debounced heavy work → write to the (isolated) bridge. Counts/outline
                 // read the LIVE tv.string, never the stale tabs[].text snapshot.
@@ -301,14 +374,23 @@ extension EditorView {
                     if self.parent.isMarkdown {
                         self.outlineController.rebuild()
                         self.parent.bridge.headings = self.outlineController.headings
-                        self.parent.activeHeadingModel.index = self.outlineController.activeIndex(for: scrollY)
+                        self.parent.activeHeadingModel.publish(
+                            self.outlineController.activeIndex(for: scrollY),
+                            for: self.parent.diagnosticDocumentID
+                        )
                     } else {
                         self.parent.bridge.headings = []
-                        self.parent.activeHeadingModel.index = 0
+                        self.parent.activeHeadingModel.publish(
+                            0,
+                            for: self.parent.diagnosticDocumentID
+                        )
                     }
                     // Status bar needs char/line counts for ALL files.
-                    self.parent.docMetrics.charCount = text.count
-                    self.parent.docMetrics.lineCount = text.isEmpty ? 0 : text.components(separatedBy: "\n").count
+                    self.parent.docMetrics.publish(
+                        charCount: DocMetricsModel.nonWhitespaceCharacterCount(in: text),
+                        lineCount: DocMetricsModel.sourceLineCount(in: text),
+                        for: self.parent.diagnosticDocumentID
+                    )
                 }
                 self.debounceWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
@@ -325,13 +407,23 @@ extension EditorView {
         }
 
         @objc func scrollDidChange() {
+            let scrollY = max(0, scrollView?.contentView.bounds.origin.y ?? 0)
+            let isScrollActivity = scrollActivityTracker.observe(
+                scrollY,
+                suppressed: suppressScrollActivity
+            )
             let progress = computeProgress()
             // Throttle: skip publishes smaller than ~0.4%. Writes the isolated
             // scrollModel — only EditorStatusBar observes it, so the rest of the
             // ContentView tree never re-renders while scrolling.
-            guard abs(progress - lastPublishedProgress) >= 0.004 else { return }
+            let progressChanged = abs(progress - lastPublishedProgress) >= 0.004
+            parent.scrollModel.publish(
+                progressChanged ? progress : parent.scrollModel.value,
+                for: parent.diagnosticDocumentID,
+                isScrollActivity: isScrollActivity
+            )
+            guard progressChanged else { return }
             lastPublishedProgress = progress
-            parent.scrollModel.value = progress
 
             // Phase-2 session persistence: debounced save after the scroll settles, so
             // a restored tab reopens at the last-viewed position. Placed after the
@@ -349,12 +441,21 @@ extension EditorView {
             //
             // Outline is Markdown-only (#22): a non-Markdown doc has no headings and no
             // rail, so skip the layout work entirely — scroll progress still publishes.
-            guard parent.isMarkdown else { return }
-            let scrollY = scrollView?.contentView.bounds.origin.y ?? 0
-            let active = outlineController.activeIndex(for: scrollY)
-            if parent.activeHeadingModel.index != active {
-                parent.activeHeadingModel.index = active
+            guard parent.isMarkdown else {
+                publishPlainSourceDiagnostic()
+                return
             }
+            let active = outlineController.activeIndex(for: scrollY)
+            parent.activeHeadingModel.publish(
+                active,
+                for: parent.diagnosticDocumentID
+            )
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let changedTextView = notification.object as? NSTextView,
+                  changedTextView === textView else { return }
+            publishPlainSourceDiagnostic()
         }
 
         // MARK: - Mouse bridging
@@ -387,9 +488,7 @@ extension EditorView {
         /// coordinate math falls through to clearing the preview — never crashes.
         private func updateHoveredURL(at tvPoint: NSPoint) {
             let url = linkURL(at: tvPoint) ?? ""
-            if parent.hoverURL.url != url {
-                parent.hoverURL.url = url
-            }
+            parent.hoverURL.publish(url, sourceBlockIndex: nil)
         }
 
         private func linkURL(at tvPoint: NSPoint) -> String? {

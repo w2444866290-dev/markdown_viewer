@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Custom dark hover tooltip matching the spec (`ui/Markdown Viewer.dc.html` L264-267, JS L511-530).
 ///
@@ -102,6 +103,8 @@ private struct MVTooltipModifier: ViewModifier {
 // MARK: - Root host (single global bubble)
 
 private struct MVTooltipHostModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     /// 8px gap below the target (spec).
     private static let gap: CGFloat = 8
 
@@ -109,11 +112,15 @@ private struct MVTooltipHostModifier: ViewModifier {
     /// into a top-edge anchor (`y = target.maxY + gap + height/2`). Measured once;
     /// single-line 11.5pt text is a stable size.
     @State private var bubbleHeight: CGFloat = 23
+    @State private var mouseMonitor: Any?
+    @State private var suppressedByMouseDown = false
+    @State private var activeText: String?
 
     func body(content: Content) -> some View {
-        content.overlayPreferenceValue(MVTipPreferenceKey.self) { payload in
-            GeometryReader { proxy in
-                if let payload {
+        content
+            .overlayPreferenceValue(MVTipPreferenceKey.self) { payload in
+                GeometryReader { proxy in
+                    if let payload, !suppressedByMouseDown {
                     let rect = proxy[payload.anchor]
                     // `.position` places the bubble's CENTRE. Default: TOP edge 8px
                     // below the target (centre y = rect.maxY + gap + height/2).
@@ -130,14 +137,44 @@ private struct MVTooltipHostModifier: ViewModifier {
                             y: overflowsBottom ? centreYAbove : centreYBelow
                         )
                         .allowsHitTesting(false)
-                        .transition(.opacity)
+                        .transition(MotionPolicy.transition(
+                            .opacity,
+                            reduceMotion: reduceMotion
+                        ))
+                    }
+                }
+                // Drive the 0.12s fade-in/out (spec) when the active tip appears or
+                // clears. Keyed on the payload so `.transition(.opacity)` animates.
+                .animation(
+                    MotionPolicy.animation(.easeOut(duration: 0.12), reduceMotion: reduceMotion),
+                    value: payload
+                )
+                .allowsHitTesting(false)
+            }
+            .onPreferenceChange(MVTipPreferenceKey.self) { payload in
+                let nextText = payload?.text
+                if nextText != activeText {
+                    activeText = nextText
+                    suppressedByMouseDown = false
                 }
             }
-            // Drive the 0.12s fade-in/out (spec) when the active tip appears or
-            // clears. Keyed on the payload so `.transition(.opacity)` animates.
-            .animation(.easeOut(duration: 0.12), value: payload)
-            .allowsHitTesting(false)
+            .onAppear { installMouseMonitor() }
+            .onDisappear { removeMouseMonitor() }
+    }
+
+    private func installMouseMonitor() {
+        guard mouseMonitor == nil else { return }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { event in
+            if activeText != nil { suppressedByMouseDown = true }
+            return event
         }
+    }
+
+    private func removeMouseMonitor() {
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+        mouseMonitor = nil
     }
 
     private func bubble(_ text: String) -> some View {

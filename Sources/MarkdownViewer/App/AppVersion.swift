@@ -4,7 +4,7 @@ import Foundation
 //
 // Surfaces which build is running so the user can verify at a glance that they
 // relaunched the latest binary. The marketing version (CFBundleShortVersionString)
-// is fixed; the build value (CFBundleVersion) is the git short SHA injected by
+// is fixed; MVGitCommit is the git short SHA injected by
 // scripts/build.sh at package time, so it changes every build.
 //
 // Running unpackaged (e.g. `swift run`) there is no Info.plist with these keys,
@@ -15,7 +15,7 @@ enum AppVersion {
     static let label: String = {
         let bundle = Bundle.main
         let short = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let build = bundle.object(forInfoDictionaryKey: "MVGitCommit") as? String
 
         let shortVersion = (short?.isEmpty == false) ? short! : (unpackagedVersion() ?? "dev")
         let buildVersion = (build?.isEmpty == false) ? build! : "dev"

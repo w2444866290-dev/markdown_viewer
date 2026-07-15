@@ -5,11 +5,11 @@ import AppKit
 /// Background #F7F7F8, 28px rows with hover/active states, resize handle.
 struct SidebarView: View {
     @EnvironmentObject var docManager: DocumentManager
-    @State private var hoveredNodeID: UUID?
+    @State private var hoveredNodeID: String?
     @State private var resizeHover = false
     @State private var resizeDragging = false
+    @State private var resizeStartWidth: CGFloat = DesignTokens.sidebarWidth
     @State private var paletteHover = false
-    @GestureState private var dragOffset: CGFloat = 0
 
     /// Spec (design L1250): while a drag is IN PROGRESS the resize line turns the
     /// macOS accent-drag blue rgba(10,132,255,0.6). LOCAL to this view - it's the
@@ -41,6 +41,7 @@ struct SidebarView: View {
                     .font(.system(size: 12.5))
                     .foregroundColor(DesignTokens.swiftUI.titleText)
                     .focused($filterFocused)
+                    .accessibilityIdentifier("sidebar-filter")
                     .padding(.horizontal, 10)
                     .frame(height: 28)
                     .background(Color.black.opacity(0.04))
@@ -63,15 +64,30 @@ struct SidebarView: View {
                         // folder path (relative to the opened root) so the row can
                         // disambiguate them. Browse mode conveys folders by
                         // indentation, so no path is passed there (`nil`).
-                        let filtering = !sideFilter.isEmpty
+                        let filtering = SidebarFilterPolicy.isFiltering(sideFilter)
                         ForEach(filteredNodes) { node in
                             SidebarNodeRow(
                                 node: node,
                                 depth: 0,
                                 hoveredNodeID: $hoveredNodeID,
                                 kbSelectedID: kbSelectedNodeID,
-                                relativePath: filtering ? relativeFolderPath(for: node) : nil
+                                relativePath: filtering
+                                    ? SidebarFilterPolicy.displayRelativePath(
+                                        for: node,
+                                        workspaceRoot: docManager.directoryURL
+                                    )
+                                    : nil
                             )
+                        }
+                        if filtering && filteredNodes.isEmpty {
+                            Text("没有匹配的文档")
+                                .font(.system(size: 12.5))
+                                .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                                .frame(height: 32)
+                                .padding(.horizontal, 8)
+                                .accessibilityIdentifier(
+                                    MarkdownAccessibilitySurface.sidebarFilterEmpty
+                                )
                         }
                     }
                     .padding(.horizontal, 10)
@@ -80,7 +96,7 @@ struct SidebarView: View {
                 }
 
                 // ⌘K button — spec: 38px, color #9a9a9e, hover #6e6e73
-                Button(action: { docManager.paletteOpen = true }) {
+                Button(action: { docManager.openCommandPalette() }) {
                     HStack(spacing: 7) {
                         Text("⌘K")
                             .font(.system(size: 10.5, design: .monospaced))
@@ -99,19 +115,10 @@ struct SidebarView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("open-command-palette")
                 .onHover { paletteHover = $0 }
                 .mvTip("所有命令与文档 · ⌘K")
 
-                // Build version — quiet marker so the user can SEE which commit is
-                // running. Sits directly below the ⌘K button, left-aligned to line
-                // up under it. Plain label (no hit testing). Same dev fallback as
-                // the packaged build via AppVersion.label.
-                Text(AppVersion.label)
-                    .font(.system(size: 10.5))
-                    .foregroundColor(DesignTokens.swiftUI.paletteKbd)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 2)
-                    .padding(.bottom, 8)
             }
             .background(DesignTokens.swiftUI.sidebar)
 
@@ -120,24 +127,9 @@ struct SidebarView: View {
                 .frame(width: 9)
                 .contentShape(Rectangle())
                 .allowsHitTesting(true)
+                .accessibilityIdentifier("sidebar-resize-handle")
+                .accessibilityLabel("调整侧栏宽度")
                 .onHover { resizeHover = $0 }
-                .gesture(
-                    DragGesture(minimumDistance: 1)
-                        .onChanged { value in
-                            resizeDragging = true
-                            let newWidth = max(
-                                DesignTokens.sidebarMinWidth,
-                                min(DesignTokens.sidebarMaxWidth,
-                                    docManager.sidebarWidth + value.translation.width
-                                )
-                            )
-                            docManager.sidebarWidth = newWidth
-                            // Phase-2: persist the new sidebar width (debounced, fires
-                            // ~1s after the drag settles).
-                            docManager.scheduleSessionSave()
-                        }
-                        .onEnded { _ in resizeDragging = false }
-                )
                 .overlay(
                     Rectangle()
                         // Three-state (spec L1250): dragging -> accent blue, hover ->
@@ -148,50 +140,73 @@ struct SidebarView: View {
                             ? Self.dragLine
                             : (resizeHover ? Color.black.opacity(0.18) : Color.clear))
                         .frame(width: 1)
+                        // This line is visual only. The authoritative drag starts on
+                        // its centre, so allowing it to participate in hit testing
+                        // would shield the 9 pt interaction surface below it.
+                        .allowsHitTesting(false)
+                )
+                .gesture(
+                    // Global coordinates remain stable while changing the width moves
+                    // this handle through the local coordinate space.
+                    DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                        .onChanged { value in
+                            if !resizeDragging {
+                                resizeDragging = true
+                                resizeStartWidth = docManager.sidebarWidth
+                                DebugPointerTrace.shared.recordSidebarResize(
+                                    "sidebar-resize-began",
+                                    width: resizeStartWidth
+                                )
+                            }
+                            let newWidth = max(
+                                DesignTokens.sidebarMinWidth,
+                                min(DesignTokens.sidebarMaxWidth,
+                                    resizeStartWidth + value.translation.width
+                                )
+                            )
+                            docManager.sidebarWidth = newWidth
+                            DebugPointerTrace.shared.recordSidebarResize(
+                                "sidebar-resize-changed",
+                                width: newWidth
+                            )
+                            // Phase-2: persist the new sidebar width (debounced, fires
+                            // ~1s after the drag settles).
+                            docManager.scheduleSessionSave()
+                        }
+                        .onEnded { value in
+                            let startWidth = resizeDragging
+                                ? resizeStartWidth
+                                : docManager.sidebarWidth
+                            let finalWidth = max(
+                                DesignTokens.sidebarMinWidth,
+                                min(DesignTokens.sidebarMaxWidth,
+                                    startWidth + value.translation.width
+                                )
+                            )
+                            docManager.sidebarWidth = finalWidth
+                            resizeDragging = false
+                            DebugPointerTrace.shared.recordSidebarResize(
+                                "sidebar-resize-ended",
+                                width: finalWidth
+                            )
+                            docManager.scheduleSessionSave()
+                        }
                 )
                 .offset(x: 4)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(MarkdownAccessibilitySurface.sidebarSurface)
     }
 
     // Browse mode renders the nested `fileTree`; filtered mode renders a FLAT
     // list of every file (any depth) — spec `sideVisibleFiles()` filters the
     // flat `buildDefs()` list regardless of folder nesting.
     private var filteredNodes: [FileNode] {
-        if sideFilter.isEmpty {
-            return docManager.fileTree
-        }
-        let q = sideFilter.lowercased()
-        return flattenFiles(docManager.fileTree).filter {
-            $0.name.lowercased().contains(q)
-        }
-    }
-
-    // The file's containing-folder path relative to the opened root — shown
-    // dimmed next to filter matches so same-named files in different folders are
-    // distinguishable (user addition, not in the mockup). Returns nil when there
-    // is no open root, when the file sits directly in the root (no subfolder),
-    // or when the file is not under the root. Uses `pathComponents` on the
-    // standardized URLs so it's robust to trailing slashes and `.`/`..` bits.
-    private func relativeFolderPath(for node: FileNode) -> String? {
-        guard let root = docManager.directoryURL else { return nil }
-        let rootComps = root.standardizedFileURL.pathComponents
-        let parentComps = node.url.standardizedFileURL.deletingLastPathComponent().pathComponents
-        guard parentComps.count > rootComps.count,
-              Array(parentComps.prefix(rootComps.count)) == rootComps else { return nil }
-        return parentComps.suffix(from: rootComps.count).joined(separator: "/")
-    }
-
-    // Depth-first flatten to all non-directory nodes (spec's flat file list).
-    private func flattenFiles(_ nodes: [FileNode]) -> [FileNode] {
-        var out: [FileNode] = []
-        for node in nodes {
-            if node.isDirectory {
-                out.append(contentsOf: flattenFiles(node.children))
-            } else {
-                out.append(node)
-            }
-        }
-        return out
+        SidebarFilterPolicy.visibleNodes(
+            in: docManager.fileTree,
+            query: sideFilter,
+            workspaceRoot: docManager.directoryURL
+        )
     }
 
     // Files eligible for keyboard navigation — spec `sideVisibleFiles()`.
@@ -200,13 +215,13 @@ struct SidebarView: View {
     // `filteredNodes` is already the flattened, all-files-only match list, so
     // keyboard nav traverses the same nested matches the rows display.
     private var kbVisibleFiles: [FileNode] {
-        sideFilter.isEmpty
+        !SidebarFilterPolicy.isFiltering(sideFilter)
             ? []
             : filteredNodes.filter { !$0.isDirectory }
     }
 
     // The node id of the current keyboard selection, clamped to range.
-    private var kbSelectedNodeID: UUID? {
+    private var kbSelectedNodeID: String? {
         let vis = kbVisibleFiles
         guard !vis.isEmpty else { return nil }
         return vis[min(max(kbSel, 0), vis.count - 1)].id
@@ -251,18 +266,18 @@ struct SidebarView: View {
 private struct SidebarNodeRow: View {
     let node: FileNode
     let depth: Int
-    @Binding var hoveredNodeID: UUID?
+    @Binding var hoveredNodeID: String?
     /// Node currently selected via filter keyboard navigation (spec `kbName`).
-    let kbSelectedID: UUID?
-    /// While filtering, the file's parent-folder path relative to the opened
-    /// root, shown dimmed beside the name to tell same-named matches apart.
-    /// `nil` in browse mode and for files sitting directly in the root.
+    let kbSelectedID: String?
+    /// While filtering, the file's full path relative to the opened root is
+    /// shown dimmed beside the name to distinguish same-named matches.
+    /// Root files retain the prototype's leading `./`; browse mode passes nil.
     let relativePath: String?
     @EnvironmentObject var docManager: DocumentManager
 
     private var isExpanded: Bool { docManager.expandedFolders.contains(node.id) }
     private var isActive: Bool {
-        !node.isDirectory && docManager.tabs.contains(where: { $0.url == node.url && $0.id == docManager.activeTabID })
+        docManager.isActiveFileNode(node)
     }
     private var isHovered: Bool { hoveredNodeID == node.id }
     private var isKbSelected: Bool { kbSelectedID == node.id }
@@ -276,6 +291,7 @@ private struct SidebarNodeRow: View {
                     } else {
                         docManager.expandedFolders.insert(node.id)
                     }
+                    docManager.scheduleSessionSave()
                 } else {
                     docManager.openFileNode(node)
                 }
@@ -298,18 +314,27 @@ private struct SidebarNodeRow: View {
                         .lineLimit(1)
                         // Keep the name whole; the path hint truncates first.
                         .layoutPriority(1)
-                    // Filter-only: dimmed parent-folder path so same-named matches
-                    // are distinguishable. Same single line, smaller + tertiary so
-                    // it reads as secondary; middle-truncates to keep both ends of
-                    // a deep path. Absent in browse mode (`relativePath == nil`).
+                    // Filter-only: dimmed full relative path so same-named matches
+                    // are distinguishable. It stays on the row's trailing side and
+                    // tail-truncates like the authoritative prototype.
                     if let relativePath, !relativePath.isEmpty {
+                        Spacer(minLength: 0)
                         Text(relativePath)
-                            .font(.system(size: 11))
+                            .font(.system(size: 11.5))
                             .foregroundColor(DesignTokens.swiftUI.tertiaryText)
                             .lineLimit(1)
-                            .truncationMode(.middle)
+                            .truncationMode(.tail)
+                            .frame(
+                                maxWidth: max(
+                                    0,
+                                    (docManager.sidebarWidth - 20) * 0.48
+                                ),
+                                alignment: .trailing
+                            )
                     }
-                    Spacer()
+                    if relativePath == nil || relativePath?.isEmpty == true {
+                        Spacer()
+                    }
                     if nodeHasDirtyTab {
                         Circle()
                             .fill(DesignTokens.swiftUI.accent)
@@ -326,6 +351,13 @@ private struct SidebarNodeRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier(
+                MarkdownAccessibilitySurface.sidebarNode(
+                    url: node.url,
+                    workspaceRoot: docManager.directoryURL,
+                    isDirectory: node.isDirectory
+                )
+            )
             .onHover { hovering in
                 hoveredNodeID = hovering ? node.id : nil
             }
@@ -360,6 +392,6 @@ private struct SidebarNodeRow: View {
     }
 
     private var nodeHasDirtyTab: Bool {
-        docManager.tabs.contains { $0.url == node.url && $0.isDirty }
+        docManager.fileNodeHasDirtyTab(node)
     }
 }

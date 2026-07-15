@@ -5,3 +5,5 @@ dist/
 *.xcactivitylog
 
 .build/
+__pycache__/
+*.pyc

@@ -27,12 +27,12 @@ extension StylerSuites {
             #expect(LiveMarkdownStyler.bodyPointSize == before)
         }
 
-        /// The pinned default is 15.5, obtained through the same scoped helper.
-        @Test func defaultBodySizeIsFifteenPointFive() {
+        /// The pinned default is 16.5, obtained through the same scoped helper.
+        @Test func defaultBodySizeIsSixteenPointFive() {
             withBodyPointSize(defaultBodyPointSize) {
                 let ts = StylerProbe.styled("Another plain paragraph of body text.")
                 guard let i = requireIndex(ts, of: "plain") else { return }
-                #expect(StylerProbe.pointSize(ts, i) == 15.5)
+                #expect(StylerProbe.pointSize(ts, i) == 16.5)
             }
         }
 

@@ -31,11 +31,71 @@
       <string>Markdown Document</string>
       <key>CFBundleTypeRole</key>
       <string>Editor</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>md</string>
+        <string>markdown</string>
+        <string>mdx</string>
+      </array>
       <key>LSItemContentTypes</key>
       <array>
         <string>net.daringfireball.markdown</string>
+        <string>local.codex.markdownviewer.mdx</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Plain Source Document</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>mdown</string>
+        <string>mkd</string>
+        <string>txt</string>
+        <string>text</string>
+        <string>yaml</string>
+        <string>yml</string>
+        <string>json</string>
+        <string>toml</string>
+        <string>swift</string>
+        <string>sh</string>
+        <string>py</string>
+        <string>js</string>
+        <string>ts</string>
+        <string>html</string>
+        <string>css</string>
+        <string>xml</string>
+        <string>rb</string>
+        <string>go</string>
+        <string>rs</string>
+        <string>java</string>
+        <string>kt</string>
+      </array>
+      <key>LSItemContentTypes</key>
+      <array>
         <string>public.plain-text</string>
       </array>
+    </dict>
+  </array>
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.text</string>
+      </array>
+      <key>UTTypeDescription</key>
+      <string>MDX Document</string>
+      <key>UTTypeIdentifier</key>
+      <string>local.codex.markdownviewer.mdx</string>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>mdx</string>
+        </array>
+      </dict>
     </dict>
   </array>
 </dict>

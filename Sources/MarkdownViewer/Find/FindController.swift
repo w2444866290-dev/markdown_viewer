@@ -21,6 +21,10 @@ final class FindController {
     private var matchResults: [NSTextCheckingResult] = []
     private var searchBody = ""
     private var searchRegex: NSRegularExpression?
+    /// Exact raw source used to produce `matches`.
+    /// Replacement is allowed only while both this source and the body projection
+    /// still match the live text storage.
+    private var searchStorageSnapshot: String?
 
     /// Debug-only (AppEnv.debug): one-line summary of the last search shown on the
     /// DIAG HUD (raw vs body-filtered counts + independent zeroRect/inCode health
@@ -54,17 +58,29 @@ final class FindController {
 
     var isEmpty: Bool { matches.isEmpty }
 
+    /// Marks cached ranges stale as soon as NSTextStorage reports a character edit.
+    /// The options remain available so the next search or replacement can rebuild a
+    /// fresh snapshot without depending on another UI callback.
+    func invalidateForTextMutation() {
+        searchStorageSnapshot = nil
+    }
+
     func search(_ opts: Options) {
         // Skip the re-scan entirely when nothing relevant changed. Navigation
         // and toggles route through their own paths; this only guards a redundant
         // same-query `onSearch` re-fire.
-        if opts == lastSearchedOptions { return }
+        if opts == lastSearchedOptions,
+           let storage = textView?.textStorage,
+           searchSnapshotIsCurrent(in: storage) {
+            return
+        }
 
         clearHighlights()
         matches = []
         matchResults = []
         searchBody = ""
         searchRegex = nil
+        searchStorageSnapshot = nil
         currentIndex = 0
         lastPatternInvalid = false
         lastSearchedOptions = opts
@@ -74,12 +90,13 @@ final class FindController {
             return
         }
 
-        var pattern = opts.query
-        if !opts.useRegex {
-            pattern = NSRegularExpression.escapedPattern(for: pattern)
-            if opts.wholeWord { pattern = "\\b\(pattern)\\b" }
+        var pattern = opts.useRegex
+            ? opts.query
+            : NSRegularExpression.escapedPattern(for: opts.query)
+        if opts.wholeWord {
+            pattern = "(?<![\\p{L}\\p{N}_])(?:\(pattern))(?![\\p{L}\\p{N}_])"
         }
-        var regOpts: NSRegularExpression.Options = []
+        var regOpts: NSRegularExpression.Options = [.useUnicodeWordBoundaries]
         if !opts.caseSensitive { regOpts.insert(.caseInsensitive) }
         guard let regex = try? NSRegularExpression(pattern: pattern, options: regOpts) else {
             // Only an illegal user-supplied regex is reportable; escaped patterns never fail.
@@ -90,15 +107,17 @@ final class FindController {
 
         // "所见即所搜": search the clean body/reading text only. Build the body ↔ raw
         // map from the live storage right before matching so it always reflects the
-        // current styling (search() already re-scans on any query/option change and
-        // after a replace, so no observer is needed). Then run the SAME regex over
-        // the body string and map every body-space match back to a raw storage range.
+        // current styling. Query changes, text mutations, and replacements all
+        // invalidate the snapshot before this scan. Then run the same regex over the
+        // body string and map every body-space match back to a raw storage range.
         guard let storage = tv.textStorage else {
             MVLog.info("find search query=\"\(opts.query)\" matches=0 (no storage)", category: "find")
             return
         }
         let bodyMap = BodyMap(storage: storage)
         let body = bodyMap.bodyString
+        searchStorageSnapshot = storage.string
+        searchBody = body
         let full = NSRange(location: 0, length: (body as NSString).length)
         // One pass, keeping raw ranges and (regex mode only) the body-space match
         // results in lockstep: a body match whose `rawRange` maps to nil is dropped
@@ -114,7 +133,6 @@ final class FindController {
         matches = raws
         if opts.useRegex {
             matchResults = results
-            searchBody = body
             searchRegex = regex
         }
         currentIndex = 0
@@ -181,31 +199,28 @@ final class FindController {
         scrollToCurrent()
     }
 
-    func replaceCurrent(with text: String, restyle: () -> Void, redo: () -> Void) {
-        guard matches.indices.contains(currentIndex) else {
+    func replaceCurrent(with text: String, restyle: () -> Void) {
+        guard let tv = textView, let storage = tv.textStorage else { return }
+        refreshSearchIfSnapshotIsStale(in: storage)
+        guard searchSnapshotIsCurrent(in: storage),
+              matches.indices.contains(currentIndex) else {
             Task { @MainActor in Toaster.shared.flash("没有可替换的匹配") }
             return
         }
-        guard let tv = textView, let storage = tv.textStorage else { return }
         let range = matches[currentIndex]
-        // Bounds-safety: a stale match range (e.g. document mutated out from
-        // under us) would make replaceCharacters throw. Skip instead.
-        guard NSMaxRange(range) <= storage.length else {
-            MVLog.warn("find replace skipped stale range \(NSStringFromRange(range)) len=\(storage.length)", category: "find")
-            return
-        }
         // Expand `$1`/`$0`/… against this match's groups in regex mode (verbatim in
         // literal mode). Computed BEFORE the edit, while the stored body-space
         // groups still correspond to `currentIndex`.
         let replacement = expandedReplacement(at: currentIndex, template: text)
         guard tv.shouldChangeText(in: range, replacementString: replacement) else { return }
         MVLog.info("find replace 1 at index=\(currentIndex) range=\(NSStringFromRange(range))", category: "find")
-        // The document is about to change; force the upcoming re-search to re-scan.
-        lastSearchedOptions = nil
+        // The document is about to change, so this snapshot cannot authorize another
+        // replacement even if the delegate callback is delayed.
+        invalidateForTextMutation()
         storage.replaceCharacters(in: range, with: replacement)
         tv.didChangeText()
         restyle()
-        redo()  // re-search after mutation (this resets currentIndex to 0)
+        refreshLastSearch()
         // Advance the cursor PAST the text we just inserted, so the next "替换" lands
         // on the following real occurrence - NOT on a match the replacement itself
         // introduced. Without this, searching e.g. `\d+` and replacing with text that
@@ -221,34 +236,74 @@ final class FindController {
     }
 
     func replaceAll(with text: String, restyle: () -> Void) {
-        guard !matches.isEmpty else {
+        guard let tv = textView, let storage = tv.textStorage else { return }
+        refreshSearchIfSnapshotIsStale(in: storage)
+        guard searchSnapshotIsCurrent(in: storage), !matches.isEmpty else {
             Task { @MainActor in Toaster.shared.flash("没有可替换的匹配") }
             return
         }
-        guard let tv = textView, let storage = tv.textStorage else { return }
         let full = NSRange(location: 0, length: storage.length)
         guard tv.shouldChangeText(in: full, replacementString: nil) else { return }
-        let count = matches.count
+        let snapshotMatches = matches
+        let replacements = snapshotMatches.indices.map {
+            expandedReplacement(at: $0, template: text)
+        }
+        let count = snapshotMatches.count
         MVLog.info("find replaceAll count=\(count)", category: "find")
         // We're rewriting ranges out from under our highlights; drop the cache so
         // a later same-query search re-scans, and don't try to clear stale spans.
-        lastSearchedOptions = nil
+        invalidateForTextMutation()
         highlightedRanges = []
-        // Reversed so each replacement doesn't shift the offsets of the ones still
-        // to come; still bounds-guard each range against the live storage length.
-        // Iterate by index so each match can expand its own `$1` groups (regex
-        // mode); literal mode inserts the template verbatim.
-        for i in matches.indices.reversed() {
-            let m = matches[i]
-            guard NSMaxRange(m) <= storage.length else { continue }
-            storage.replaceCharacters(in: m, with: expandedReplacement(at: i, template: text))
+        // Reversed so each replacement does not shift the offsets of the ones still
+        // to come. Every range was validated against the exact source snapshot above.
+        // Iterate by index so each match can expand its own `$1` groups in regex mode.
+        // Literal mode inserts the template verbatim.
+        for i in snapshotMatches.indices.reversed() {
+            storage.replaceCharacters(in: snapshotMatches[i], with: replacements[i])
         }
         tv.didChangeText()
         restyle()
+        refreshLastSearch()
+        Task { @MainActor in Toaster.shared.flash("已替换 " + String(count) + " 处") }
+    }
+
+    /// Rebuilds stale ranges before a replace operation can use them.
+    /// Comparing the full raw source catches same-length edits whose old ranges still
+    /// fit inside storage but now point at unrelated text.
+    private func refreshSearchIfSnapshotIsStale(in storage: NSTextStorage) {
+        guard !searchSnapshotIsCurrent(in: storage) else { return }
+        MVLog.warn("find replacement requested with stale search snapshot", category: "find")
+        refreshLastSearch()
+    }
+
+    private func refreshLastSearch() {
+        guard let options = lastSearchedOptions else {
+            clearSearchResults()
+            return
+        }
+        search(options)
+    }
+
+    private func clearSearchResults() {
+        clearHighlights()
         matches = []
         matchResults = []
+        searchBody = ""
+        searchRegex = nil
+        searchStorageSnapshot = nil
         currentIndex = 0
-        Task { @MainActor in Toaster.shared.flash("已替换 " + String(count) + " 处") }
+    }
+
+    private func searchSnapshotIsCurrent(in storage: NSTextStorage) -> Bool {
+        guard let searchStorageSnapshot,
+              searchStorageSnapshot == storage.string,
+              searchBody == BodyMap(storage: storage).bodyString,
+              matches.allSatisfy({ range in
+                  range.location >= 0 && NSMaxRange(range) <= storage.length
+              }) else {
+            return false
+        }
+        return searchRegex == nil || matchResults.count == matches.count
     }
 
     /// Concrete replacement for the match at `index`, given the user's replace-field

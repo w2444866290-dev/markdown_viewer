@@ -147,7 +147,7 @@ extension MVLog {
 /// the handler itself allocates nothing. Marked `nonisolated`/global so the
 /// C function pointer can reach it.
 private enum CrashState {
-    /// Pre-resolved crash directory, e.g. ~/Library/Logs/MarkdownViewer/crash.
+    /// Pre-resolved crash directory for the active launch profile.
     static var crashDir: String = ""
     /// Previously-installed Obj-C exception handler, for chaining.
     static var previousExceptionHandler: (@convention(c) (NSException) -> Void)?
@@ -157,9 +157,7 @@ private enum CrashState {
     /// Done once at install time: create the crash directory and pre-build the
     /// header banner. Allocation here is fine — we are NOT in a signal context.
     static func prepare() {
-        let base = FileManager.default
-            .homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/MarkdownViewer/crash", isDirectory: true)
+        let base = AppEnv.crashLogDirectory
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         crashDir = base.path
 

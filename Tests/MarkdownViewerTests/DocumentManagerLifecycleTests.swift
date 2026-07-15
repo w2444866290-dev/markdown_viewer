@@ -1,0 +1,649 @@
+import Combine
+import Foundation
+import Testing
+@testable import MarkdownViewer
+
+@MainActor
+@Suite(.serialized)
+struct DocumentManagerLifecycleTests {
+    @Test
+    func newMarkdownDocumentRequestsImmediateFirstBlockEditing() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.newDocument()
+            let tab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: tab)
+
+            #expect(store.activeBlockID == store.document.blocks.first?.id)
+            #expect(store.activeSelection == NSRange(location: 0, length: 0))
+            #expect(tab.isDirty)
+        }
+    }
+
+    @Test
+    func newMarkdownDocumentLeavesPreviewAndRequestsImmediateEditing() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.newDocument(text: "# Existing")
+            manager.togglePreviewMode()
+            #expect(manager.previewMode)
+
+            manager.newDocument()
+            let tab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: tab)
+
+            #expect(!manager.previewMode)
+            #expect(store.activeBlockID == store.document.blocks.first?.id)
+            #expect(store.activeSelection == NSRange(location: 0, length: 0))
+        }
+    }
+
+    @Test
+    func untitledNamesStayUniqueAcrossSavedAndUnsavedTabs() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.openTab(
+                for: root.appendingPathComponent("未命名.md"),
+                text: "saved"
+            )
+
+            manager.newDocument()
+            manager.newDocument()
+            manager.newDocument()
+
+            #expect(manager.tabs.map(\.name) == [
+                "未命名.md",
+                "未命名 2.md",
+                "未命名 3.md",
+                "未命名 4.md",
+            ])
+            #expect(Set(manager.tabs.map(\.name)).count == manager.tabs.count)
+        }
+    }
+
+    @Test
+    func canonicalAndSymlinkPathsActivateOneExistingTab() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            let notes = root.appendingPathComponent("notes.md")
+            let alias = root.appendingPathComponent("alias.md")
+            try Data("disk".utf8).write(to: notes)
+            try FileManager.default.createSymbolicLink(
+                at: alias,
+                withDestinationURL: notes
+            )
+
+            manager.openTab(for: notes, text: "first snapshot")
+            let originalID = try #require(manager.activeTabID)
+            manager.openTab(for: alias, text: "must not replace")
+
+            #expect(manager.tabs.count == 1)
+            #expect(manager.activeTabID == originalID)
+            #expect(manager.activeTab?.text == "first snapshot")
+            #expect(manager.activeTab?.url == notes)
+        }
+    }
+
+    @Test
+    func visualFixtureWorkspaceRowReusesURLlessTabAndTracksDirtyState() throws {
+        try withTemporaryRoot { root in
+            let manager = DocumentManager(
+                sessionURL: root.appendingPathComponent("session.json"),
+                sessionSaveDelay: 3_600,
+                visualTestEnabled: true
+            )
+            let fixtureName = "格式示例.md"
+            let workspaceFile = root.appendingPathComponent(fixtureName)
+            try Data("workspace copy".utf8).write(to: workspaceFile)
+            let node = FileNode(
+                url: workspaceFile,
+                name: fixtureName,
+                isDirectory: false
+            )
+            manager.loadVisualTestDocument(
+                name: fixtureName,
+                text: "# In-memory fixture",
+                scrollY: 0
+            )
+            let fixtureID = try #require(manager.activeTabID)
+
+            #expect(manager.isActiveFileNode(node))
+            #expect(!manager.fileNodeHasDirtyTab(node))
+
+            manager.markActiveDirty()
+            #expect(manager.fileNodeHasDirtyTab(node))
+
+            manager.openFileNode(node)
+
+            #expect(manager.tabs.count == 1)
+            #expect(manager.activeTabID == fixtureID)
+            #expect(manager.activeTab?.url == nil)
+            #expect(manager.activeTab?.text == "# In-memory fixture")
+        }
+    }
+
+    @Test
+    func restoredVisualFixtureRebindsWorkspaceRowWithoutLosingSessionState() throws {
+        try withTemporaryRoot { root in
+            let workspace = root.appendingPathComponent("Workspace", isDirectory: true)
+            let docs = workspace.appendingPathComponent("docs", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: docs,
+                withIntermediateDirectories: true
+            )
+            let fixtureName = "格式示例.md"
+            let workspaceFile = docs.appendingPathComponent(fixtureName)
+            try Data("# Pristine workspace copy".utf8).write(to: workspaceFile)
+
+            var document = MarkdownDocument(source: "# Restored unsaved fixture")
+            let headingID = try #require(document.blocks.first?.id)
+            _ = try document.replaceBlock(
+                id: headingID,
+                with: "# Restored unsaved fixture edited"
+            )
+            let fixtureTab = DocumentTab(
+                url: nil,
+                name: fixtureName,
+                text: document.source,
+                isDirty: true,
+                scrollY: 1_734.5,
+                markdownDocument: document
+            )
+            let draftTab = DocumentTab(
+                url: nil,
+                name: "未命名 2.md",
+                text: "draft",
+                isDirty: true,
+                selectionLocation: 5
+            )
+            let session = Session(
+                tabs: [fixtureTab, draftTab],
+                activeTabID: draftTab.id,
+                fontIndex: 2,
+                sidebarWidth: 312,
+                sidebarOpen: false,
+                directoryPath: workspace.path,
+                expandedFolderPaths: []
+            )
+            let manager = DocumentManager(
+                sessionURL: root.appendingPathComponent("session.json"),
+                sessionSaveDelay: 3_600,
+                visualTestEnabled: true
+            )
+
+            manager.restoreVisualTestSession(
+                from: session,
+                fixtureName: fixtureName
+            )
+
+            let node = FileNode(
+                url: workspaceFile,
+                name: fixtureName,
+                isDirectory: false
+            )
+            #expect(manager.tabs.map(\.id) == [fixtureTab.id, draftTab.id])
+            #expect(manager.activeTabID == draftTab.id)
+            #expect(manager.activeTab?.text == "draft")
+            let restoredFixture = try #require(
+                manager.tabs.first { $0.id == fixtureTab.id }
+            )
+            #expect(restoredFixture.text == document.source)
+            #expect(restoredFixture.isDirty == true)
+            #expect(restoredFixture.scrollY == 1_734.5)
+            #expect(restoredFixture.markdownDocument?.blocks.map(\.id)
+                    == document.blocks.map(\.id))
+            #expect(manager.fontIndex == 2)
+            #expect(manager.sidebarWidth == 312)
+            #expect(manager.sidebarOpen == false)
+            #expect(manager.expandedFolders.isEmpty)
+            #expect(!manager.isActiveFileNode(node))
+            #expect(manager.fileNodeHasDirtyTab(node))
+
+            manager.openFileNode(node)
+
+            #expect(manager.tabs.map(\.id) == [fixtureTab.id, draftTab.id])
+            #expect(manager.activeTabID == fixtureTab.id)
+            #expect(manager.activeTab?.url == nil)
+            #expect(manager.activeTab?.text == document.source)
+        }
+    }
+
+    @Test
+    func dirtyCloseRequiresConfirmationAndReopenKeepsLiveState() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.openTab(for: root.appendingPathComponent("a.md"), text: "a")
+            manager.newDocument(text: "old draft")
+            let dirtyID = try #require(manager.activeTabID)
+            manager.openTab(for: root.appendingPathComponent("c.md"), text: "c")
+            manager.activateTab(dirtyID)
+            manager.pullActiveText = { "latest unsaved draft" }
+            manager.pullActiveScrollY = { 388.5 }
+            manager.pullActiveSelection = { NSRange(location: 7, length: 8) }
+
+            var staleCleanValue = try #require(manager.activeTab)
+            staleCleanValue.isDirty = false
+            manager.requestClose(staleCleanValue)
+
+            #expect(manager.tabs.count == 3)
+            #expect(manager.confirmingCloseTabID == dirtyID)
+
+            manager.requestClose(staleCleanValue)
+
+            #expect(manager.tabs.count == 2)
+            #expect(manager.activeTab?.name == "c.md")
+            #expect(manager.lastClosedTab?.id == dirtyID)
+            #expect(manager.lastClosedTab?.text == "latest unsaved draft")
+            #expect(manager.lastClosedTab?.scrollY == 388.5)
+            #expect(manager.lastClosedTab?.selectionRange == NSRange(location: 7, length: 8))
+            #expect(manager.lastClosedTab?.isDirty == true)
+
+            manager.reopenClosed()
+
+            #expect(manager.activeTabID == dirtyID)
+            #expect(manager.activeTab?.text == "latest unsaved draft")
+            #expect(manager.activeTab?.scrollY == 388.5)
+            #expect(manager.activeTab?.selectionRange == NSRange(location: 7, length: 8))
+            #expect(manager.activeTab?.isDirty == true)
+            #expect(manager.lastClosedTab == nil)
+        }
+    }
+
+    @Test
+    func liveBlockDraftMarksCleanSavedTabDirtyBeforeCommit() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.openTab(
+                for: root.appendingPathComponent("saved.md"),
+                text: "before"
+            )
+            let tab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: tab)
+            let blockID = try #require(store.document.blocks.first?.id)
+
+            store.beginSourceEditing(blockID: blockID)
+            store.updateActiveDraft("before", selection: NSRange(location: 1, length: 0))
+            #expect(manager.activeTab?.isDirty == false)
+
+            store.updateActiveDraft("after", selection: NSRange(location: 2, length: 0))
+
+            #expect(manager.activeTab?.isDirty == true)
+            #expect(manager.activeTab?.text == "before")
+            #expect(store.source == "before")
+            #expect(store.activeBlockID == blockID)
+        }
+    }
+
+    @Test
+    func activeBlockDraftIsReconciledBeforeCloseDecision() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.openTab(
+                for: root.appendingPathComponent("saved.md"),
+                text: "before"
+            )
+            let cleanTab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: cleanTab)
+            let blockID = try #require(store.document.blocks.first?.id)
+            store.beginSourceEditing(blockID: blockID)
+            store.updateActiveDraft("after", selection: NSRange(location: 5, length: 0))
+
+            let activeIndex = try #require(manager.activeIdx)
+            manager.tabs[activeIndex].isDirty = false
+            manager.requestClose(cleanTab)
+
+            #expect(manager.tabs.count == 1)
+            #expect(manager.confirmingCloseTabID == cleanTab.id)
+            #expect(manager.activeTab?.isDirty == true)
+            #expect(manager.activeTab?.text == "after")
+            #expect(manager.activeTab?.selectionRange == NSRange(location: 5, length: 0))
+            #expect(store.source == "after")
+            #expect(store.activeBlockID == nil)
+
+            manager.requestClose(cleanTab)
+
+            #expect(manager.tabs.isEmpty)
+            #expect(manager.lastClosedTab?.text == "after")
+            #expect(manager.lastClosedTab?.isDirty == true)
+        }
+    }
+
+    @Test
+    func switchingBackToMarkdownTabRestoresEditedBlockAndSourceSelection() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.openTab(
+                for: root.appendingPathComponent("first.md"),
+                text: "# Heading\n\nSecond block"
+            )
+            let firstTab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: firstTab)
+            let blockID = try #require(store.document.blocks.last?.id)
+            let selection = NSRange(location: 3, length: 6)
+            store.beginSourceEditing(blockID: blockID)
+            store.updateActiveDraft("Second edited block", selection: selection)
+
+            manager.openTab(
+                for: root.appendingPathComponent("other.md"),
+                text: "Other"
+            )
+
+            #expect(store.activeBlockID == nil)
+            #expect(store.source == "# Heading\n\nSecond edited block")
+
+            manager.activateTab(firstTab.id)
+
+            #expect(store.activeBlockID == blockID)
+            #expect(store.activeSelection == selection)
+            #expect(store.activeBlock?.source == "Second edited block")
+        }
+    }
+
+    @Test
+    func activatingTheCurrentTabDoesNotCommitOrDropItsSourceSelection() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.openTab(
+                for: root.appendingPathComponent("current.md"),
+                text: "Current block"
+            )
+            let tab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: tab)
+            let blockID = try #require(store.document.blocks.first?.id)
+            let selection = NSRange(location: 2, length: 4)
+            store.beginSourceEditing(blockID: blockID)
+            store.updateActiveDraft("Current edited block", selection: selection)
+
+            manager.activateTab(tab.id)
+
+            #expect(store.activeBlockID == blockID)
+            #expect(store.activeSelection == selection)
+            #expect(store.source == "Current block")
+            #expect(store.snapshotDocument().source == "Current edited block")
+        }
+    }
+
+    @Test
+    func switchingBackToMarkdownTabRestoresTableAndFocusedCell() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.openTab(
+                for: root.appendingPathComponent("table.md"),
+                text: "| Name | Value |\n| --- | --- |\n| old | before |"
+            )
+            let tableTab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: tableTab)
+            let tableID = try #require(store.document.blocks.first?.id)
+            let cell = MarkdownTableCell(row: 0, column: 1)
+            store.beginTableEditing(blockID: tableID, cell: cell)
+            store.setTableCell(cell, value: "after")
+
+            manager.openTab(
+                for: root.appendingPathComponent("other.md"),
+                text: "Other"
+            )
+
+            #expect(store.activeTableID == nil)
+            #expect(store.activeTableCell == nil)
+
+            manager.activateTab(tableTab.id)
+
+            #expect(store.activeTableID == tableID)
+            #expect(store.activeTableCell == cell)
+            #expect(store.tableDraft?.rows.first?[1] == "after")
+        }
+    }
+
+    @Test
+    func cleanCloseUsesRightThenLeftAdjacency() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            for name in ["a.md", "b.md", "c.md"] {
+                manager.openTab(for: root.appendingPathComponent(name), text: name)
+            }
+            let middle = manager.tabs[1]
+            manager.activateTab(middle.id)
+
+            manager.requestClose(middle)
+            #expect(manager.activeTab?.name == "c.md")
+            #expect(manager.confirmingCloseTabID == nil)
+
+            let last = try #require(manager.activeTab)
+            manager.requestClose(last)
+            #expect(manager.activeTab?.name == "a.md")
+        }
+    }
+
+    @Test
+    func blockMutationsPublishDirtyOnlyOnceAndSnapshotsKeepStableIDs() throws {
+        try withTemporaryRoot { root in
+            let sessionURL = root.appendingPathComponent("session.json")
+            let manager = makeManager(root, sessionURL: sessionURL)
+            let source = "- [ ] task\n\n# Heading"
+            manager.openTab(for: root.appendingPathComponent("tasks.md"), text: source)
+            let tab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: tab)
+            let originalIDs = store.document.blocks.map(\.id)
+            var tabPublications = 0
+            let observation = manager.$tabs.dropFirst().sink { _ in
+                tabPublications += 1
+            }
+
+            store.toggleTask(blockID: originalIDs[0], itemIndex: 0)
+            store.toggleTask(blockID: originalIDs[0], itemIndex: 0)
+            store.toggleTask(blockID: originalIDs[0], itemIndex: 0)
+
+            #expect(tabPublications == 1)
+            #expect(manager.activeTab?.text == source)
+            #expect(manager.activeTab?.isDirty == true)
+            #expect(store.source == "- [x] task\n\n# Heading")
+            #expect(store.document.blocks.map(\.id) == originalIDs)
+
+            let snapshot = manager.snapshotSession()
+            let snapshotTab = try #require(snapshot.tabs.first)
+            #expect(snapshotTab.text == store.source)
+            #expect(snapshotTab.markdownDocument?.source == store.source)
+            #expect(snapshotTab.markdownDocument?.blocks.map(\.id) == originalIDs)
+            #expect(manager.activeTab?.text == source)
+
+            manager.saveSession()
+            let restored = try #require(SessionStore.load(from: sessionURL))
+            #expect(restored.tabs.first?.text == store.source)
+            #expect(restored.tabs.first?.markdownDocument?.blocks.map(\.id) == originalIDs)
+            _ = observation
+        }
+    }
+
+    @Test
+    func saveAndSaveAsUpdateIdentityOnlyAfterSuccessfulWrite() throws {
+        enum WriteFailure: Error { case expected }
+
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.newDocument(text: "# Draft")
+            let originalID = try #require(manager.activeTabID)
+            let mdxURL = root.appendingPathComponent("component.mdx")
+            var writtenText: String?
+            var writtenURL: URL?
+
+            let saved = manager.saveActiveDocument(to: mdxURL) { text, url in
+                writtenText = text
+                writtenURL = url
+                try Data(text.utf8).write(to: url)
+            }
+
+            #expect(saved)
+            #expect(writtenText == "# Draft")
+            #expect(writtenURL == mdxURL)
+            #expect(manager.activeTab?.id == originalID)
+            #expect(manager.activeTab?.url == mdxURL)
+            #expect(manager.activeTab?.name == "component.mdx")
+            #expect(manager.activeTab?.isDirty == false)
+            #expect(manager.activeTab?.isMarkdown == true)
+            #expect(manager.activeTab?.markdownDocument?.source == "# Draft")
+
+            manager.markActiveDirty()
+            let beforeFailure = try #require(manager.activeTab)
+            let failedURL = root.appendingPathComponent("failed.txt")
+            let failed = manager.saveActiveDocument(to: failedURL) { _, _ in
+                throw WriteFailure.expected
+            }
+
+            #expect(!failed)
+            expectSameLifecycleState(try #require(manager.activeTab), beforeFailure)
+
+            let txtURL = root.appendingPathComponent("plain.txt")
+            #expect(manager.saveActiveDocument(to: txtURL))
+            #expect(manager.activeTab?.url == txtURL)
+            #expect(manager.activeTab?.isMarkdown == false)
+            #expect(manager.activeTab?.markdownDocument == nil)
+            #expect(try String(contentsOf: txtURL, encoding: .utf8) == "# Draft")
+        }
+    }
+
+    @Test
+    func saveAsRejectsAnotherTabsCanonicalTargetWithoutWriting() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            let target = root.appendingPathComponent("existing.md")
+            manager.openTab(for: target, text: "existing")
+            manager.newDocument(text: "draft")
+            var writeCount = 0
+
+            let saved = manager.saveActiveDocument(to: target) { _, _ in
+                writeCount += 1
+            }
+
+            #expect(!saved)
+            #expect(writeCount == 0)
+            #expect(manager.tabs.count == 2)
+            #expect(manager.activeTab?.url == nil)
+            #expect(manager.activeTab?.text == "draft")
+            #expect(manager.activeTab?.isDirty == true)
+        }
+    }
+
+    @Test
+    func restoreKeepsDirtyBlockStateAndRecoversFromMissingWorkspace() throws {
+        try withTemporaryRoot { root in
+            var document = MarkdownDocument(source: "# One\n\nBody")
+            let headingID = try #require(document.blocks.first?.id)
+            _ = try document.replaceBlock(id: headingID, with: "# Edited")
+            let tab = DocumentTab(
+                url: nil,
+                name: "未命名.md",
+                text: document.source,
+                isDirty: true,
+                scrollY: 722.25,
+                markdownDocument: document
+            )
+            let session = Session(
+                tabs: [tab],
+                activeTabID: UUID(),
+                fontIndex: 99,
+                sidebarWidth: 999,
+                sidebarOpen: false,
+                directoryPath: root.appendingPathComponent("missing").path,
+                expandedFolderPaths: ["stale"]
+            )
+            let manager = makeManager(root)
+            manager.directoryURL = root
+            manager.fileTree = [FileNode(
+                url: root,
+                name: root.lastPathComponent,
+                isDirectory: true
+            )]
+            manager.expandedFolders = [root.path]
+            manager.lastClosedTab = tab
+            manager.confirmingCloseTabID = tab.id
+
+            manager.restore(from: session)
+
+            #expect(manager.activeTabID == tab.id)
+            #expect(manager.activeTab?.isDirty == true)
+            #expect(manager.activeTab?.scrollY == 722.25)
+            #expect(manager.activeTab?.markdownDocument?.blocks.map(\.id)
+                    == document.blocks.map(\.id))
+            #expect(manager.fontIndex == DesignTokens.bodyFontSizes.count - 1)
+            #expect(manager.sidebarWidth == DesignTokens.sidebarMaxWidth)
+            #expect(manager.sidebarOpen == false)
+            #expect(manager.directoryURL == nil)
+            #expect(manager.fileTree.isEmpty)
+            #expect(manager.expandedFolders.isEmpty)
+            #expect(manager.lastClosedTab == nil)
+            #expect(manager.confirmingCloseTabID == nil)
+        }
+    }
+
+    @Test
+    func undoAndRedoUseBlockStoreWhenFirstResponderDoesNotHandleAction() throws {
+        try withTemporaryRoot { root in
+            let manager = makeManager(root)
+            manager.openTab(
+                for: root.appendingPathComponent("task.md"),
+                text: "- [ ] task"
+            )
+            let store = manager.blockEditorStore(for: try #require(manager.activeTab))
+            let taskID = try #require(store.document.blocks.first?.id)
+            store.toggleTask(blockID: taskID, itemIndex: 0)
+            #expect(store.source == "- [x] task")
+
+            var selectors: [String] = []
+            #expect(manager.undoActiveEdit { selector in
+                selectors.append(NSStringFromSelector(selector))
+                return false
+            })
+            #expect(store.source == "- [ ] task")
+            #expect(selectors == ["undo:"])
+
+            #expect(manager.redoActiveEdit { selector in
+                selectors.append(NSStringFromSelector(selector))
+                return false
+            })
+            #expect(store.source == "- [x] task")
+            #expect(selectors == ["undo:", "redo:"])
+
+            #expect(manager.undoActiveEdit { _ in true })
+            #expect(store.source == "- [x] task")
+        }
+    }
+
+    private func makeManager(
+        _ root: URL,
+        sessionURL: URL? = nil
+    ) -> DocumentManager {
+        DocumentManager(
+            sessionURL: sessionURL ?? root.appendingPathComponent("session.json"),
+            sessionSaveDelay: 3_600
+        )
+    }
+
+    private func expectSameLifecycleState(
+        _ actual: DocumentTab,
+        _ expected: DocumentTab
+    ) {
+        #expect(actual.id == expected.id)
+        #expect(actual.url == expected.url)
+        #expect(actual.name == expected.name)
+        #expect(actual.text == expected.text)
+        #expect(actual.isDirty == expected.isDirty)
+        #expect(actual.isMarkdown == expected.isMarkdown)
+        #expect(actual.markdownDocument == expected.markdownDocument)
+        #expect(actual.scrollY == expected.scrollY)
+        #expect(actual.selectionRange == expected.selectionRange)
+    }
+
+    private func withTemporaryRoot(
+        _ body: (URL) throws -> Void
+    ) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MarkdownViewerLifecycleTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        try body(root)
+    }
+}

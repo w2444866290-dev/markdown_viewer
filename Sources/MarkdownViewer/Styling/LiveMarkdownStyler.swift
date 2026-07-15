@@ -2,7 +2,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 enum LiveMarkdownStyler {
-    static var bodyPointSize: CGFloat = 15.5
+    static var bodyPointSize: CGFloat = 16.5
     static var bodyFont: NSFont { NSFont.systemFont(ofSize: bodyPointSize) }
 
     private static let markerFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
@@ -356,7 +356,7 @@ enum LiveMarkdownStyler {
 
     static func paragraphStyle(spacingBefore: CGFloat = 0, spacingAfter: CGFloat = 0) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineHeightMultiple = 1.7
+        style.lineHeightMultiple = DesignTokens.bodyLineHeight
         style.paragraphSpacingBefore = spacingBefore
         style.paragraphSpacing = spacingAfter
         return style

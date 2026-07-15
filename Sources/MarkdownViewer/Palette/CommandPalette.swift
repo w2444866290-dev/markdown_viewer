@@ -1,36 +1,135 @@
+import AppKit
 import SwiftUI
+
+enum PalettePresentationMetrics {
+    static let idealPanelWidth: CGFloat = 460
+    static let minimumHorizontalInset: CGFloat = 24
+    static let topInset: CGFloat = 96
+    static let searchHeight: CGFloat = 46
+    static let separatorHeight: CGFloat = 1
+    static let listContentMaxHeight: CGFloat = 340
+    static let listPadding: CGFloat = 8
+    static let veilOpacity: CGFloat = 0.6
+
+    static var listOuterMaxHeight: CGFloat {
+        listContentMaxHeight + 2 * listPadding
+    }
+
+    static var panelMaxHeight: CGFloat {
+        searchHeight + separatorHeight + listOuterMaxHeight
+    }
+
+    static func panelWidth(for containerWidth: CGFloat) -> CGFloat {
+        min(idealPanelWidth, max(0, containerWidth - 2 * minimumHorizontalInset))
+    }
+}
+
+enum PaletteCommandID: CaseIterable, Equatable {
+    case newDocument
+    case save
+    case findAndReplace
+    case togglePreview
+    case open
+    case increaseFont
+    case decreaseFont
+    case resetFont
+    case toggleSidebar
+    case reopenClosedTab
+}
+
+struct PaletteCommandDefinition: Identifiable, Equatable {
+    let id: PaletteCommandID
+    let title: String
+    let shortcut: String
+}
+
+enum PaletteCommandCatalog {
+    static let required: [PaletteCommandDefinition] = [
+        .init(id: .newDocument, title: "新建文档", shortcut: "⌘N"),
+        .init(id: .save, title: "保存", shortcut: "⌘S"),
+        .init(id: .findAndReplace, title: "查找 / 替换", shortcut: "⌘F"),
+        .init(id: .togglePreview, title: "切换纯预览 / 编辑", shortcut: "⌘⇧P"),
+        .init(id: .open, title: "打开…", shortcut: "⌘O"),
+        .init(id: .increaseFont, title: "放大字号", shortcut: "⌘ +"),
+        .init(id: .decreaseFont, title: "缩小字号", shortcut: "⌘ -"),
+        .init(id: .resetFont, title: "重置字号", shortcut: "⌘ 0"),
+        .init(id: .toggleSidebar, title: "显示 / 隐藏侧栏", shortcut: "⌘\\"),
+    ]
+
+    static func commands(lastClosedName: String?) -> [PaletteCommandDefinition] {
+        guard let lastClosedName else { return required }
+        return required + [
+            .init(
+                id: .reopenClosedTab,
+                title: "恢复刚关闭的标签 · \(lastClosedName)",
+                shortcut: "⌘⇧T"
+            )
+        ]
+    }
+}
+
+enum PaletteFilter {
+    static func normalizedQuery(_ query: String) -> String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func matches(_ candidate: String, query: String) -> Bool {
+        let normalized = normalizedQuery(query)
+        return normalized.isEmpty
+            || candidate.localizedCaseInsensitiveContains(normalized)
+    }
+}
+
+enum PaletteKeyCommand: Equatable {
+    case moveDown
+    case moveUp
+    case activate
+    case dismiss
+}
+
+enum PaletteKeyboard {
+    static func command(
+        forKeyCode keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags = []
+    ) -> PaletteKeyCommand? {
+        if keyCode == 40,
+           modifiers.contains(.command),
+           modifiers.isDisjoint(with: [.shift, .control, .option]) {
+            return .dismiss
+        }
+        switch keyCode {
+        case 125: return .moveDown
+        case 126: return .moveUp
+        case 36, 76: return .activate
+        case 53: return .dismiss
+        default: return nil
+        }
+    }
+
+    static func movedSelection(from index: Int, itemCount: Int, delta: Int) -> Int {
+        guard itemCount > 0 else { return 0 }
+        let normalized = ((index % itemCount) + itemCount) % itemCount
+        return ((normalized + delta) % itemCount + itemCount) % itemCount
+    }
+
+    static func normalizedSelection(_ index: Int, itemCount: Int) -> Int {
+        movedSelection(from: index, itemCount: itemCount, delta: 0)
+    }
+}
 
 struct CommandPaletteView: View {
     @EnvironmentObject var docManager: DocumentManager
     @State private var query: String = ""
     @State private var selectedIndex: Int = 0
-    @State private var hoveredIndex: Int?
     @State private var eventMonitor: Any?
     @FocusState private var searchFocused: Bool
 
-    private let baseCommands: [(String, String)] = [
-        ("新建文档", "⌘N"), ("保存", "⌘S"), ("查找 / 替换", "⌘F"),
-        ("打开…", "⌘O"), ("放大字号", "⌘ +"), ("缩小字号", "⌘ -"),
-        ("重置字号", "⌘ 0"), ("显示 / 隐藏侧栏", "")
-    ]
-
-    // Reopen-last-closed command appended when a tab was recently closed.
-    private var reopenCommandLabel: String? {
-        guard let name = docManager.lastClosedTab?.name else { return nil }
-        return "恢复刚关闭的标签 · \(name)"
+    private var commands: [PaletteCommandDefinition] {
+        PaletteCommandCatalog.commands(lastClosedName: docManager.lastClosedTab?.name)
     }
 
-    private var commands: [(String, String)] {
-        var cmds = baseCommands
-        if let label = reopenCommandLabel {
-            cmds.append((label, "⌘⇧T"))
-        }
-        return cmds
-    }
-
-    var filteredCommands: [(String, String)] {
-        guard !query.isEmpty else { return commands }
-        return commands.filter { $0.0.localizedCaseInsensitiveContains(query) }
+    var filteredCommands: [PaletteCommandDefinition] {
+        commands.filter { PaletteFilter.matches($0.title, query: query) }
     }
 
     private func flattenedFiles(_ nodes: [FileNode]) -> [FileNode] {
@@ -54,166 +153,173 @@ struct CommandPaletteView: View {
         let tabID: UUID?         // non-nil when this entry is an open tab
     }
 
-    /// Spec #15: the palette doc list must include open tabs and the unsaved
-    /// 未命名 doc, not just files on disk. MINIMAL FIX — union docManager.tabs with
-    /// the flattened fileTree, deduped by path (or by name for url-less tabs).
-    /// TODO(spec #15): full buildDefs parity (extraOrder / pinning) in data-model wave.
+    /// The palette includes open tabs and unsaved untitled documents in addition
+    /// to workspace files, with canonical on-disk paths deduplicated.
     private var allDocs: [PaletteDoc] {
         var result: [PaletteDoc] = []
-        var seenPaths = Set<String>()
+        var consumedTabIDs = Set<UUID>()
 
-        // Open tabs first (so the active/untitled doc is reachable), then disk files.
-        for tab in docManager.tabs {
-            if let path = tab.url?.path { seenPaths.insert(path) }
-            result.append(PaletteDoc(id: tab.id, name: tab.name, url: tab.url, tabID: tab.id))
-        }
+        // Preserve the workspace's visible order and attach an already-open tab to
+        // its file entry. URL-less documents remain reachable after known files.
         for node in flattenedFiles(docManager.fileTree) {
-            if seenPaths.contains(node.url.path) { continue }
-            seenPaths.insert(node.url.path)
-            result.append(PaletteDoc(id: node.id, name: node.name, url: node.url, tabID: nil))
+            let openTab = docManager.tabs.first { tab in
+                docManager.tabRepresentsFileNode(tab, node: node)
+            }
+            if let openTab { consumedTabIDs.insert(openTab.id) }
+            result.append(PaletteDoc(
+                id: openTab.map { AnyHashable($0.id) } ?? AnyHashable(node.id),
+                name: node.name,
+                url: node.url,
+                tabID: openTab?.id
+            ))
+        }
+        for tab in docManager.tabs where !consumedTabIDs.contains(tab.id) {
+            result.append(PaletteDoc(id: tab.id, name: tab.name, url: tab.url, tabID: tab.id))
         }
         return result
     }
 
     private var filteredDocs: [PaletteDoc] {
-        guard !query.isEmpty else { return allDocs }
-        return allDocs.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        allDocs.filter { PaletteFilter.matches($0.name, query: query) }
     }
 
     var totalItems: Int { filteredDocs.count + filteredCommands.count }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // Backdrop — spec L227: rgba(248,248,250,0.6) + backdrop-filter: blur(6px).
-            // The blur is supplied by the host window's NSVisualEffectView(.behindWindow)
-            // (see PaletteBlurHost); this Color is only the off-white veil layered on top.
-            // The visual-effect material ALSO contributes its own frost, so stacking the
-            // literal 0.6 spec value on top of it compounded to near-opaque — the main
-            // UI became invisible (QA P0). 0.4 here nets ≈ the spec's 0.6 over the blur
-            // while keeping the softened content clearly visible behind it.
-            Color(red: 248/255, green: 248/255, blue: 250/255).opacity(0.4)
-                .ignoresSafeArea()
-                .onTapGesture { docManager.paletteOpen = false }
-
-            // Top-aligned: spec L227 anchors the panel 96px below the container top
-            // (align-items: flex-start; padding-top: 96px). The trailing Spacer makes
-            // this VStack fill the full height so the 96px gap is measured from the
-            // real top — without it the VStack hugged its content and the ZStack
-            // centred it, dropping the panel toward the middle (QA P0).
-            VStack(spacing: 0) {
-                Spacer().frame(height: 96)
+        GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                // The captured reference renders this as a literal 60% veil.
+                // Keep the content sharp underneath instead of blurring the whole window.
+                Color(red: 248/255, green: 248/255, blue: 250/255)
+                    .opacity(PalettePresentationMetrics.veilOpacity)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { docManager.closeCommandPalette() }
 
                 VStack(spacing: 0) {
-                    // Search input — spec: height 46, border-bottom: 1px solid #F0F0F1
-                    TextField("搜索文档或命令…", text: $query)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundColor(DesignTokens.swiftUI.titleText)
-                        .padding(.horizontal, 18)
-                        .frame(height: 46)
-                        .focused($searchFocused)
-                        .onChange(of: query) { _ in selectedIndex = 0 }
+                    Spacer().frame(height: PalettePresentationMetrics.topInset)
 
-                    Rectangle()
-                        .fill(DesignTokens.swiftUI.divider)
-                        .frame(height: 1)
+                    VStack(spacing: 0) {
+                        TextField("搜索文档或命令…", text: $query)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .foregroundColor(DesignTokens.swiftUI.titleText)
+                            .padding(.horizontal, 18)
+                            .frame(height: PalettePresentationMetrics.searchHeight)
+                            .focused($searchFocused)
+                            .onChange(of: query) { _ in
+                                selectedIndex = 0
+                            }
 
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            if !filteredDocs.isEmpty {
-                                sectionHeader("文档", topPadding: false)
-                                ForEach(Array(filteredDocs.enumerated()), id: \.element.id) { idx, doc in
-                                    paletteRow(
-                                        title: doc.name,
-                                        subtitle: nil,
-                                        index: idx,
-                                        isActiveDoc: isActiveDoc(doc),
-                                        action: {
-                                            openPaletteDoc(doc)
-                                            docManager.paletteOpen = false
-                                        }
-                                    )
+                        Rectangle()
+                            .fill(DesignTokens.swiftUI.divider)
+                            .frame(height: PalettePresentationMetrics.separatorHeight)
+
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 0) {
+                                if !filteredDocs.isEmpty {
+                                    sectionHeader("文档", topPadding: false)
+                                    ForEach(Array(filteredDocs.enumerated()), id: \.element.id) { idx, doc in
+                                        paletteRow(
+                                            title: doc.name,
+                                            subtitle: nil,
+                                            index: idx,
+                                            isActiveDoc: isActiveDoc(doc),
+                                            action: {
+                                                openPaletteDoc(doc)
+                                                docManager.closeCommandPalette()
+                                            }
+                                        )
+                                    }
+                                }
+                                if !filteredCommands.isEmpty {
+                                    let offset = filteredDocs.count
+                                    sectionHeader("命令", topPadding: true)
+                                    ForEach(Array(filteredCommands.enumerated()), id: \.element.id) { idx, cmd in
+                                        paletteRow(
+                                            title: cmd.title,
+                                            subtitle: cmd.shortcut,
+                                            index: offset + idx,
+                                            action: { execute(cmd.id) }
+                                        )
+                                    }
+                                }
+                                if filteredDocs.isEmpty && filteredCommands.isEmpty {
+                                    Text("没有匹配的文档或命令")
+                                        .font(.system(size: 12.5))
+                                        .foregroundColor(DesignTokens.swiftUI.placeholderText)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 18)
                                 }
                             }
-                            if !filteredCommands.isEmpty {
-                                let offset = filteredDocs.count
-                                sectionHeader(
-                                    filteredDocs.isEmpty ? "命令" : "命令",
-                                    topPadding: !filteredDocs.isEmpty
-                                )
-                                ForEach(Array(filteredCommands.enumerated()), id: \.offset) { idx, cmd in
-                                    paletteRow(
-                                        title: cmd.0,
-                                        subtitle: cmd.1,
-                                        index: offset + idx,
-                                        action: { execute(cmd.0) }
-                                    )
-                                }
-                            }
-                            if filteredDocs.isEmpty && filteredCommands.isEmpty && !query.isEmpty {
-                                Text("没有匹配的文档或命令")
-                                    .font(.system(size: 12.5))
-                                    .foregroundColor(DesignTokens.swiftUI.placeholderText)
-                                    .padding(18)
-                            }
+                            .padding(PalettePresentationMetrics.listPadding)
                         }
-                        .padding(8)
+                        // CSS max-height applies to its content box, with 8pt padding
+                        // outside that limit. Preserve the resulting 356pt outer height.
+                        .frame(maxHeight: PalettePresentationMetrics.listOuterMaxHeight)
                     }
-                    .frame(maxHeight: 340)
-                }
-                .frame(width: 460)
-                .background(DesignTokens.swiftUI.paper)
-                .cornerRadius(14)
-                .shadow(color: .black.opacity(0.22), radius: 30, x: 0, y: 24)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(DesignTokens.swiftUI.ring, lineWidth: 1)
-                )
+                    .frame(width: PalettePresentationMetrics.panelWidth(for: geometry.size.width))
+                    .background(DesignTokens.swiftUI.paper)
+                    .cornerRadius(14)
+                    .shadow(color: .black.opacity(0.22), radius: 30, x: 0, y: 24)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(DesignTokens.swiftUI.ring, lineWidth: 1)
+                    )
+                    .debugVisualAnchor("palette-panel-frame")
+                    .contentShape(RoundedRectangle(cornerRadius: 14))
+                    .onTapGesture { searchFocused = true }
 
-                Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                }
             }
         }
         .ignoresSafeArea()
         .onAppear {
-            // Palette open is a discrete reconcile point: pull the editor's live text
-            // into the active tab's snapshot so the current unsaved doc is consistent
-            // here. A fresh CommandPaletteView is built on every open (PaletteBlurHost),
-            // so this fires for ⌘K, the sidebar button, and the double-Shift path alike.
-            docManager.reconcileActiveText()
             installKeyMonitor()
+            guard AppEnv.allowsAutomaticFocusRequests else { return }
             DispatchQueue.main.async { searchFocused = true }  // autofocus the field
+        }
+        .onChange(of: totalItems) { itemCount in
+            selectedIndex = PaletteKeyboard.normalizedSelection(
+                selectedIndex,
+                itemCount: itemCount
+            )
         }
         .onDisappear { removeKeyMonitor() }
     }
 
-    private func execute(_ name: String) {
-        docManager.paletteOpen = false
-        if name.hasPrefix("恢复刚关闭的标签") {
-            docManager.reopenClosed()
-            return
-        }
-        switch name {
-        case "新建文档":     docManager.newDocument()
-        case "保存":         docManager.saveCurrent()
-        // Spec #14: always-open (never toggle closed) — same path as ⌘F / header icon.
-        case "查找 / 替换":   docManager.findStateOpen?()
-        case "打开…":        docManager.openDocument()
-        case "放大字号":     docManager.applyFont(docManager.fontIndex + 1)
-        case "缩小字号":     docManager.applyFont(docManager.fontIndex - 1)
-        case "重置字号":     docManager.applyFont(1)
-        case "显示 / 隐藏侧栏": docManager.sidebarOpen.toggle()
-        default: break
+    private func execute(_ command: PaletteCommandID) {
+        docManager.closeCommandPalette()
+        switch command {
+        case .newDocument: docManager.newDocument()
+        case .save: docManager.saveCurrent()
+        // The find entry always opens and focuses the panel. It never toggles it closed.
+        case .findAndReplace: docManager.findStateOpen?()
+        case .togglePreview: docManager.togglePreviewMode()
+        case .open: docManager.openDocument()
+        case .increaseFont: docManager.applyFont(docManager.fontIndex + 1)
+        case .decreaseFont: docManager.applyFont(docManager.fontIndex - 1)
+        case .resetFont: docManager.applyFont(1)
+        case .toggleSidebar: docManager.toggleSidebar()
+        case .reopenClosedTab: docManager.reopenClosed()
         }
     }
 
     private func activateSelected() {
-        if selectedIndex < filteredDocs.count {
-            openPaletteDoc(filteredDocs[selectedIndex])
+        let itemCount = totalItems
+        guard itemCount > 0 else { return }
+        let index = PaletteKeyboard.normalizedSelection(
+            selectedIndex,
+            itemCount: itemCount
+        )
+        if index < filteredDocs.count {
+            openPaletteDoc(filteredDocs[index])
         } else {
-            let cmd = filteredCommands[selectedIndex - filteredDocs.count]
-            execute(cmd.0)
+            let cmd = filteredCommands[index - filteredDocs.count]
+            execute(cmd.id)
         }
-        docManager.paletteOpen = false
+        docManager.closeCommandPalette()
     }
 
     /// Open or re-activate a palette doc. An entry backed by an open tab just
@@ -229,26 +335,46 @@ struct CommandPaletteView: View {
     }
 
     private func installKeyMonitor() {
+        guard eventMonitor == nil else { return }
         let handler = PaletteKeyHandler(
-            onDown: { if totalItems > 0 { selectedIndex = (selectedIndex + 1) % totalItems } },
-            onUp: { if totalItems > 0 { selectedIndex = (selectedIndex - 1 + totalItems) % totalItems } },
-            onEnter: { activateSelected() },
-            onEscape: { docManager.paletteOpen = false }
+            onDown: {
+                selectedIndex = PaletteKeyboard.movedSelection(
+                    from: selectedIndex,
+                    itemCount: totalItems,
+                    delta: 1
+                )
+            },
+            onUp: {
+                selectedIndex = PaletteKeyboard.movedSelection(
+                    from: selectedIndex,
+                    itemCount: totalItems,
+                    delta: -1
+                )
+            },
+            onEnter: { if totalItems > 0 { activateSelected() } },
+            onEscape: { docManager.closeCommandPalette() }
         )
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            switch event.keyCode {
-            case 125: handler.onDown(); return nil
-            case 126: handler.onUp(); return nil
-            case 36:  handler.onEnter(); return nil
-            case 53:  handler.onEscape(); return nil
-            default: break
+            guard event.window is KeyablePanel,
+                  let command = PaletteKeyboard.command(
+                    forKeyCode: event.keyCode,
+                    modifiers: event.modifierFlags
+                  ) else {
+                return event
             }
-            return event
+            switch command {
+            case .moveDown: handler.onDown()
+            case .moveUp: handler.onUp()
+            case .activate: handler.onEnter()
+            case .dismiss: handler.onEscape()
+            }
+            return nil
         }
     }
 
     private func removeKeyMonitor() {
         if let m = eventMonitor { NSEvent.removeMonitor(m) }
+        eventMonitor = nil
     }
 
     private func sectionHeader(_ title: String, topPadding: Bool) -> some View {
@@ -272,7 +398,6 @@ struct CommandPaletteView: View {
 
     private func paletteRow(title: String, subtitle: String?, index: Int, isActiveDoc: Bool = false, action: @escaping () -> Void) -> some View {
         let isSelected = index == selectedIndex
-        let isHovered = index == hoveredIndex
 
         return Button(action: action) {
             HStack(spacing: 10) {
@@ -304,15 +429,13 @@ struct CommandPaletteView: View {
             .frame(height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill((isSelected || isHovered)
-                        ? Color.black.opacity(0.05) : .clear)
+                    .fill(isSelected ? Color.black.opacity(0.05) : .clear)
             )
             .cornerRadius(6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            hoveredIndex = hovering ? index : nil
             if hovering { selectedIndex = index }
         }
     }

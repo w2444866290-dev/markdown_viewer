@@ -33,7 +33,7 @@ import Testing
 
 /// The default body point size every characterization test pins (matches the app's
 /// `LiveMarkdownStyler.bodyPointSize` default of 15.5).
-let defaultBodyPointSize: CGFloat = 15.5
+let defaultBodyPointSize: CGFloat = 16.5
 
 /// Pin the process-wide body font size to the default. Called from every suite's
 /// `init()` so a suite always starts from a known size. Safe because all styler

@@ -13,11 +13,17 @@ struct EditorView: NSViewRepresentable {
     /// one-shot load semantics as `text`; the live position lives in the scroll view
     /// after mount and is reconciled back at discrete points (Phase-2 per-tab scroll).
     let scrollY: CGFloat
+    /// The active tab's saved AppKit UTF-16 selection at mount time.
+    var selection: NSRange = NSRange(location: 0, length: 0)
+    /// Stable identity for structured diagnostics from a mounted plain-source view.
+    var diagnosticDocumentID: UUID? = nil
+    var diagnosticDocumentName: String = ""
     /// Unobserved reference (class → no re-render subscription) used to wire the
     /// reconcile channel on mount and to mark the tab dirty on the first edit.
     let docManager: DocumentManager
     @Binding var fontIndex: Int
     var isMarkdown: Bool = true
+    var isPreviewMode: Bool = false
     var findState: FindState?
     @ObservedObject var bridge: EditorBridge
     /// Isolated scroll-progress sink. NOT observed by ContentView (held there via
@@ -32,14 +38,23 @@ struct EditorView: NSViewRepresentable {
     /// Isolated document char/line-count sink, same rationale as `scrollModel`:
     /// written on load + every (debounced) edit, observed only by EditorStatusBar.
     var docMetrics: DocMetricsModel
-    /// DIAG (temporary): isolated restyle-path readout sink. Written on every
-    /// keystroke by the Coordinator, observed only by the top-center `DiagReadout`
-    /// leaf - never by ContentView. Rip out with the other `// DIAG (temporary)`.
+    /// Isolated Debug restyle-path readout sink.
+    /// Written on every edit by the Coordinator and observed only by `DiagReadout`,
+    /// never by `ContentView`.
     var diag: DiagModel
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
+        let mountedDocumentID = diagnosticDocumentID
+        let mountedScrollModel = scrollModel
+        let mountedActiveHeadingModel = activeHeadingModel
+        let mountedMetrics = docMetrics
+        DispatchQueue.main.async {
+            mountedScrollModel.reset(for: mountedDocumentID)
+            mountedActiveHeadingModel.reset(for: mountedDocumentID)
+            mountedMetrics.reset(for: mountedDocumentID)
+        }
         let sv = ResponsiveScrollView()
         sv.hasVerticalScroller = true
         sv.autohidesScrollers = true
@@ -60,6 +75,7 @@ struct EditorView: NSViewRepresentable {
         tv.isRichText = false
         tv.importsGraphics = false
         tv.allowsUndo = true
+        tv.isEditable = !(isMarkdown && isPreviewMode)
         tv.font = NSFont.systemFont(ofSize: DesignTokens.bodyFontSizes[fontIndex])
         // Seed the Coordinator's tracked body size with the SAME initial size, so the
         // first updateNSView (which requests this same size) sees no change and skips
@@ -115,6 +131,16 @@ struct EditorView: NSViewRepresentable {
         let bodySize = DesignTokens.bodyFontSizes[fontIndex]
         LiveMarkdownStyler.bodyPointSize = bodySize
         tv.string = text
+        let utf16Length = (text as NSString).length
+        let selectionLocation = min(max(0, selection.location), utf16Length)
+        let selectionLength = min(
+            max(0, selection.length),
+            utf16Length - selectionLocation
+        )
+        tv.setSelectedRange(NSRange(
+            location: selectionLocation,
+            length: selectionLength
+        ))
         if let s = tv.textStorage {
             if isMarkdown { LiveMarkdownStyler.apply(to: s) }
             else { applyPlainSource(to: s, font: tv.font ?? NSFont.systemFont(ofSize: bodySize)) }
@@ -123,6 +149,12 @@ struct EditorView: NSViewRepresentable {
         // can't leak a stale whole-doc scope into the first keystroke's incremental.
         context.coordinator.clearPendingEditedRange()
         context.coordinator.refreshTextCaches()
+        // FindState is shared across tabs. A newly mounted plain-source editor owns a
+        // fresh FindController, so rerun an existing query against this document after
+        // its final source-mode attributes are installed.
+        DispatchQueue.main.async { [weak coordinator = context.coordinator] in
+            coordinator?.searchCurrentFindQueryIfNeeded()
+        }
 
         // Reconcile channel: expose this tab's LIVE NSTextView text to
         // DocumentManager, which pulls it into tabs[].text at discrete points. Weak
@@ -133,6 +165,9 @@ struct EditorView: NSViewRepresentable {
         // session snapshot can read the current scroll without a per-frame write-back.
         docManager.pullActiveScrollY = { [weak c = context.coordinator] in
             c?.scrollView?.contentView.bounds.origin.y ?? 0
+        }
+        docManager.pullActiveSelection = { [weak c = context.coordinator] in
+            c?.textView?.selectedRange()
         }
 
         // Per-tab scroll restore (Phase-2): re-apply the saved offset ONCE, on the
@@ -149,8 +184,13 @@ struct EditorView: NSViewRepresentable {
                 let docH = rtv.frame.height + rsv.contentInsets.top + rsv.contentInsets.bottom
                 let maxY = max(0, docH - rsv.contentView.bounds.height)
                 let y = min(max(0, restoreY), maxY)
+                c.suppressScrollActivity = true
                 rsv.contentView.scroll(to: CGPoint(x: rsv.contentView.bounds.origin.x, y: y))
                 rsv.reflectScrolledClipView(rsv.contentView)
+                c.recordScrollBaseline(y)
+                DispatchQueue.main.async { [weak c] in
+                    c?.suppressScrollActivity = false
+                }
             }
         }
 
@@ -168,16 +208,24 @@ struct EditorView: NSViewRepresentable {
                 bridge.headings = []
                 MVLog.info("non-Markdown document opened — outline skipped (\(loadedText.count) chars)", category: "editor")
             }
-            context.coordinator.parent.activeHeadingModel.index = 0
+            context.coordinator.parent.activeHeadingModel.publish(
+                0,
+                for: context.coordinator.parent.diagnosticDocumentID
+            )
             let metrics = context.coordinator.parent.docMetrics
-            metrics.charCount = loadedText.count
-            metrics.lineCount = loadedText.isEmpty ? 0 : loadedText.components(separatedBy: "\n").count
+            metrics.publish(
+                charCount: DocMetricsModel.nonWhitespaceCharacterCount(in: loadedText),
+                lineCount: DocMetricsModel.sourceLineCount(in: loadedText),
+                for: context.coordinator.parent.diagnosticDocumentID
+            )
+            context.coordinator.publishPlainSourceDiagnostic()
         }
         return sv
     }
 
     func updateNSView(_ sv: NSScrollView, context: Context) {
         guard let tv = context.coordinator.textView else { return }
+        tv.isEditable = !(isMarkdown && isPreviewMode)
         let size = DesignTokens.bodyFontSizes[fontIndex]
         let newFont = NSFont.systemFont(ofSize: size)
         LiveMarkdownStyler.bodyPointSize = size
@@ -192,7 +240,7 @@ struct EditorView: NSViewRepresentable {
         // the user actually changed the body size (⌘+/−/0 → fontIndex → size).
         let fontChanged = context.coordinator.lastStyledBodySize != size
         if fontChanged {
-            // DIAG (temporary): font-change whole-document restyle. Deferred to the
+            // Record the font-change whole-document restyle. Deferred to the
             // next runloop tick so writing DiagModel does not mutate observable
             // state during this SwiftUI view update (matches the async bridge writes
             // in the text branch below).

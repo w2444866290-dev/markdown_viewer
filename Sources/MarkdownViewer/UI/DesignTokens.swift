@@ -6,8 +6,8 @@ import AppKit
 private enum Palette {
     static let paper          = 0xFFFFFF
     static let sidebar        = 0xF7F7F8
-    static let appBackground  = 0xF2F2F4
-    static let codeBackground = 0xFAFAFA
+    static let appBackground  = 0xFFFFFF
+    static let codeBackground = 0xF6F6F9
 
     static let titleText      = 0x1D1D1F
     static let headingText    = 0x111111
@@ -20,6 +20,8 @@ private enum Palette {
     static let disabledText   = 0xC7C7CC
     static let folderIcon     = 0xC7C7CC
     static let tickRest       = 0xCACACE
+    static let sourceSyntax   = 0xC1C1C6
+    static let sourceLink     = 0x2A6FDB
     static let divider        = 0xF0F0F1
     static let line           = 0xF4F4F5
     static let paletteKbd     = 0x9A9A9E
@@ -49,19 +51,17 @@ enum DesignTokens {
     static let disabledText = color(Palette.disabledText)
     static let folderIcon = color(Palette.folderIcon)
     static let tickRest = color(Palette.tickRest)
+    static let sourceSyntax = color(Palette.sourceSyntax)
+    static let sourceLink = color(Palette.sourceLink)
     static let divider = color(Palette.divider)
     static let line = color(Palette.line)
 
     // MARK: - Accent
     static let accent = color(Palette.accent)
-    // Find highlights (used ONLY by FindController). The CURRENT match must be
-    // unmistakable - it doubles as the "you jumped here" cue even when the match was
-    // already on-screen and no scroll happened - so it is a strong amber; other
-    // matches are a lighter tint. Both must read over the #FAFAFA code card, where
-    // CardLayoutManager re-stamps them on top of the fill (refillTemporaryBackgrounds);
-    // the old 0.55/0.22 was nearly invisible on that gray.
-    static let accentStrong = color(Palette.accent, alpha: 0.85)
-    static let accentSoft = color(Palette.accent, alpha: 0.34)
+    // Find highlights match the authoritative reference.
+    // CardLayoutManager re-stamps them over card fills after drawing backgrounds.
+    static let accentStrong = color(Palette.accent, alpha: 0.55)
+    static let accentSoft = color(Palette.accent, alpha: 0.22)
     static let danger = color(Palette.danger)
     static let systemBlue = color(Palette.systemBlue)
 
@@ -77,16 +77,18 @@ enum DesignTokens {
     static let sidebarWidth: CGFloat = 216
     static let sidebarMinWidth: CGFloat = 176
     static let sidebarMaxWidth: CGFloat = 440
-    static let paperWidth: CGFloat = 540
+    static let paperWidth: CGFloat = 640
     static let tabBarHeight: CGFloat = 44
-    static let bodyFontSizes: [CGFloat] = [14, 15.5, 17]
-    static let editorTopInset: CGFloat = 44
-    /// Fallback bottom inset used only before the scroll view has a measured
-    /// height. The live value is responsive (spec L180 = 33vh): EditorView
-    /// recomputes it as 0.33 × the scroll view's visible height on every layout.
-    static let editorBottomPadding: CGFloat = 220  // ~33vh on a 760px window
-    static let bodyLineHeight: CGFloat = 1.7
+    static let bodyFontSizes: [CGFloat] = [15, 16.5, 18]
+    static let editorTopInset: CGFloat = 40
+    /// Fallback bottom inset used only before the window viewport is measured.
+    static let editorBottomPadding: CGFloat = 244
+    static let bodyLineHeight: CGFloat = 1.72
     static let paletteKbdColor = 0x9A9A9E
+
+    static func editorBottomPadding(contentHeight: CGFloat) -> CGFloat {
+        max(0, contentHeight + tabBarHeight) * 0.34
+    }
 
     // MARK: - Color factory
 
@@ -112,6 +114,8 @@ enum DesignTokens {
         static let disabledText = color(Palette.disabledText)
         static let folderIcon = color(Palette.folderIcon)
         static let tickRest = color(Palette.tickRest)
+        static let sourceSyntax = color(Palette.sourceSyntax)
+        static let sourceLink = color(Palette.sourceLink)
         static let divider = color(Palette.divider)
         static let line = color(Palette.line)
         static let accent = color(Palette.accent)

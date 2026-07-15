@@ -1,5 +1,37 @@
 import AppKit
 
+/// One ATX heading reduced to the text and level shown by the outline.
+struct MarkdownHeadingPresentation: Equatable {
+    let level: Int
+    let title: String
+
+    static func parse(_ source: String) -> MarkdownHeadingPresentation? {
+        let line = String(source.prefix { $0 != "\r" && $0 != "\n" })
+        let indentation = line.prefix { $0 == " " || $0 == "\t" }
+        guard indentation.count <= 3 else { return nil }
+
+        let content = line.dropFirst(indentation.count)
+        let level = content.prefix { $0 == "#" }.count
+        guard (1...6).contains(level) else { return nil }
+
+        let remainder = content.dropFirst(level)
+        guard remainder.isEmpty || remainder.first == " " || remainder.first == "\t" else {
+            return nil
+        }
+
+        let rawTitle = String(remainder)
+            .trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(
+                of: #"[ \t]+#+[ \t]*$"#,
+                with: "",
+                options: .regularExpression
+            )
+        let title = BlockFindEngine.visibleInlineText(in: rawTitle)
+            .trimmingCharacters(in: .whitespaces)
+        return MarkdownHeadingPresentation(level: level, title: title)
+    }
+}
+
 /// Parses Markdown headings from NSTextView content and supports
 /// scroll-to-heading navigation.
 final class OutlineController {
@@ -27,8 +59,12 @@ final class OutlineController {
         let usedHeight: CGFloat
     }
     private var cacheKey: LayoutKey?
+    private var jumpGeneration = 0
 
     func rebuild() {
+        jumpGeneration += 1
+        headingYs = []
+        cacheKey = nil
         guard let tv = textView else { headings = []; return }
         let ns = tv.string as NSString
         var entries: [Heading] = []
@@ -38,12 +74,14 @@ final class OutlineController {
             let t = line.trimmingCharacters(in: .whitespaces)
             if t.hasPrefix("```") { inCode.toggle(); return }
             guard !inCode else { return }
-            var lvl = 0
-            for ch in t { if ch == "#" { lvl += 1 } else { break } }
-            guard (1...6).contains(lvl), t.count > lvl, t[t.index(t.startIndex, offsetBy: lvl)] == " " else { return }
-            let title = String(t.dropFirst(lvl + 1)).trimmingCharacters(in: .whitespaces)
-            guard !title.isEmpty else { return }
-            entries.append(Heading(id: entries.count, title: title, level: lvl, charIndex: range.location))
+            guard let presentation = MarkdownHeadingPresentation.parse(line),
+                  !presentation.title.isEmpty else { return }
+            entries.append(Heading(
+                id: entries.count,
+                title: presentation.title,
+                level: presentation.level,
+                charIndex: range.location
+            ))
         }
         headings = entries
     }
@@ -56,16 +94,29 @@ final class OutlineController {
         let glyphRange = lm.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
         var rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
         rect.origin.y += tv.textContainerInset.height
-        let target = max(0, min(rect.minY - 40, max(0, tv.frame.height - sv.contentView.bounds.height)))
-        // Scroll over 300ms with cubic ease-in-out (web jump dur=300), then run
+        let target = max(
+            0,
+            min(
+                rect.minY - OutlineBehaviorPolicy.jumpTopInset,
+                max(0, tv.frame.height - sv.contentView.bounds.height)
+            )
+        )
+        jumpGeneration += 1
+        let generation = jumpGeneration
+        if sv.contentView.bounds.origin.y == target {
+            washHeading(lineRange, in: tv, lm: lm)
+            return
+        }
+        // Scroll over 300ms with cubic ease-out, then run
         // the amber wash from the completion handler so it starts AFTER the
         // scroll settles — not immediately, while the view is still moving.
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.3
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.duration = OutlineBehaviorPolicy.jumpDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             sv.contentView.animator().setBoundsOrigin(NSPoint(x: 0, y: target))
         }, completionHandler: { [weak self, weak tv] in
-            guard let self, let tv, let lm = tv.layoutManager else { return }
+            guard let self, self.jumpGeneration == generation,
+                  let tv, let lm = tv.layoutManager else { return }
             self.washHeading(lineRange, in: tv, lm: lm)
         })
     }
@@ -75,12 +126,12 @@ final class OutlineController {
     /// Clears only this line's range so it won't disturb find highlights, which
     /// use the same .backgroundColor temporary attribute on other ranges.
     private func washHeading(_ lineRange: NSRange, in tv: NSTextView, lm: NSLayoutManager) {
-        // Amber flash fading 0.30 → 0 over ~0.7s (web washHeading). Each step
+        // Amber flash fading 0.30 to 0 over 0.9s. Each step
         // re-applies a lower-alpha temporary background AND forces a redraw of the
         // line — removeTemporaryAttribute alone does NOT repaint, which previously
         // left the highlight stuck on screen ("一直高亮").
         let steps = 12
-        let total = 0.9
+        let total = OutlineBehaviorPolicy.washDuration
         for i in 0...steps {
             let t = Double(i) / Double(steps)
             DispatchQueue.main.asyncAfter(deadline: .now() + total * t) { [weak tv] in
@@ -88,7 +139,10 @@ final class OutlineController {
                 if i == steps {
                     lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: lineRange)
                 } else {
-                    let amber = NSColor(hex: 0xE8A33D, alpha: CGFloat(0.30 * (1 - t)))
+                    let amber = NSColor(
+                        hex: 0xE8A33D,
+                        alpha: CGFloat(OutlineBehaviorPolicy.washOpacity * (1 - t))
+                    )
                     lm.addTemporaryAttribute(.backgroundColor, value: amber, forCharacterRange: lineRange)
                 }
                 lm.invalidateDisplay(forCharacterRange: lineRange)
@@ -129,24 +183,9 @@ final class OutlineController {
 
     func activeIndex(for scrollY: CGFloat) -> Int {
         ensureHeadingYsFresh()
-        guard !headingYs.isEmpty else { return 0 }
-        let threshold = scrollY + 140
-        // Binary search for the LAST index whose minY <= threshold (default 0).
-        // headingYs is ascending (document order), so this is identical to the
-        // old linear scan that set active=i while minY<=threshold and broke at
-        // the first minY>threshold.
-        var lo = 0
-        var hi = headingYs.count - 1
-        var active = 0
-        while lo <= hi {
-            let mid = (lo + hi) / 2
-            if headingYs[mid] <= threshold {
-                active = mid
-                lo = mid + 1
-            } else {
-                hi = mid - 1
-            }
-        }
-        return active
+        return OutlineBehaviorPolicy.activeHeadingIndex(
+            headingDocumentMinYs: headingYs,
+            viewportTop: scrollY
+        ) ?? 0
     }
 }

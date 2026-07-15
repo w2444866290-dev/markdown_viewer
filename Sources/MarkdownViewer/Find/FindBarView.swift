@@ -1,21 +1,35 @@
 import SwiftUI
 import AppKit
 
+enum FindKeyboardAction: Equatable {
+    case close
+    case navigatePrevious
+    case passThrough
+}
+
+enum FindKeyboardPolicy {
+    static func action(
+        forKeyCode keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags,
+        queryFieldFocused: Bool
+    ) -> FindKeyboardAction {
+        if keyCode == 53 { return .close }
+        if (keyCode == 36 || keyCode == 76),
+           queryFieldFocused,
+           modifiers.contains(.shift) {
+            return .navigatePrevious
+        }
+        return .passThrough
+    }
+}
+
 /// Find/replace bar — spec: position absolute top 10px right 18px, blur backdrop.
 struct FindBarView: View {
     @ObservedObject var state: FindState
     /// Drives focus on open — spec #9 (b)/(c): focus the field + select-all.
     @FocusState private var fieldFocused: Bool
-    /// Tracks focus on the replace field so the key monitor can route Esc there.
-    @FocusState private var replaceFocused: Bool
     /// Local NSEvent monitor for Shift+Enter / Esc — spec #11 (design L919/L925).
     @State private var keyMonitor: Any?
-    /// The query/options signature that produced the currently-highlighted matches.
-    /// Search now fires on RETURN (not per-keystroke), so we need to know whether the
-    /// field's contents have changed since the last search: if they have, Return runs
-    /// a fresh search + jumps to the first match; if they haven't, Return navigates to
-    /// the next match (standard cycling). `nil` means "nothing searched yet".
-    @State private var lastSearchedSignature: SearchSignature?
     @State private var hoverChevron = false
     @State private var hoverPrev = false
     @State private var hoverNext = false
@@ -51,6 +65,7 @@ struct FindBarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("find-toggle-replace")
                 .onHover { hoverChevron = $0 }
 
                 // Search field — spec: 240×28, bg rgba(0,0,0,0.045), radius 6
@@ -60,22 +75,14 @@ struct FindBarView: View {
                         .font(.system(size: 13))
                         .foregroundColor(DesignTokens.swiftUI.titleText)
                         .focused($fieldFocused)
+                        .accessibilityIdentifier("find-query")
                         .onChange(of: state.query) { newValue in
-                            // Search fires on RETURN, not per-keystroke — this avoids the
-                            // whole-document highlight recompute flash on every edit (worst
-                            // when deleting broadens the query → more matches). The ONE
-                            // exception: an empty query clears highlights immediately. That
-                            // path (onSearch("")) clears incrementally and is cheap (no
-                            // flash), and it stops stale highlights lingering while the
-                            // field is empty.
-                            if newValue.isEmpty { clearSearch() }
+                            state.onSearch?(newValue)
                         }
                         .onSubmit {
-                            // Return in the find field: search if the query/options changed
-                            // since the last search (compute matches + highlight + jump to
-                            // first), otherwise go to the NEXT match (repeated Return cycles).
-                            performSearch(navigateIfUnchanged: 1)
+                            state.onNavigate?(1)
                         }
+                        .background(FindFocusBridge(focusRequest: state.focusRequest))
                     Text(state.displayText)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(state.isError
@@ -98,11 +105,23 @@ struct FindBarView: View {
 
                 // Toggle chips — spec: 22×22, radius 6
                 HStack(spacing: 2) {
-                    ToggleChip("Aa", isOn: $state.caseSensitive)
+                    ToggleChip(
+                        "Aa",
+                        identifier: "find-case-sensitive",
+                        isOn: $state.caseSensitive
+                    )
                         .onChange(of: state.caseSensitive) { _ in searchNow() }
-                    ToggleChip("W", isOn: $state.wholeWord)
+                    ToggleChip(
+                        "W",
+                        identifier: "find-whole-word",
+                        isOn: $state.wholeWord
+                    )
                         .onChange(of: state.wholeWord) { _ in searchNow() }
-                    ToggleChip(".*", isOn: $state.useRegex)
+                    ToggleChip(
+                        ".*",
+                        identifier: "find-regex",
+                        isOn: $state.useRegex
+                    )
                         .onChange(of: state.useRegex) { _ in searchNow() }
                     // Toggling an option is a single deliberate action (not per-keystroke),
                     // so re-running the search immediately is fine — no flash concern.
@@ -127,6 +146,7 @@ struct FindBarView: View {
                                 .fill(canNav && hoverPrev ? Self.hoverFill : .clear)
                         )
                         .allowsHitTesting(canNav)
+                        .accessibilityIdentifier("find-previous")
                         .onHover { hoverPrev = $0 }
                     Button("↓") { state.onNavigate?(1) }
                         .buttonStyle(.plain)
@@ -140,6 +160,7 @@ struct FindBarView: View {
                                 .fill(canNav && hoverNext ? Self.hoverFill : .clear)
                         )
                         .allowsHitTesting(canNav)
+                        .accessibilityIdentifier("find-next")
                         .onHover { hoverNext = $0 }
                 }
 
@@ -164,6 +185,7 @@ struct FindBarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("find-close")
                 .onHover { hoverClose = $0 }
             }
 
@@ -175,7 +197,7 @@ struct FindBarView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .foregroundColor(DesignTokens.swiftUI.titleText)
-                        .focused($replaceFocused)
+                        .accessibilityIdentifier("find-replacement")
                         .padding(.horizontal, 9)
                         .frame(width: 240, height: 28)
                         .background(Self.inputFill)
@@ -191,6 +213,7 @@ struct FindBarView: View {
                             .frame(height: 28)
                             .background(Color.black.opacity(hoverReplace ? 0.08 : 0.05))
                             .cornerRadius(6)
+                            .accessibilityIdentifier("find-replace-current")
                             .onHover { hoverReplace = $0 }
                         Button("全部替换") { state.onReplaceAll?() }
                             .buttonStyle(.plain)
@@ -200,6 +223,7 @@ struct FindBarView: View {
                             .frame(height: 28)
                             .background(Color.black.opacity(hoverReplaceAll ? 0.08 : 0.05))
                             .cornerRadius(6)
+                            .accessibilityIdentifier("find-replace-all")
                             .onHover { hoverReplaceAll = $0 }
                     }
                 }
@@ -223,6 +247,7 @@ struct FindBarView: View {
                 )
                 .shadow(color: .black.opacity(0.14), radius: 14, x: 0, y: 8)
         )
+        .debugVisualAnchor("find-panel-frame")
         .padding(.top, 10)
         .padding(.trailing, 18)
         // Spec #9 (b)/(c): every openFind() bumps focusRequest → focus the field
@@ -230,10 +255,6 @@ struct FindBarView: View {
         // in the spec maps to a main-async hop here (let SwiftUI commit focus first).
         .onChange(of: state.focusRequest) { _ in
             focusAndSelectAll()
-            // openFind() re-runs the search for a non-empty prior query, so record
-            // that signature: a Return without editing then navigates (matches exist)
-            // instead of firing a dead re-search. Empty → nothing searched.
-            lastSearchedSignature = state.query.isEmpty ? nil : currentSignature
         }
         .onAppear {
             focusAndSelectAll()
@@ -244,88 +265,37 @@ struct FindBarView: View {
         }
     }
 
-    /// The query + option combination that a search ran against. When Return is
-    /// pressed we compare the field's current values to the last-searched signature:
-    /// equal → the matches are already computed, so navigate; different → search.
-    private struct SearchSignature: Equatable {
-        var query: String
-        var caseSensitive: Bool
-        var wholeWord: Bool
-        var useRegex: Bool
-    }
-
-    private var currentSignature: SearchSignature {
-        SearchSignature(
-            query: state.query,
-            caseSensitive: state.caseSensitive,
-            wholeWord: state.wholeWord,
-            useRegex: state.useRegex
-        )
-    }
-
-    /// Return in the find field. If the query/options changed since the last search,
-    /// run the search — `onSearch` computes matches, highlights, and jumps to the
-    /// first (currentIndex = 0). If unchanged (already searched), navigate by
-    /// `navigateIfUnchanged` so repeated Return cycles through matches (Shift+Return
-    /// passes -1). An empty query is a no-op (the onChange clear already handled it).
-    private func performSearch(navigateIfUnchanged delta: Int) {
-        guard !state.query.isEmpty else { return }
-        if currentSignature == lastSearchedSignature {
-            state.onNavigate?(delta)
-        } else {
-            state.onSearch?(state.query)
-            lastSearchedSignature = currentSignature
-        }
-    }
-
-    /// Option toggles (case/word/regex): a single deliberate action, so search now
-    /// against the current query. Empty query is left to the onChange clear.
     private func searchNow() {
-        guard !state.query.isEmpty else { return }
         state.onSearch?(state.query)
-        lastSearchedSignature = currentSignature
-    }
-
-    /// Empty query: clear highlights immediately. `onSearch("")` clears incrementally
-    /// (cheap, no flash) so stale highlights don't linger while the field is empty.
-    /// Reset the searched signature so the next non-empty Return searches afresh.
-    private func clearSearch() {
-        state.onSearch?("")
-        lastSearchedSignature = nil
     }
 
     private func focusAndSelectAll() {
+        guard AppEnv.allowsAutomaticFocusRequests else { return }
         fieldFocused = true
         DispatchQueue.main.async {
             NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
         }
     }
 
-    // Spec #11 (design L919/L925): the find input needs Shift+Enter = previous and
-    // Esc = close; the replace input needs Esc = close. The macOS 13 target rules out
-    // `.onKeyPress`, so we mirror SidebarView's local NSEvent.keyDown monitor and gate
-    // it on the relevant field being focused. (Enter→next / Enter→replace are already
-    // handled by SwiftUI `.onSubmit`, so we leave plain Enter to fall through.)
+    // Spec #11 (design L919/L925): Shift+Enter in the query moves backward.
+    // Esc closes the open find panel regardless of which document control owns focus.
+    // The macOS 13 target rules out `.onKeyPress`, so use a local key monitor while
+    // this panel exists. Plain Enter remains handled by SwiftUI `.onSubmit`.
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
-            // Only intercept while one of the find/replace fields is focused.
-            guard fieldFocused || replaceFocused else { return event }
-            switch event.keyCode {
-            case 53: // Esc — close from either field
+            switch FindKeyboardPolicy.action(
+                forKeyCode: event.keyCode,
+                modifiers: event.modifierFlags,
+                queryFieldFocused: fieldFocused
+            ) {
+            case .close:
                 state.closeFind()
                 return nil
-            case 36, 76: // Return / keypad Enter
-                // Shift+Enter in the find field = previous match. Route through the
-                // same perform-search path so a first Shift+Return after typing also
-                // searches (then navigates -1 on subsequent presses). Plain Enter
-                // (next / replace) is left to SwiftUI's .onSubmit, so let it through.
-                if fieldFocused && event.modifierFlags.contains(.shift) {
-                    performSearch(navigateIfUnchanged: -1)
-                    return nil
-                }
-                return event
-            default:
+            case .navigatePrevious:
+                state.onNavigate?(-1)
+                return nil
+            case .passThrough:
                 return event
             }
         }
@@ -336,18 +306,64 @@ struct FindBarView: View {
     }
 }
 
+struct FindFocusBridge: NSViewRepresentable {
+    let focusRequest: Int
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard context.coordinator.lastFocusRequest != focusRequest else { return }
+        context.coordinator.lastFocusRequest = focusRequest
+        guard AppEnv.allowsAutomaticFocusRequests else { return }
+        requestFocus(from: nsView, remainingAttempts: 4)
+    }
+
+    static func findQueryField(in view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField, field.placeholderString == "查找" {
+            return field
+        }
+        for child in view.subviews {
+            if let match = findQueryField(in: child) { return match }
+        }
+        return nil
+    }
+
+    private func requestFocus(from view: NSView, remainingAttempts: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+            guard let window = view.window, let contentView = window.contentView,
+                  let field = Self.findQueryField(in: contentView) else {
+                guard remainingAttempts > 1 else { return }
+                requestFocus(from: view, remainingAttempts: remainingAttempts - 1)
+                return
+            }
+            window.makeFirstResponder(field)
+            field.currentEditor()?.selectAll(nil)
+        }
+    }
+
+    final class Coordinator {
+        var lastFocusRequest = -1
+    }
+}
+
 // MARK: - Toggle chip
 
 private struct ToggleChip: View {
     let label: String
+    let identifier: String
     @Binding var isOn: Bool
     /// Hover is an ADDITIONAL cue on top of the ON/OFF states - spec (design
     /// L143-145) hover = background rgba(0,0,0,0.05). Shown only for an OFF chip;
     /// an ON chip already reads via its stronger 0.10 fill + ring, left intact.
     @State private var hovered = false
 
-    init(_ label: String, isOn: Binding<Bool>) {
+    init(_ label: String, identifier: String, isOn: Binding<Bool>) {
         self.label = label
+        self.identifier = identifier
         self._isOn = isOn
     }
 
@@ -374,6 +390,7 @@ private struct ToggleChip: View {
                 )
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
         .onHover { hovered = $0 }
     }
 }

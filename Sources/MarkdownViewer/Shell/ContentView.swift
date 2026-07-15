@@ -1,11 +1,108 @@
 import SwiftUI
 import AppKit
+import Combine
 import UniformTypeIdentifiers
 
-/// Reference holder for double-Shift timing (mutated from an NSEvent monitor closure).
-private final class ShiftTracker { var last: TimeInterval = 0 }
+/// Stateful detector for two eligible Shift presses inside the prototype's
+/// 350 ms interval. Modifier eligibility remains at the NSEvent boundary so this
+/// timing policy stays deterministic and directly testable.
+final class DoubleShiftTracker {
+    static let maximumInterval: TimeInterval = 0.35
+
+    private var lastPress: TimeInterval?
+
+    func registerPress(at timestamp: TimeInterval) -> Bool {
+        if let lastPress,
+           timestamp >= lastPress,
+           timestamp - lastPress < Self.maximumInterval {
+            self.lastPress = nil
+            return true
+        }
+        lastPress = timestamp
+        return false
+    }
+
+    func reset() {
+        lastPress = nil
+    }
+}
+
+/// Applies one deterministic Debug visual-test state after the fixture tab and
+/// workspace have been loaded. Nil is deliberately a no-op, which keeps Release
+/// and ordinary Debug launches isolated from visual-test state arguments.
+@MainActor
+enum VisualTestStateApplier {
+    static func apply(
+        _ state: VisualTestLaunchState?,
+        documentManager: DocumentManager,
+        findState: FindState
+    ) {
+        apply(
+            state,
+            documentManager: documentManager,
+            findState: findState,
+            toaster: .shared
+        )
+    }
+
+    static func apply(
+        _ state: VisualTestLaunchState?,
+        documentManager: DocumentManager,
+        findState: FindState,
+        toaster: Toaster
+    ) {
+        guard let state else { return }
+
+        switch state {
+        case .defaultState:
+            return
+        case .palette:
+            // Use the production palette state transition. The presentation
+            // policy keeps an inactive passive launch inside its ordered-out
+            // main surface, then returns to the child panel after activation.
+            documentManager.openCommandPalette()
+        case .find:
+            findState.openFind()
+        case .preview:
+            // Exercise the production transition so the reference state also
+            // contains its real transient feedback. Pin only this current toast
+            // because readiness and offscreen capture can exceed its 1.6 s life.
+            documentManager.togglePreviewMode(toaster: toaster)
+            toaster.pinCurrentToastUntilNextFlash()
+        case .sidebarHidden:
+            documentManager.sidebarOpen = false
+        case .sourceEditor:
+            guard let tab = documentManager.activeTab else { return }
+            let store = documentManager.blockEditorStore(for: tab)
+            guard let firstBlock = store.document.blocks.first else { return }
+            store.beginSourceEditing(
+                blockID: firstBlock.id,
+                // A generic rendered-block click in the authoritative
+                // prototype opens the editor with the insertion point at end.
+                selection: NSRange(
+                    location: (firstBlock.source as NSString).length,
+                    length: 0
+                )
+            )
+        case .tableEditor:
+            guard let tab = documentManager.activeTab else { return }
+            let store = documentManager.blockEditorStore(for: tab)
+            guard let table = store.document.blocks.first(where: { $0.kind == .table }),
+                  let grid = try? store.document.tableGrid(for: table.id),
+                  !grid.rows.isEmpty,
+                  grid.columnCount > 0 else { return }
+            store.beginTableEditing(
+                blockID: table.id,
+                // The authoritative reference opens the table wrapper rather
+                // than a body cell, which resolves to the first header input.
+                cell: .header(0)
+            )
+        }
+    }
+}
 
 struct ContentView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject var docManager: DocumentManager
     @ObservedObject var findState: FindState
     @ObservedObject private var toaster = Toaster.shared
@@ -29,20 +126,28 @@ struct ContentView: View {
     // bottom-right EditorStatusBar re-renders. ContentView.body must never read it,
     // or editing would re-render the whole tree again (性能-3).
     @State private var docMetrics = DocMetricsModel()
-    // DIAG (temporary): restyle-path readout sink. Held via @State (NOT observed
-    // here) for the SAME isolation reason as scrollModel/hoverURL - writing it on
-    // every keystroke must NOT re-render ContentView, or the instrumentation would
-    // itself cause the whole-view re-render we are trying to catch. Only the
-    // top-center DiagReadout leaf observes it. Rip out with the other DIAG markers.
+    // Debug restyle and find diagnostic sink. Held via @State and not observed here
+    // for the same isolation reason as scrollModel and hoverURL. Writing it on every
+    // edit must not re-render ContentView. Only the bottom-left DiagReadout observes it.
     @State private var diag = DiagModel()
     @State private var isDragging = false
+    @State private var dropCoordinator = DocumentDropCoordinator()
     @State private var hasInitialized = false
     // Double-Shift → quick search (spec JS L478-490): event monitor + timing holder.
     @State private var shiftMonitor: Any?
-    @State private var shiftTracker = ShiftTracker()
+    @State private var shiftTracker = DoubleShiftTracker()
+    @State private var visualTestHasActivated = NSApplication.shared.isActive
 
     private var tabPadLeft: CGFloat {
         docManager.sidebarOpen ? 12 : 84
+    }
+
+    private var palettePresentationMode: PalettePresentationMode {
+        PalettePresentationPolicy.mode(
+            isVisualTest: AppEnv.visualTest,
+            launchesForeground: AppEnv.visualTestForegroundOnLaunch,
+            hasActivated: visualTestHasActivated
+        )
     }
 
     var body: some View {
@@ -50,17 +155,40 @@ struct ContentView: View {
             if docManager.sidebarOpen {
                 SidebarView()
                     .frame(width: docManager.sidebarWidth)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    // The resize hit strip extends 4 pt into the document. Keep that
+                    // narrow overlap above the following HStack sibling.
+                    .zIndex(1)
+                    .debugVisualAnchor("sidebar-frame")
+                    .transition(MotionPolicy.transition(
+                        .move(edge: .leading).combined(with: .opacity),
+                        reduceMotion: reduceMotion
+                    ))
             }
 
             VStack(spacing: 0) {
                 EditorHeader(findState: findState, tabPadLeft: tabPadLeft)
                     .frame(height: 44)
                     .padding(.leading, tabPadLeft)
+                    .debugVisualAnchor("tab-bar-frame")
 
                 ZStack(alignment: .topTrailing) {
                     if let active = docManager.activeTab {
-                        ZStack(alignment: .trailing) {
+                        if active.isMarkdown {
+                            MarkdownBlockEditorView(
+                                store: docManager.blockEditorStore(for: active),
+                                findState: findState,
+                                documentName: active.name,
+                                bodyFontSize: DesignTokens.bodyFontSizes[docManager.fontIndex],
+                                previewMode: docManager.previewMode,
+                                initialScrollY: active.scrollY,
+                                scrollModel: scrollModel,
+                                activeHeadingModel: activeHeading,
+                                hoverURL: hoverURL,
+                                docMetrics: docMetrics,
+                                diag: diag
+                            )
+                            .id(active.id)
+                        } else {
                             EditorView(
                                 // Plain mount-time load value (NOT a two-way binding):
                                 // the live text lives in the NSTextView after mount, and
@@ -69,30 +197,22 @@ struct ContentView: View {
                                 // Mount-time scroll offset to restore (same one-shot
                                 // load semantics as `text`) — Phase-2 per-tab scroll.
                                 scrollY: active.scrollY,
+                                selection: active.selectionRange,
+                                diagnosticDocumentID: active.id,
+                                diagnosticDocumentName: active.name,
                                 docManager: docManager,
                                 fontIndex: $docManager.fontIndex,
-                                isMarkdown: active.isMarkdown,
+                                isMarkdown: false,
+                                isPreviewMode: false,
                                 findState: findState,
                                 bridge: bridge,
                                 scrollModel: scrollModel,
                                 activeHeadingModel: activeHeading,
                                 hoverURL: hoverURL,
                                 docMetrics: docMetrics,
-                                diag: diag  // DIAG (temporary)
+                                diag: diag  // Debug diagnostics
                             )
                             .id(docManager.activeTabID)
-
-                            // Outline rail is Markdown-only (#22): non-Markdown source
-                            // (TOML/YAML/etc.) has no headings, so render no rail at all.
-                            if active.isMarkdown {
-                                OutlineRailView(
-                                    headings: bridge.headings,
-                                    activeHeading: activeHeading,
-                                    onJump: { bridge.onJumpToHeading?($0) },
-                                    docToken: docManager.activeTabID,
-                                    onHoverChange: { bridge.cursorOverRail = $0 }
-                                )
-                            }
                         }
                     } else {
                         emptyState
@@ -108,7 +228,10 @@ struct ContentView: View {
                 .overlay(alignment: .topTrailing) {
                     if findState.isOpen {
                         FindBarView(state: findState)
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .transition(MotionPolicy.transition(
+                                .move(edge: .top).combined(with: .opacity),
+                                reduceMotion: reduceMotion
+                            ))
                     }
                 }
                 // #22: non-Markdown source banner (spec ~L391). Pinned to the top of
@@ -119,31 +242,53 @@ struct ContentView: View {
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    EditorStatusBar(scrollModel: scrollModel, metrics: docMetrics)
+                    if docManager.activeTab != nil {
+                        EditorStatusBar(
+                            scrollModel: scrollModel,
+                            metrics: docMetrics,
+                            docToken: docManager.activeTabID
+                        )
+                    }
                 }
                 .overlay(alignment: .bottomLeading) {
                     // Observes the isolated HoverURLModel — a mouse move over a link
                     // re-renders only this leaf, never ContentView.body (性能-2).
                     HoverURLPreview(model: hoverURL)
                 }
-                // DIAG (temporary): restyle-path + find readout, pinned BOTTOM-LEFT
+                // Debug restyle-path and find readout, pinned to the bottom-left
                 // of the content area (out of the way of the top find bar) and
                 // collapsible. Observes only the isolated DiagModel, so it re-renders
-                // alone. Gated to developer/debug launches (AppEnv.debug) so USER mode
-                // never shows it. Rip out with the DIAG markers.
+                // alone. Gated to Debug diagnostics so normal launches never show it.
                 .overlay(alignment: .bottomLeading) {
-                    if AppEnv.debug {
+                    if AppEnv.diagnosticsVisible {
                         DiagReadout(model: diag)
                     }
                 }
             }
         }
-        .background(MovableByBackground())
+        .background(
+            WindowGeometryConfigurator(
+                frameSize: AppEnv.visualTest
+                    ? AppEnv.visualTestWindowSize
+                    : CGSize(width: 1_180, height: 760)
+            )
+        )
         .background(DesignTokens.swiftUI.paper)
         .ignoresSafeArea()
-        // ⌘K palette lives in a separate blur-backed window (PaletteBlurHost) so
-        // its backdrop can truly frost the main window content. Driven by paletteOpen.
-        .background(PaletteBlurHost(docManager: docManager))
+        // Ordinary and activated launches use the production child panel. An
+        // inactive passive visual launch renders the same palette view inside the
+        // ordered-out main surface so there is no second window to expose or focus.
+        .background {
+            if palettePresentationMode == .childPanel {
+                PaletteBlurHost(docManager: docManager)
+            }
+        }
+        .overlay {
+            if palettePresentationMode == .inlinePassive, docManager.paletteOpen {
+                CommandPaletteView()
+                    .environmentObject(docManager)
+            }
+        }
         .overlay {
             if isDragging {
                 dragOverlay
@@ -152,22 +297,74 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             if toaster.visible {
                 ToastView(message: toaster.message)
+                    .debugVisualAnchor("toast-frame")
                     .padding(.top, 56)
-                    .transition(.opacity)
+                    .transition(MotionPolicy.transition(
+                        .opacity,
+                        reduceMotion: reduceMotion
+                    ))
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
             handleDrop(providers: providers)
         }
-        .animation(.easeInOut(duration: 0.18), value: docManager.sidebarOpen)
+        .onOpenURL { url in
+            guard !AppEnv.consumesVisualTestBootstrapURL(url) else { return }
+            docManager.openSelection(url, admission: .system)
+        }
+        .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+        .animation(
+            MotionPolicy.animation(.easeInOut(duration: 0.18), reduceMotion: reduceMotion),
+            value: docManager.sidebarOpen
+        )
         .onAppear {
+            resetDocumentModels(for: docManager.activeTabID)
             guard !hasInitialized else { return }
             hasInitialized = true
             // Session restore (Phase 2): resume the previous tabs/active/font/sidebar/
             // folder/scroll. A restored session takes over BEFORE the blank fallback,
             // so the fallback never double-fires. No/empty/corrupt session → first-run
             // behaviour is unchanged: one empty untitled doc, empty sidebar (spec #1/#2).
-            if let s = SessionStore.load(), !s.tabs.isEmpty {
+            if AppEnv.visualTest {
+                if AppEnv.visualTestRestoresSession {
+                    if let session = SessionStore.load(), !session.tabs.isEmpty {
+                        docManager.restoreVisualTestSession(
+                            from: session,
+                            fixtureName: AppEnv.visualTestFixtureName
+                        )
+                    } else {
+                        MVLog.warn(
+                            "visual-test session restore requested without a usable session",
+                            category: "session"
+                        )
+                        docManager.newDocument()
+                    }
+                } else {
+                    do {
+                        let text = try DebugFixtureLoader.load(
+                            named: AppEnv.visualTestFixtureName
+                        )
+                        docManager.loadVisualTestDocument(
+                            name: AppEnv.visualTestFixtureName,
+                            text: text,
+                            scrollY: AppEnv.visualTestInitialScrollY
+                        )
+                        let workspace = try DebugFixtureLoader.prepareWorkspace(
+                            fixtureName: AppEnv.visualTestFixtureName,
+                            fixtureText: text
+                        )
+                        docManager.loadDirectory(workspace)
+                        VisualTestStateApplier.apply(
+                            AppEnv.visualTestLaunchState,
+                            documentManager: docManager,
+                            findState: findState
+                        )
+                    } catch {
+                        MVLog.warn("visual-test fixture load failed: \(error)", category: "document")
+                        docManager.newDocument()
+                    }
+                }
+            } else if let s = SessionStore.load(), !s.tabs.isEmpty {
                 docManager.restore(from: s)
             } else if docManager.tabs.isEmpty {
                 docManager.newDocument()
@@ -178,7 +375,24 @@ struct ContentView: View {
         // findStateToggle closure set in App.swift; lives here because ContentView
         // owns the findState reference passed to the rest of the UI.
         .onAppear { docManager.findStateOpen = { findState.openFind() } }
+        .onAppear { publishVisualDiagnostics() }
+        .onChange(of: docManager.sidebarOpen) { _ in publishVisualDiagnostics() }
+        .onChange(of: docManager.paletteOpen) { _ in publishVisualDiagnostics() }
+        .onChange(of: palettePresentationMode) { _ in publishVisualDiagnostics() }
+        .onChange(of: docManager.previewMode) { _ in publishVisualDiagnostics() }
+        .onChange(of: findState.isOpen) { _ in publishVisualDiagnostics() }
+        .onChange(of: findState.showReplace) { _ in publishVisualDiagnostics() }
+        .onChange(of: docManager.activeTabID) { documentID in
+            resetDocumentModels(for: documentID)
+            publishNonMarkdownDiagnosticSurfaceIfNeeded()
+            publishVisualDiagnostics()
+        }
         .onDisappear { removeShiftMonitor() }
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification
+        )) { _ in
+            visualTestHasActivated = true
+        }
         .mvTooltipHost()
     }
 
@@ -205,6 +419,7 @@ struct ContentView: View {
                 .shadow(color: .black.opacity(0.14), radius: 14, y: 8)
         }
         .padding(10)
+        .accessibilityIdentifier("file-drop-overlay")
     }
 
     // MARK: - Empty state
@@ -214,11 +429,54 @@ struct ContentView: View {
             Text("没有打开的文档")
                 .font(.system(size: 14))
                 .foregroundColor(DesignTokens.swiftUI.placeholderText)
-            Text("在左侧选择文件，或按 ⌘K")
+            Text("按 ⌘N 新建，或 ⌘K 打开一篇")
                 .font(.system(size: 12))
                 .foregroundColor(DesignTokens.swiftUI.disabledText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("empty-workspace")
+    }
+
+    private func publishNonMarkdownDiagnosticSurfaceIfNeeded() {
+        guard AppEnv.debug else { return }
+        let find = DebugDiagnosticFindState.current(findState)
+        guard let active = docManager.activeTab else {
+            DebugDiagnosticWriter.shared.update(.emptyWorkspace(
+                find: find,
+                sessionPath: SessionStore.fileURL.path
+            ))
+            return
+        }
+        guard !active.isMarkdown else { return }
+        DebugDiagnosticWriter.shared.update(.plainSource(
+            document: active.name,
+            selection: active.selectionRange,
+            dirty: active.isDirty,
+            find: find,
+            scrollY: Double(active.scrollY),
+            sessionPath: SessionStore.fileURL.path
+        ))
+    }
+
+    private func publishVisualDiagnostics() {
+        guard AppEnv.debug else { return }
+        DebugDiagnosticWriter.shared.updateVisualState(
+            documentVisible: docManager.activeTab != nil,
+            sidebarVisible: docManager.sidebarOpen,
+            paletteVisible: docManager.paletteOpen,
+            palettePresentation: palettePresentationMode.rawValue,
+            findPanelVisible: findState.isOpen,
+            replaceRowVisible: findState.isOpen && findState.showReplace,
+            previewActive: docManager.previewMode
+                && docManager.activeTab?.isMarkdown == true
+        )
+    }
+
+    private func resetDocumentModels(for documentID: UUID?) {
+        scrollModel.reset(for: documentID)
+        activeHeading.reset(for: documentID)
+        docMetrics.reset(for: documentID)
+        hoverURL.clear()
     }
 
     // MARK: - Non-Markdown source banner (spec ~L391)
@@ -233,6 +491,7 @@ struct ContentView: View {
             .padding(.vertical, 12)
             .background(DesignTokens.swiftUI.paper)
             .allowsHitTesting(false)
+            .accessibilityIdentifier("non-markdown-banner")
     }
 
     // MARK: - Double-Shift quick search (spec JS L478-490)
@@ -242,26 +501,32 @@ struct ContentView: View {
         let tracker = shiftTracker
         shiftMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [docManager, findState] event in
             if event.type == .keyDown {
-                tracker.last = 0   // any non-modifier key breaks the streak (typing capitals)
+                // Any non-modifier key breaks the streak, including typing a
+                // capital letter with Shift held.
+                tracker.reset()
                 return event
             }
             let isShiftKey = (event.keyCode == 56 || event.keyCode == 60)
             let mods = event.modifierFlags
-            if isShiftKey, mods.contains(.shift),
-               mods.isDisjoint(with: [.command, .control, .option]) {
-                // Shift pressed down, no other modifiers.
+            if isShiftKey, mods.contains(.shift) {
+                // `isARepeat` is defined for key-down events, not
+                // flags-changed modifier events. A held Shift key does not emit
+                // repeated Shift-down transitions, so modifier eligibility is
+                // fully described by the active flags here.
+                guard mods.isDisjoint(with: [.command, .control, .option]) else {
+                    tracker.reset()
+                    return event
+                }
                 let now = ProcessInfo.processInfo.systemUptime
-                if tracker.last > 0, now - tracker.last < 0.35 {
-                    tracker.last = 0
+                if tracker.registerPress(at: now) {
                     if findState.isOpen { findState.closeFind() }
-                    docManager.paletteOpen = true
-                } else {
-                    tracker.last = now
+                    docManager.openCommandPalette()
                 }
             } else if !isShiftKey {
-                tracker.last = 0   // another modifier interrupted the streak
+                // Another modifier interrupted the streak. A Shift release keeps
+                // the first press armed for the second press.
+                tracker.reset()
             }
-            // (Shift release falls through: streak preserved.)
             return event
         }
     }
@@ -273,25 +538,6 @@ struct ContentView: View {
     // MARK: - Drop handling
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first else { return false }
-        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-            guard let data = item as? Data,
-                  let path = String(data: data, encoding: .utf8),
-                  let url = URL(string: path) else { return }
-            let ext = url.pathExtension.lowercased()
-            // spec L857: only Markdown / text files; reject everything else with a toast.
-            guard ["md", "markdown", "txt"].contains(ext) else {
-                DispatchQueue.main.async {
-                    Toaster.shared.flash("仅支持 Markdown / 文本文件")
-                }
-                return
-            }
-            if let text = try? String(contentsOf: url, encoding: .utf8) {
-                DispatchQueue.main.async {
-                    docManager.openTab(for: url, text: text)
-                }
-            }
-        }
-        return true
+        dropCoordinator.handle(providers: providers, manager: docManager)
     }
 }
