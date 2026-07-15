@@ -678,7 +678,11 @@ struct MarkdownBlockEditorView: View {
             lineCount: DocMetricsModel.renderedBlockLineCount(in: metricsDocument),
             for: store.tabID
         )
-        if AppEnv.debug {
+        if AppEnv.debug,
+           DebugDiagnosticPublicationPolicy.allowsPublication(
+               mountedDocumentID: store.tabID,
+               activeDocumentID: docManager.activeTabID
+           ) {
             let active = store.activeBlock
                 ?? store.activeTableID.flatMap { store.document.block(id: $0) }
             let tableCell = store.activeTableCell.map { "\($0.row),\($0.column)" } ?? "none"

@@ -20,6 +20,9 @@ struct DocumentTab: Identifiable, Codable {
     var name: String
     var text: String
     var isDirty: Bool
+    /// Whether the file was opened with a UTF-8 byte-order mark.
+    /// Kept separately from `text` because Foundation removes the marker while decoding.
+    var hasUTF8BOM: Bool = false
     /// Whether the document renders as live Markdown. Derived from the file
     /// extension: `.md`/`.markdown` → true; untitled/new docs (url == nil) → true;
     /// everything else (e.g. .yaml/.json) → false, shown as plain source.
@@ -42,12 +45,13 @@ struct DocumentTab: Identifiable, Codable {
     init(id: UUID = UUID(), url: URL?, name: String, text: String,
          isDirty: Bool, isMarkdown: Bool = true, scrollY: CGFloat = 0,
          selectionLocation: Int = 0, selectionLength: Int = 0,
-         markdownDocument: MarkdownDocument? = nil) {
+         markdownDocument: MarkdownDocument? = nil, hasUTF8BOM: Bool = false) {
         self.id = id
         self.url = url
         self.name = name
         self.text = text
         self.isDirty = isDirty
+        self.hasUTF8BOM = hasUTF8BOM
         self.isMarkdown = url.map { DocumentFormat(url: $0).isMarkdownRendered }
             ?? isMarkdown
         self.scrollY = scrollY
@@ -69,7 +73,7 @@ struct DocumentTab: Identifiable, Codable {
     /// and `url` is stored as an optional *path string* rather than a URL container.
     enum CodingKeys: String, CodingKey {
         case id, url, name, text, isDirty, isMarkdown, scrollY
-        case selectionLocation, selectionLength, markdownDocument
+        case selectionLocation, selectionLength, markdownDocument, hasUTF8BOM
     }
 
     init(from decoder: Decoder) throws {
@@ -84,6 +88,7 @@ struct DocumentTab: Identifiable, Codable {
         name = try c.decode(String.self, forKey: .name)
         text = try c.decode(String.self, forKey: .text)
         isDirty = try c.decode(Bool.self, forKey: .isDirty)
+        hasUTF8BOM = try c.decodeIfPresent(Bool.self, forKey: .hasUTF8BOM) ?? false
         let persistedMarkdown = try c.decodeIfPresent(Bool.self, forKey: .isMarkdown)
         isMarkdown = url.map { DocumentFormat(url: $0).isMarkdownRendered }
             ?? persistedMarkdown
@@ -123,6 +128,7 @@ struct DocumentTab: Identifiable, Codable {
         try c.encode(name, forKey: .name)
         try c.encode(text, forKey: .text)
         try c.encode(isDirty, forKey: .isDirty)
+        try c.encode(hasUTF8BOM, forKey: .hasUTF8BOM)
         try c.encode(isMarkdown, forKey: .isMarkdown)
         try c.encode(scrollY, forKey: .scrollY)
         try c.encode(selectionLocation, forKey: .selectionLocation)
@@ -145,6 +151,10 @@ struct DocumentTab: Identifiable, Codable {
     ) -> (document: MarkdownDocument, didMigrate: Bool) {
         guard let document, document.source == source else {
             return (MarkdownDocument(source: source), false)
+        }
+        let ids = document.blocks.map(\.id)
+        guard Set(ids).count == ids.count else {
+            return (MarkdownDocument(source: source), true)
         }
         return document.migratingLegacyContainerEmptyParagraphs()
     }

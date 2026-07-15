@@ -5,6 +5,164 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct BlockEditorStoreTests {
+    @Test("ordinary Return splits paragraph and heading at every caret boundary")
+    func ordinaryReturnSplitMatrix() throws {
+        for source in ["paragraph", "# Heading"] {
+            for command in [MarkdownEditingCommand.enter, .shiftEnter] {
+                let length = (source as NSString).length
+                for offset in [0, length / 2, length] {
+                    let document = MarkdownDocument(source: source)
+                    let originalID = try #require(document.blocks.first?.id)
+                    let store = BlockEditorStore(tabID: UUID(), document: document) { _ in }
+                    let result = try MarkdownEditingCommands.apply(
+                        command,
+                        to: source,
+                        selection: NSRange(location: offset, length: 0),
+                        blockKind: document.blocks[0].kind
+                    )
+
+                    store.beginSourceEditing(blockID: originalID)
+                    store.updateActiveDraft(
+                        result.replacementSource,
+                        selection: result.selection
+                    )
+                    store.handleBoundaryAction(
+                        try #require(result.boundaryAction),
+                        selection: result.selection
+                    )
+
+                    let left = (source as NSString).substring(to: offset)
+                    let right = (source as NSString).substring(from: offset)
+                    guard store.document.blocks.count == 2 else {
+                        Issue.record("Return did not create exactly one right-hand block")
+                        continue
+                    }
+                    #expect(store.document.blocks[0].id == originalID)
+                    #expect(store.document.blocks[0].source == left)
+                    #expect(store.document.blocks[1].source == right)
+                    #expect(store.activeBlockID == store.document.blocks[1].id)
+                    #expect(store.activeSelection == NSRange(location: 0, length: 0))
+                }
+            }
+        }
+    }
+
+    @Test("tail Return inserts and focuses an empty paragraph before an existing successor")
+    func tailReturnInsertsBeforeExistingSuccessor() throws {
+        for source in ["paragraph", "# Heading"] {
+            let original = MarkdownDocument(source: source + "\n\nsuccessor")
+            let edited = original.blocks[0]
+            let successor = original.blocks[1]
+            let store = BlockEditorStore(tabID: UUID(), document: original) { _ in }
+            let result = try MarkdownEditingCommands.apply(
+                .enter,
+                to: edited.source,
+                selection: NSRange(
+                    location: (edited.source as NSString).length,
+                    length: 0
+                ),
+                blockKind: edited.kind
+            )
+
+            store.beginSourceEditing(blockID: edited.id)
+            store.updateActiveDraft(result.replacementSource, selection: result.selection)
+            store.handleBoundaryAction(
+                try #require(result.boundaryAction),
+                selection: result.selection
+            )
+
+            guard store.document.blocks.count == 3 else {
+                Issue.record("Return did not insert a block before the successor")
+                continue
+            }
+            #expect(store.document.blocks[0].id == edited.id)
+            #expect(store.document.blocks[1].kind == .paragraph)
+            #expect(store.document.blocks[1].source.isEmpty)
+            #expect(store.document.blocks[2].id == successor.id)
+            #expect(store.activeBlockID == store.document.blocks[1].id)
+            #expect(store.activeSelection == NSRange(location: 0, length: 0))
+        }
+    }
+
+    @Test("tail Return preserves neighbors when splitting first, middle, and last blocks")
+    func tailReturnPreservesEveryNeighborPosition() throws {
+        for targetIndex in 0..<3 {
+            let original = MarkdownDocument(source: "first\n\nmiddle\n\nlast")
+            let originalIDs = original.blocks.map(\.id)
+            let target = original.blocks[targetIndex]
+            let store = BlockEditorStore(tabID: UUID(), document: original) { _ in }
+            let offset = (target.source as NSString).length
+
+            store.beginSourceEditing(blockID: target.id)
+            store.updateActiveDraft(
+                target.source,
+                selection: NSRange(location: offset, length: 0)
+            )
+            store.handleBoundaryAction(
+                .splitBlock,
+                selection: NSRange(location: offset, length: 0)
+            )
+
+            #expect(store.document.blocks.count == 4)
+            #expect(store.document.blocks[targetIndex].id == target.id)
+            #expect(store.document.blocks[targetIndex + 1].source.isEmpty)
+            #expect(store.activeBlockID == store.document.blocks[targetIndex + 1].id)
+            for originalIndex in original.blocks.indices where originalIndex != targetIndex {
+                let shiftedIndex = originalIndex > targetIndex
+                    ? originalIndex + 1
+                    : originalIndex
+                #expect(store.document.blocks[shiftedIndex].id == originalIDs[originalIndex])
+            }
+        }
+    }
+
+    @Test("first and last block edge commands keep the source editor active")
+    func documentEdgeCommandsPreserveEditing() throws {
+        let original = MarkdownDocument(source: "first\n\nlast")
+        let first = original.blocks[0]
+        let last = original.blocks[1]
+        let store = BlockEditorStore(tabID: UUID(), document: original) { _ in }
+
+        for action in [
+            MarkdownEditingBoundaryAction.mergeWithPrevious,
+            .navigateToPreviousBlock,
+        ] {
+            let selection = NSRange(location: 0, length: 0)
+            store.beginSourceEditing(blockID: first.id, selection: selection)
+            store.handleBoundaryAction(action, selection: selection)
+            #expect(store.activeBlockID == first.id)
+            #expect(store.activeSelection == selection)
+        }
+
+        let lastSelection = NSRange(
+            location: (last.source as NSString).length,
+            length: 0
+        )
+        store.beginSourceEditing(blockID: last.id, selection: lastSelection)
+        store.handleBoundaryAction(.navigateToNextBlock, selection: lastSelection)
+        #expect(store.activeBlockID == last.id)
+        #expect(store.activeSelection == lastSelection)
+    }
+
+    @Test("single block has no merge or vertical navigation escape")
+    func singleBlockEdgeCommandsPreserveEditing() throws {
+        let document = MarkdownDocument(source: "only")
+        let block = try #require(document.blocks.first)
+        let store = BlockEditorStore(tabID: UUID(), document: document) { _ in }
+
+        for (action, offset) in [
+            (MarkdownEditingBoundaryAction.mergeWithPrevious, 0),
+            (.navigateToPreviousBlock, 0),
+            (.navigateToNextBlock, (block.source as NSString).length),
+        ] {
+            let selection = NSRange(location: offset, length: 0)
+            store.beginSourceEditing(blockID: block.id, selection: selection)
+            store.handleBoundaryAction(action, selection: selection)
+            #expect(store.activeBlockID == block.id)
+            #expect(store.activeSelection == selection)
+        }
+    }
+
     @Test
     func sourceCommitMutatesOnlyTheEditedBlock() throws {
         let original = MarkdownDocument(source: "before\n\n**middle**\n\nafter\n")

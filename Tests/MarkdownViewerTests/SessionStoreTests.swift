@@ -68,7 +68,8 @@ struct SessionStoreTests {
             text: "# Saved",
             isDirty: false,
             isMarkdown: true,
-            scrollY: 12.75
+            scrollY: 12.75,
+            hasUTF8BOM: true
         )
         let second = DocumentTab(
             id: secondID,
@@ -203,6 +204,46 @@ struct SessionStoreTests {
         #expect(restored.text == "# Recovered")
         #expect(restored.markdownDocument?.source == "# Recovered")
         #expect(restored.markdownDocument?.blocks.first?.source == "# Recovered")
+    }
+
+    @Test
+    func duplicatePersistedBlockIDsDegradeToAReparsedDirtyDocument() throws {
+        let document = MarkdownDocument(source: "first\n\nsecond")
+        let tab = DocumentTab(
+            url: nil,
+            name: "duplicate.md",
+            text: document.source,
+            isDirty: false,
+            markdownDocument: document
+        )
+        let session = Session(
+            tabs: [tab],
+            activeTabID: tab.id,
+            fontIndex: 1,
+            sidebarWidth: 216,
+            sidebarOpen: true,
+            directoryPath: nil
+        )
+        let url = try temporarySessionURL()
+        defer { removeTemporaryRoot(for: url) }
+        var object = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(session))
+                as? [String: Any]
+        )
+        var tabs = try #require(object["tabs"] as? [[String: Any]])
+        var persisted = try #require(tabs[0]["markdownDocument"] as? [String: Any])
+        var blocks = try #require(persisted["blocks"] as? [[String: Any]])
+        blocks[1]["id"] = blocks[0]["id"]
+        persisted["blocks"] = blocks
+        tabs[0]["markdownDocument"] = persisted
+        object["tabs"] = tabs
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+
+        let restored = try #require(SessionStore.load(from: url)?.tabs.first)
+        let restoredBlocks = try #require(restored.markdownDocument?.blocks)
+        #expect(restored.text == document.source)
+        #expect(Set(restoredBlocks.map(\.id)).count == restoredBlocks.count)
+        #expect(restored.isDirty)
     }
 
     @Test("schema two virtual container paragraphs migrate to durable source boundaries")
@@ -517,6 +558,7 @@ struct SessionStoreTests {
         #expect(actual.name == expected.name)
         #expect(actual.text == expected.text)
         #expect(actual.isDirty == expected.isDirty)
+        #expect(actual.hasUTF8BOM == expected.hasUTF8BOM)
         #expect(actual.isMarkdown == expected.isMarkdown)
         #expect(actual.markdownDocument == expected.markdownDocument)
         #expect(actual.scrollY == expected.scrollY)

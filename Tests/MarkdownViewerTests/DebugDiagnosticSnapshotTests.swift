@@ -5,6 +5,25 @@ import Testing
 @MainActor
 struct DebugDiagnosticSnapshotTests {
     @Test
+    func staleMarkdownSurfaceCannotPublishAfterTabSwitch() {
+        let markdownID = UUID()
+        let plainSourceID = UUID()
+
+        #expect(DebugDiagnosticPublicationPolicy.allowsPublication(
+            mountedDocumentID: markdownID,
+            activeDocumentID: markdownID
+        ))
+        #expect(!DebugDiagnosticPublicationPolicy.allowsPublication(
+            mountedDocumentID: markdownID,
+            activeDocumentID: plainSourceID
+        ))
+        #expect(!DebugDiagnosticPublicationPolicy.allowsPublication(
+            mountedDocumentID: markdownID,
+            activeDocumentID: nil
+        ))
+    }
+
+    @Test
     func writerPersistsStructuredStateAndPerBlockRenderCounts() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("MarkdownViewerDiagnosticTests", isDirectory: true)

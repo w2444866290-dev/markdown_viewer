@@ -7,8 +7,8 @@ struct MarkdownEditingCommandsTests {
     @Test
     func ordinaryEnterSplitsAtCaretAndDeletesSelection() throws {
         let split = try apply(.enter, to: "helloworld", at: 5)
-        #expect(split.replacementSource == "hello\n\nworld")
-        #expect(split.selection == NSRange(location: 7, length: 0))
+        #expect(split.replacementSource == "helloworld")
+        #expect(split.selection == NSRange(location: 5, length: 0))
         #expect(split.boundaryAction == .splitBlock)
 
         let replacing = try apply(
@@ -16,8 +16,8 @@ struct MarkdownEditingCommandsTests {
             to: "helloXXworld",
             selection: NSRange(location: 5, length: 2)
         )
-        #expect(replacing.replacementSource == "hello\n\nworld")
-        #expect(replacing.selection == NSRange(location: 7, length: 0))
+        #expect(replacing.replacementSource == "helloworld")
+        #expect(replacing.selection == NSRange(location: 5, length: 0))
         #expect(replacing.boundaryAction == .splitBlock)
     }
 
@@ -28,8 +28,8 @@ struct MarkdownEditingCommandsTests {
             to: "first\r\nsecond",
             at: 10
         )
-        #expect(paragraph.replacementSource == "first\r\nsec\r\n\r\nond")
-        #expect(paragraph.selection == NSRange(location: 14, length: 0))
+        #expect(paragraph.replacementSource == "first\r\nsecond")
+        #expect(paragraph.selection == NSRange(location: 10, length: 0))
 
         let code = try apply(
             .enter,
@@ -288,8 +288,8 @@ struct MarkdownEditingCommandsTests {
         #expect(emptyQuote.boundaryAction == nil)
 
         let paragraph = try apply(.shiftEnter, to: "helloworld", at: 5)
-        #expect(paragraph.replacementSource == "hello\n\nworld")
-        #expect(paragraph.selection == NSRange(location: 7, length: 0))
+        #expect(paragraph.replacementSource == "helloworld")
+        #expect(paragraph.selection == NSRange(location: 5, length: 0))
         #expect(paragraph.boundaryAction == .splitBlock)
 
         for kind in [MarkdownBlockKind.code, .table] {

@@ -161,10 +161,9 @@ enum MarkdownEditingCommands {
             )
         }
 
-        return inserting(
-            lineEnding + lineEnding,
-            at: caret,
-            in: collapsed,
+        return MarkdownEditingResult(
+            replacementSource: collapsed,
+            selection: NSRange(location: caret, length: 0),
             boundaryAction: .splitBlock
         )
     }
@@ -216,10 +215,9 @@ enum MarkdownEditingCommands {
             )
         }
 
-        return inserting(
-            lineEnding + lineEnding,
-            at: caret,
-            in: collapsed,
+        return MarkdownEditingResult(
+            replacementSource: collapsed,
+            selection: NSRange(location: caret, length: 0),
             boundaryAction: .splitBlock
         )
     }

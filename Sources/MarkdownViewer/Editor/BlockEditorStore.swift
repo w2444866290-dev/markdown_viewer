@@ -245,10 +245,39 @@ final class BlockEditorStore: ObservableObject {
 
         switch action {
         case .splitBlock:
-            commitActiveEditing()
-            guard document.blocks.indices.contains(oldIndex + 1) else { return }
+            guard let draft = activeDraftSource else { return }
+            var candidate = document
+            let replacementIDs: [UUID]
+            let rightID: UUID
+            do {
+                replacementIDs = try candidate.replaceBlock(id: activeID, with: draft)
+                guard replacementIDs == [activeID],
+                      candidate.block(id: activeID)?.source == draft else {
+                    MVLog.warn(
+                        "block split rejected an expanded source draft",
+                        category: "editor"
+                    )
+                    return
+                }
+                rightID = try candidate.splitBlock(
+                    id: activeID,
+                    atUTF16Offset: selection.location
+                )
+            } catch {
+                MVLog.warn("block split failed: \(error)", category: "editor")
+                return
+            }
+            activeBlockID = nil
+            activeDraftSource = nil
+            activeSelection = nil
+            mutate(
+                affectedBlockIDs: [activeID, rightID],
+                actionName: "拆分块"
+            ) { document in
+                document = candidate
+            }
             beginSourceEditing(
-                blockID: document.blocks[oldIndex + 1].id,
+                blockID: rightID,
                 selection: NSRange(location: 0, length: 0)
             )
 
@@ -260,12 +289,12 @@ final class BlockEditorStore: ObservableObject {
             )
 
         case .mergeWithPrevious:
-            commitActiveEditing()
-            guard oldIndex > 0,
-                  document.blocks.indices.contains(oldIndex) else { return }
+            guard oldIndex > 0 else { return }
             let previousID = document.blocks[oldIndex - 1].id
             let caret = (document.blocks[oldIndex - 1].source as NSString).length
-            mergeWithPrevious(id: document.blocks[oldIndex].id)
+            commitActiveEditing()
+            guard document.block(id: activeID) != nil else { return }
+            mergeWithPrevious(id: activeID)
             if document.block(id: previousID) != nil {
                 beginSourceEditing(
                     blockID: previousID,
@@ -274,19 +303,22 @@ final class BlockEditorStore: ObservableObject {
             }
 
         case .navigateToPreviousBlock:
+            guard oldIndex > 0 else { return }
+            let targetID = document.blocks[oldIndex - 1].id
             commitActiveEditing()
-            guard oldIndex > 0, document.blocks.indices.contains(oldIndex - 1) else { return }
-            let target = document.blocks[oldIndex - 1]
+            guard let target = document.block(id: targetID) else { return }
             beginSourceEditing(
                 blockID: target.id,
                 selection: NSRange(location: (target.source as NSString).length, length: 0)
             )
 
         case .navigateToNextBlock:
-            commitActiveEditing()
             guard document.blocks.indices.contains(oldIndex + 1) else { return }
+            let targetID = document.blocks[oldIndex + 1].id
+            commitActiveEditing()
+            guard document.block(id: targetID) != nil else { return }
             beginSourceEditing(
-                blockID: document.blocks[oldIndex + 1].id,
+                blockID: targetID,
                 selection: NSRange(location: 0, length: 0)
             )
         }
@@ -832,13 +864,15 @@ final class BlockEditorStore: ObservableObject {
         operation: (inout MarkdownDocument) throws -> Void
     ) {
         let before = document
+        var candidate = before
         do {
-            try operation(&document)
+            try operation(&candidate)
         } catch {
             MVLog.warn("block mutation failed: \(error)", category: "editor")
             return
         }
-        guard document != before else { return }
+        guard candidate != before else { return }
+        document = candidate
         registerUndo(from: document, to: before, actionName: actionName)
         recordMutation(affectedBlockIDs: affectedBlockIDs)
         onDocumentChange(document)

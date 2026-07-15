@@ -576,6 +576,143 @@ struct DocumentManagerLifecycleTests {
     }
 
     @Test
+    func restoreKeepsDirtySessionTextAndReloadsCleanTabsFromDisk() throws {
+        try withTemporaryRoot { root in
+            let cleanURL = root.appendingPathComponent("clean.md")
+            let dirtyURL = root.appendingPathComponent("dirty.md")
+            try Data("external clean\r\nchange".utf8).write(to: cleanURL)
+            try Data("disk dirty baseline".utf8).write(to: dirtyURL)
+            let clean = DocumentTab(
+                url: cleanURL,
+                name: cleanURL.lastPathComponent,
+                text: "stale clean session",
+                isDirty: false
+            )
+            let dirty = DocumentTab(
+                url: dirtyURL,
+                name: dirtyURL.lastPathComponent,
+                text: "unsaved dirty session",
+                isDirty: true
+            )
+            let session = Session(
+                tabs: [clean, dirty],
+                activeTabID: clean.id,
+                fontIndex: 1,
+                sidebarWidth: 216,
+                sidebarOpen: true,
+                directoryPath: nil
+            )
+            let manager = makeManager(root)
+
+            manager.restore(from: session)
+
+            #expect(manager.tabs[0].text == "external clean\r\nchange")
+            #expect(manager.tabs[0].isDirty == false)
+            #expect(manager.tabs[1].text == "unsaved dirty session")
+            #expect(manager.tabs[1].isDirty == true)
+            #expect(try String(contentsOf: dirtyURL, encoding: .utf8) == "disk dirty baseline")
+        }
+    }
+
+    @Test
+    func finderOpenBeforeStartupRestoreWinsTheRace() throws {
+        try withTemporaryRoot { root in
+            let finderURL = root.appendingPathComponent("finder.md")
+            try Data("finder document".utf8).write(to: finderURL)
+            let stale = DocumentTab(
+                url: nil,
+                name: "stale.md",
+                text: "stale session",
+                isDirty: true
+            )
+            let session = Session(
+                tabs: [stale],
+                activeTabID: stale.id,
+                fontIndex: 1,
+                sidebarWidth: 216,
+                sidebarOpen: true,
+                directoryPath: nil
+            )
+            let manager = makeManager(root)
+
+            guard case .openedFile = manager.openSelection(
+                finderURL,
+                admission: .system
+            ) else {
+                Issue.record("Finder document did not open")
+                return
+            }
+            manager.restore(from: session)
+
+            #expect(manager.tabs.contains { $0.id == stale.id })
+            #expect(manager.activeTab?.url == finderURL)
+            #expect(manager.activeTab?.text == "finder document")
+        }
+    }
+
+    @Test
+    func finderOpenActivatesMatchingDirtySessionWithoutLosingUnsavedText() throws {
+        try withTemporaryRoot { root in
+            let url = root.appendingPathComponent("same.md")
+            try Data("disk version".utf8).write(to: url)
+            let dirty = DocumentTab(
+                url: url,
+                name: url.lastPathComponent,
+                text: "unsaved session version",
+                isDirty: true
+            )
+            let session = Session(
+                tabs: [dirty],
+                activeTabID: dirty.id,
+                fontIndex: 1,
+                sidebarWidth: 216,
+                sidebarOpen: true,
+                directoryPath: nil
+            )
+            let manager = makeManager(root)
+
+            guard case .openedFile = manager.openSelection(url, admission: .system) else {
+                Issue.record("Finder document did not open")
+                return
+            }
+            manager.restore(from: session)
+
+            #expect(manager.tabs.count == 1)
+            #expect(manager.activeTabID == dirty.id)
+            #expect(manager.activeTab?.text == "unsaved session version")
+            #expect(manager.activeTab?.isDirty == true)
+            #expect(try String(contentsOf: url, encoding: .utf8) == "disk version")
+        }
+    }
+
+    @Test
+    func defaultOpenAndSavePreserveUTF8BOMAndCRLF() throws {
+        try withTemporaryRoot { root in
+            let url = root.appendingPathComponent("bom-crlf.md")
+            let bytes = Data([0xEF, 0xBB, 0xBF] + Array("first\r\nsecond\r\n".utf8))
+            try bytes.write(to: url)
+            let manager = makeManager(root)
+
+            guard case .openedFile = manager.openSelection(url, admission: .system) else {
+                Issue.record("BOM fixture did not open")
+                return
+            }
+            #expect(manager.activeTab?.text == "first\r\nsecond\r\n")
+            let tab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: tab)
+            let blockID = try #require(store.document.blocks.first?.id)
+            store.beginSourceEditing(blockID: blockID)
+            store.updateActiveDraft("changed\r\nsecond")
+            store.commitActiveEditing()
+            #expect(manager.saveActiveDocument())
+            let editedBytes = Data(
+                [0xEF, 0xBB, 0xBF] + Array("changed\r\nsecond\r\n".utf8)
+            )
+            #expect(try Data(contentsOf: url) == editedBytes)
+        }
+    }
+
+    @Test
     func undoAndRedoUseBlockStoreWhenFirstResponderDoesNotHandleAction() throws {
         try withTemporaryRoot { root in
             let manager = makeManager(root)
@@ -627,6 +764,7 @@ struct DocumentManagerLifecycleTests {
         #expect(actual.name == expected.name)
         #expect(actual.text == expected.text)
         #expect(actual.isDirty == expected.isDirty)
+        #expect(actual.hasUTF8BOM == expected.hasUTF8BOM)
         #expect(actual.isMarkdown == expected.isMarkdown)
         #expect(actual.markdownDocument == expected.markdownDocument)
         #expect(actual.scrollY == expected.scrollY)

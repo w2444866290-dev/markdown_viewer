@@ -12,6 +12,15 @@ final class DocumentManager: ObservableObject {
     typealias DocumentWriter = (_ text: String, _ url: URL) throws -> Void
     typealias DocumentReader = (_ url: URL) throws -> String
 
+    private struct DocumentFileContents {
+        let text: String
+        let hasUTF8BOM: Bool
+    }
+
+    private enum DocumentFileError: Error {
+        case invalidUTF8
+    }
+
     private let sessionURL: URL
     private let sessionSaveDelay: TimeInterval
     private let visualTestEnabled: Bool
@@ -249,7 +258,7 @@ final class DocumentManager: ObservableObject {
 
     // MARK: - Actions
 
-    func openTab(for url: URL, text: String) {
+    func openTab(for url: URL, text: String, hasUTF8BOM: Bool = false) {
         let canonical = canonicalPath(for: url)
         if let existing = tabs.first(where: {
             $0.url.map(canonicalPath(for:)) == canonical
@@ -257,8 +266,14 @@ final class DocumentManager: ObservableObject {
             activateTab(existing.id)
             return
         }
-        let tab = DocumentTab(url: url, name: url.lastPathComponent, text: text, isDirty: false,
-                              isMarkdown: DocumentTab.isMarkdownExtension(of: url))
+        let tab = DocumentTab(
+            url: url,
+            name: url.lastPathComponent,
+            text: text,
+            isDirty: false,
+            isMarkdown: DocumentTab.isMarkdownExtension(of: url),
+            hasUTF8BOM: hasUTF8BOM
+        )
         tabs.append(tab)
         activateTab(tab.id)
         MVLog.info("open document: \(tab.name)", category: "document")
@@ -489,13 +504,33 @@ final class DocumentManager: ObservableObject {
     /// FIRST so the editor seeds the correct body size when it mounts (Phase-1
     /// `lastStyledBodySize` seeding in makeNSView reads the current fontIndex).
     func restore(from s: Session) {
+        let preexistingTabs = tabs
+        let preexistingActiveTabID = activeTabID
         fontIndex = max(0, min(DesignTokens.bodyFontSizes.count - 1, s.fontIndex))
         sidebarWidth = max(
             DesignTokens.sidebarMinWidth,
             min(DesignTokens.sidebarMaxWidth, s.sidebarWidth)
         )
         sidebarOpen = s.sidebarOpen
-        tabs = s.tabs
+        tabs = s.tabs.map(reconciledRestoredTab)
+        var preferredPreexistingActiveTabID = preexistingActiveTabID
+        for pending in preexistingTabs {
+            let matchingIndex = tabs.firstIndex { restored in
+                restored.id == pending.id
+                    || canonicalURLsMatch(restored.url, pending.url)
+            }
+            if let matchingIndex {
+                if tabs[matchingIndex].isDirty && !pending.isDirty {
+                    if pending.id == preexistingActiveTabID {
+                        preferredPreexistingActiveTabID = tabs[matchingIndex].id
+                    }
+                } else {
+                    tabs[matchingIndex] = pending
+                }
+            } else {
+                tabs.append(pending)
+            }
+        }
         visualTestFixtureTabID = nil
         blockEditorStores.removeAll()
         autoFocusBlockEditorTabIDs.removeAll()
@@ -507,7 +542,10 @@ final class DocumentManager: ObservableObject {
         lastClosedTab = nil
         confirmingCloseTabID = nil
         // Fall back to the first tab if the saved active id no longer matches.
-        activeTabID = (s.activeTabID.flatMap { id in tabs.first { $0.id == id }?.id })
+        activeTabID = (preferredPreexistingActiveTabID.flatMap { id in
+            tabs.first { $0.id == id }?.id
+        })
+            ?? (s.activeTabID.flatMap { id in tabs.first { $0.id == id }?.id })
             ?? tabs.first?.id
         // Rebuild the sidebar tree from the saved folder if it still exists. tabs is
         // already non-empty, so loadDirectory's first-file auto-open never fires.
@@ -577,10 +615,24 @@ final class DocumentManager: ObservableObject {
     @discardableResult
     func openSelection(
         _ url: URL?,
+        admission: DocumentOpenAdmission
+    ) -> DocumentOpenResult {
+        openSelection(url, admission: admission, documentReader: nil)
+    }
+
+    @discardableResult
+    func openSelection(
+        _ url: URL?,
         admission: DocumentOpenAdmission,
-        reader: DocumentReader = { url in
-            try String(contentsOf: url, encoding: .utf8)
-        }
+        reader: @escaping DocumentReader
+    ) -> DocumentOpenResult {
+        openSelection(url, admission: admission, documentReader: reader)
+    }
+
+    private func openSelection(
+        _ url: URL?,
+        admission: DocumentOpenAdmission,
+        documentReader: DocumentReader?
     ) -> DocumentOpenResult {
         guard let url else { return .cancelled }
         guard url.isFileURL else {
@@ -613,16 +665,27 @@ final class DocumentManager: ObservableObject {
             return .activatedExisting(existing.id)
         }
 
-        let text: String
+        let contents: DocumentFileContents
         do {
-            text = try reader(url)
+            if let documentReader {
+                contents = DocumentFileContents(
+                    text: try documentReader(url),
+                    hasUTF8BOM: false
+                )
+            } else {
+                contents = try Self.readDocumentFile(at: url)
+            }
         } catch {
             MVLog.warn("open failed: \(url.path), \(error)", category: "document")
             Toaster.shared.flash("无法打开文件")
             return .failedToRead
         }
 
-        openTab(for: url, text: text)
+        openTab(
+            for: url,
+            text: contents.text,
+            hasUTF8BOM: contents.hasUTF8BOM
+        )
         guard let activeTabID else { return .failedToRead }
         return .openedFile(activeTabID)
     }
@@ -668,8 +731,12 @@ final class DocumentManager: ObservableObject {
     /// performs Save As and updates tab identity only after the write succeeds.
     @discardableResult
     func saveActiveDocument(to destinationURL: URL? = nil) -> Bool {
-        saveActiveDocument(to: destinationURL) { text, url in
-            try text.write(to: url, atomically: true, encoding: .utf8)
+        reconcileActiveText()
+        guard let current = activeTab else { return false }
+        let hasUTF8BOM = current.hasUTF8BOM
+        return saveActiveDocument(to: destinationURL) { text, url in
+            try Self.encodedUTF8Data(text, hasBOM: hasUTF8BOM)
+                .write(to: url, options: .atomic)
         }
     }
 
@@ -749,9 +816,7 @@ final class DocumentManager: ObservableObject {
         fileTree = buildFileTree(at: url)
         expandedFolders = Set(allFolderIDs(in: fileTree))
         if let first = firstTextFile(in: fileTree), tabs.isEmpty {
-            if let text = try? String(contentsOf: first, encoding: .utf8) {
-                openTab(for: first, text: text)
-            }
+            _ = openSelection(first, admission: .system)
         }
     }
 
@@ -760,8 +825,8 @@ final class DocumentManager: ObservableObject {
             activateTab(fixture.id)
             return
         }
-        guard !node.isDirectory, let text = try? String(contentsOf: node.url, encoding: .utf8) else { return }
-        openTab(for: node.url, text: text)
+        guard !node.isDirectory else { return }
+        _ = openSelection(node.url, admission: .system)
     }
 
     /// Whether a tab is represented by a concrete sidebar row. Normal documents
@@ -835,6 +900,58 @@ final class DocumentManager: ObservableObject {
             }
             return node.name == name ? [node] : []
         }
+    }
+
+    private func reconciledRestoredTab(_ persisted: DocumentTab) -> DocumentTab {
+        guard !persisted.isDirty, let url = persisted.url else { return persisted }
+        var restored = persisted
+        do {
+            let contents = try Self.readDocumentFile(at: url)
+            restored.text = contents.text
+            restored.hasUTF8BOM = contents.hasUTF8BOM
+            restored.isMarkdown = DocumentFormat(url: url).isMarkdownRendered
+            restored.markdownDocument = restored.isMarkdown
+                ? MarkdownDocument(source: contents.text)
+                : nil
+            let textLength = (contents.text as NSString).length
+            restored.selectionLocation = min(restored.selectionLocation, textLength)
+            restored.selectionLength = min(
+                restored.selectionLength,
+                textLength - restored.selectionLocation
+            )
+        } catch {
+            restored.isDirty = true
+            MVLog.warn(
+                "clean session tab could not be refreshed: \(url.path), \(error)",
+                category: "session"
+            )
+        }
+        return restored
+    }
+
+    private func canonicalURLsMatch(_ lhs: URL?, _ rhs: URL?) -> Bool {
+        guard let lhs, let rhs else { return false }
+        return canonicalPath(for: lhs) == canonicalPath(for: rhs)
+    }
+
+    private static func readDocumentFile(at url: URL) throws -> DocumentFileContents {
+        let data = try Data(contentsOf: url)
+        let bom = Data([0xEF, 0xBB, 0xBF])
+        let hasUTF8BOM = data.starts(with: bom)
+        let payload = hasUTF8BOM ? data.dropFirst(bom.count) : data[...]
+        guard let text = String(data: Data(payload), encoding: .utf8) else {
+            throw DocumentFileError.invalidUTF8
+        }
+        return DocumentFileContents(text: text, hasUTF8BOM: hasUTF8BOM)
+    }
+
+    private static func encodedUTF8Data(_ text: String, hasBOM: Bool) -> Data {
+        var data = Data()
+        if hasBOM {
+            data.append(contentsOf: [0xEF, 0xBB, 0xBF])
+        }
+        data.append(contentsOf: text.utf8)
+        return data
     }
 
     private func isTextFile(_ url: URL) -> Bool {

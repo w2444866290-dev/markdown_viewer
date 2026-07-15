@@ -1,6 +1,15 @@
 import Foundation
 import SwiftUI
 
+enum DebugDiagnosticPublicationPolicy {
+    static func allowsPublication(
+        mountedDocumentID: UUID,
+        activeDocumentID: UUID?
+    ) -> Bool {
+        mountedDocumentID == activeDocumentID
+    }
+}
+
 struct DebugDiagnosticRect: Codable, Equatable {
     let x: Double
     let y: Double
