@@ -51,6 +51,7 @@ final class DocumentManager: ObservableObject {
     @Published var confirmingCloseTabID: UUID?
     @Published private(set) var lastSaveFailure: DocumentSaveFailure?
     private var blockEditorStores: [UUID: BlockEditorStore] = [:]
+    private var blockEditorStoreGenerations: [UUID: UUID] = [:]
     private var autoFocusBlockEditorTabIDs: Set<UUID> = []
     /// The URL-less in-memory tab loaded from the Debug fixture. Its matching
     /// workspace sidebar row is identified by name without assigning the tab a URL,
@@ -227,20 +228,24 @@ final class DocumentManager: ObservableObject {
             if tab.id == activeTabID { wireActiveBlockStore(existing) }
             return existing
         }
+        let storeGeneration = UUID()
         let store = BlockEditorStore(
             tabID: tab.id,
             document: tab.markdownDocument ?? MarkdownDocument(source: tab.text),
             onDraftDivergence: { [weak self] in
-                guard let self else { return }
-                self.markTabDirty(tab.id)
-                self.scheduleSessionSave()
+                self?.publishBlockStoreMutation(
+                    for: tab.id,
+                    generation: storeGeneration
+                )
             }
         ) { [weak self] _ in
-            guard let self else { return }
-            self.markTabDirty(tab.id)
-            self.scheduleSessionSave()
+            self?.publishBlockStoreMutation(
+                for: tab.id,
+                generation: storeGeneration
+            )
         }
         blockEditorStores[tab.id] = store
+        blockEditorStoreGenerations[tab.id] = storeGeneration
         if autoFocusBlockEditorTabIDs.remove(tab.id) != nil,
            let firstBlockID = store.document.blocks.first?.id {
             store.beginSourceEditing(blockID: firstBlockID, selection: NSRange(location: 0, length: 0))
@@ -256,6 +261,15 @@ final class DocumentManager: ObservableObject {
         pullActiveText = { [weak store] in store?.snapshotDocument().source ?? "" }
         pullActiveMarkdownDocument = { [weak store] in store?.snapshotDocument() }
         pullActiveSelection = { [weak store] in store?.snapshotSelection }
+    }
+
+    private func publishBlockStoreMutation(for tabID: UUID, generation: UUID) {
+        guard blockEditorStoreGenerations[tabID] == generation,
+              tabs.first(where: { $0.id == tabID })?.isMarkdown == true else {
+            return
+        }
+        markTabDirty(tabID)
+        scheduleSessionSave()
     }
 
     // MARK: - Actions
@@ -328,6 +342,7 @@ final class DocumentManager: ObservableObject {
         tabs = [tab]
         visualTestFixtureTabID = tab.id
         blockEditorStores.removeAll()
+        blockEditorStoreGenerations.removeAll()
         autoFocusBlockEditorTabIDs.removeAll()
         activeTabID = tab.id
         lastClosedTab = nil
@@ -386,6 +401,7 @@ final class DocumentManager: ObservableObject {
         lastClosedTab = closing
         tabs.removeAll { $0.id == tab.id }
         blockEditorStores.removeValue(forKey: tab.id)
+        blockEditorStoreGenerations.removeValue(forKey: tab.id)
         autoFocusBlockEditorTabIDs.remove(tab.id)
         if confirmingCloseTabID == tab.id { confirmingCloseTabID = nil }
         if activeTabID == tab.id {
@@ -546,6 +562,7 @@ final class DocumentManager: ObservableObject {
         }
         visualTestFixtureTabID = nil
         blockEditorStores.removeAll()
+        blockEditorStoreGenerations.removeAll()
         autoFocusBlockEditorTabIDs.removeAll()
         commitActiveEditing = nil
         pullActiveText = nil
@@ -834,6 +851,11 @@ final class DocumentManager: ObservableObject {
             return false
         }
 
+        // A previously nonexistent target can acquire a different resolved path
+        // after creation, such as /private/tmp becoming /tmp. Persist only the
+        // post-write identity so the next ordinary save compares like with like.
+        let persistedCanonicalTarget = canonicalPath(for: writeTarget)
+
         guard let savedIndex = tabs.firstIndex(where: { $0.id == current.id }) else {
             lastSaveFailure = .writeFailed
             return false
@@ -844,7 +866,7 @@ final class DocumentManager: ObservableObject {
         saved.isDirty = false
         saved.isMarkdown = format.isMarkdownRendered
         saved.diskBaseline = DocumentDiskBaseline(
-            canonicalPath: canonicalTarget,
+            canonicalPath: persistedCanonicalTarget,
             bytes: writtenBytes
         )
         if saved.isMarkdown {
@@ -857,6 +879,7 @@ final class DocumentManager: ObservableObject {
         } else {
             saved.markdownDocument = nil
             blockEditorStores.removeValue(forKey: saved.id)
+            blockEditorStoreGenerations.removeValue(forKey: saved.id)
             pullActiveMarkdownDocument = nil
             commitActiveEditing = nil
         }

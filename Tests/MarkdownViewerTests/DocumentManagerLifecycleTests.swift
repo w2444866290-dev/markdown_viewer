@@ -501,6 +501,79 @@ struct DocumentManagerLifecycleTests {
         }
     }
 
+    @Test("save as to a new private-tmp path records its post-write canonical baseline")
+    func saveAsNewPathUsesStablePostWriteCanonicalBaseline() throws {
+        let root = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent("MarkdownViewerPostWriteCanonical", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let source = "| Name | Value |\n| --- | --- |\n| old | before |"
+        let original = root.appendingPathComponent("table.md")
+        let destination = root.appendingPathComponent("table-copy.md")
+        try Data(source.utf8).write(to: original)
+        let preWriteCanonical = destination.standardizedFileURL
+            .resolvingSymlinksInPath().path
+        let manager = makeManager(root)
+        guard case .openedFile = manager.openSelection(original, admission: .system) else {
+            Issue.record("fixture did not open")
+            return
+        }
+        let tab = try #require(manager.activeTab)
+        let store = manager.blockEditorStore(for: tab)
+        let tableID = try #require(store.document.blocks.first?.id)
+        let cell = MarkdownTableCell(row: 0, column: 1)
+        store.beginTableEditing(blockID: tableID, cell: cell)
+
+        #expect(manager.saveActiveDocument(to: destination))
+
+        let postWriteCanonical = destination.standardizedFileURL
+            .resolvingSymlinksInPath().path
+        #expect(preWriteCanonical != postWriteCanonical)
+        #expect(manager.activeTab?.diskBaseline?.canonicalPath == postWriteCanonical)
+        #expect(manager.activeTab?.isDirty == false)
+
+        store.setTableCell(cell, value: "TABLE_AFTER_SAVE_AS")
+        #expect(manager.activeTab?.isDirty == true)
+        #expect(manager.saveActiveDocument())
+        #expect(manager.lastSaveFailure == nil)
+        #expect(manager.activeTab?.isDirty == false)
+        #expect(try String(contentsOf: destination, encoding: .utf8)
+            .contains("TABLE_AFTER_SAVE_AS") == true)
+    }
+
+    @Test("cross-format save ignores the removed Markdown store's disappear flush")
+    func crossFormatSaveRemainsCleanAfterStaleMarkdownStoreFlush() throws {
+        try withTemporaryRoot { root in
+            let source = "# Before\n\nBody"
+            let original = root.appendingPathComponent("source.md")
+            let destination = root.appendingPathComponent("source.txt")
+            try Data(source.utf8).write(to: original)
+            let manager = makeManager(root)
+            guard case .openedFile = manager.openSelection(original, admission: .system) else {
+                Issue.record("fixture did not open")
+                return
+            }
+            let tab = try #require(manager.activeTab)
+            let store = manager.blockEditorStore(for: tab)
+            let blockID = try #require(store.document.blocks.first?.id)
+            store.beginSourceEditing(blockID: blockID)
+            store.updateActiveDraft("# CROSS_FORMAT")
+
+            #expect(manager.saveActiveDocument(to: destination))
+            #expect(manager.activeTab?.isMarkdown == false)
+            #expect(manager.activeTab?.isDirty == false)
+
+            store.flushActiveEditingForLifecycleBoundary()
+
+            #expect(manager.activeTab?.isDirty == false)
+            #expect(manager.activeTab?.text == "# CROSS_FORMAT\n\nBody")
+            #expect(try String(contentsOf: destination, encoding: .utf8)
+                == "# CROSS_FORMAT\n\nBody")
+        }
+    }
+
     @Test
     func saveAsRejectsAnotherTabsCanonicalTargetWithoutWriting() throws {
         try withTemporaryRoot { root in
