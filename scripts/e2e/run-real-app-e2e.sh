@@ -5488,7 +5488,10 @@ for SIZE in "${SIZES[@]}"; do
         run_passive_visual_matrix_for_size
     else
 
-    FOREGROUND_LAUNCH_OPTIONS=()
+    FOREGROUND_LAUNCH_OPTIONS=(
+        --visual-test-state default
+        --visual-test-scroll 0
+    )
     if [[ "$FOREGROUND_BATCH_NAME" == "block-activation" \
         || "$FOREGROUND_BATCH_NAME" == "sidebar-filter-navigation" \
         || "$FOREGROUND_BATCH_NAME" == "sidebar-layout-controls" \
