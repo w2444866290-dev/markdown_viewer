@@ -1,0 +1,143 @@
+Sources/MarkdownViewer/App/DebugDiagnosticSnapshot.swift
+  s_bbd0f767cbbff4::t_8e778419781076 62
+Sources/MarkdownViewer/App/NativeTrafficControls.swift
+  s_734354e87e0d6a::t_9532c8f88d9fbc 1-121
+Sources/MarkdownViewer/App/WindowConfigurator.swift
+  s_4607b44089eeef::t_13523a17eb7896 290
+Sources/MarkdownViewer/Editor/BlockSourceEditor.swift
+  s_af23f1f05b5eaf::t_5d82e9b9234875 40,260,357-362,621,653,989-990,1142-1148,1151,1153-1154,1166-1174,1180-1184,1209-1226,1256-1266,1268,1271
+Sources/MarkdownViewer/Editor/MarkdownBlockEditorView.swift
+  s_405000cbe511a4::t_e17aedbeaa466f 175,759-768
+Sources/MarkdownViewer/Editor/MarkdownTableGridEditor.swift
+  s_405000cbe511a4::t_bf630fbb33d0fb 35-51,424-426,529,534-542,612-618,888-913,917-918,921-923,926-928,933-939
+Sources/MarkdownViewer/Find/FindBarView.swift
+  s_af23f1f05b5eaf::t_66a10687625777 69-71,82,115,122,129,155-158,160-161,174,176-177,203-204,217,234,245,377,384-389,392,420-422
+Sources/MarkdownViewer/Outline/OutlineBehaviorPolicy.swift
+  s_af23f1f05b5eaf::t_67f8e3d0a9d151 9-14
+Sources/MarkdownViewer/Outline/OutlineRailView.swift
+  s_bbd0f767cbbff4::t_7b500ae51bb288 33-36,98-106,137-140,143-151,175-184
+Sources/MarkdownViewer/Palette/CommandPalette.swift
+  s_014c3d47548c6b::t_25157dadf98665 13-14,29-45,140,145,212-217,223-224,287,300-303,312-320,330-333,402-405,486-494
+Sources/MarkdownViewer/Palette/PaletteBlurHost.swift
+  s_014c3d47548c6b::t_1e6b2d03cfdac9 3-5,7,12-14,16
+Sources/MarkdownViewer/Shell/ContentView.swift
+  s_374710ffc5b9cb::t_d62447a1db8143 60-62,152,284-290,292-295,297-298,301-303,305-307,430-431
+Sources/MarkdownViewer/UI/CustomIcons.swift
+  s_0b4b053a849516::t_468d947a2a88ff 94-102,104-117,128-146,153-162,166
+Sources/MarkdownViewer/UI/DesignTokens.swift
+  s_97038d1bf1a0fd::t_8970448d40134a 143
+Sources/MarkdownViewer/UI/MVTooltip.swift
+  s_405000cbe511a4::t_f16a5832578bf6 56-60,95,106-126,164-166
+Sources/MarkdownViewer/UI/Toaster.swift
+  s_405000cbe511a4::t_18cd458bf4e43f 28-30,37
+Tests/E2E/RealAppHarnessTests.sh
+  s_bbd0f767cbbff4::t_0a8f1864fc5438 768
+Tests/MarkdownViewerTests/BlockSourceChromeTests.swift
+  s_af23f1f05b5eaf::t_828143e335699d 1-70
+Tests/MarkdownViewerTests/CommandPaletteTests.swift
+  s_bbd0f767cbbff4::t_b69a7e23ff01f0 8,13,18,22,27,32,41-42,63
+Tests/MarkdownViewerTests/DebugDiagnosticSnapshotTests.swift
+  s_bbd0f767cbbff4::t_86f17b91d21f9a 213,227
+Tests/MarkdownViewerTests/DesignTokensTests.swift
+  s_97038d1bf1a0fd::t_a714c40842d25f 1-18
+Tests/MarkdownViewerTests/FeedbackOverlayPolicyTests.swift
+  s_405000cbe511a4::t_58a38adcf162b3 1-25
+Tests/MarkdownViewerTests/FindFocusBridgeTests.swift
+  s_405000cbe511a4::t_a11c302fa3dab9 6-49
+Tests/MarkdownViewerTests/MarkdownTableEditorVisualTests.swift
+  s_405000cbe511a4::t_76d3ca9882ec0f 1-30
+Tests/MarkdownViewerTests/OutlineStatusPolicyTests.swift
+  s_af23f1f05b5eaf::t_99e7f1880ca45d 87-90
+Tests/MarkdownViewerTests/PassiveMarkdownFormattingTests.swift
+  s_405000cbe511a4::t_af29b6e852dbe9 157-170
+Tests/MarkdownViewerTests/RenderLayerTests.swift
+  s_014c3d47548c6b::t_f253d700b68a4c 17
+Tests/MarkdownViewerTests/ScrollIndicatorPolicyTests.swift
+  s_405000cbe511a4::t_c379bfc8eb6a96 1-21
+scripts/e2e/run-real-app-e2e.sh
+  s_bbd0f767cbbff4::t_f849c058cc15cb 3251
+scripts/e2e/verify-visual-launch-state.py
+  s_bbd0f767cbbff4::t_a20d46e667d350 146-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "62d136a72ee3198180192aad234011c27a1f956e",
+  "prompts": {},
+  "sessions": {
+    "s_014c3d47548c6b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6ae3-d303-7792-8439-688b94632549",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    },
+    "s_0b4b053a849516": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6f36-70f6-7c50-8769-5e90fe69c793",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    },
+    "s_374710ffc5b9cb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f837e-4017-76e3-b241-8698846494e8",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    },
+    "s_405000cbe511a4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f836a-5d00-7210-b0cb-2b5fcbac6f33",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    },
+    "s_4607b44089eeef": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6f32-99b6-76e1-941c-640330990353",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    },
+    "s_734354e87e0d6a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6f05-99bd-7063-a5d7-6ba25bea5fe3",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    },
+    "s_97038d1bf1a0fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6e60-3fe4-7f73-a454-6ff61605fe3e",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    },
+    "s_af23f1f05b5eaf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f836a-7503-7a70-ad03-ec04959ff1c4",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    },
+    "s_bbd0f767cbbff4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f836a-8a11-7aa3-83e5-7a51d6cbf241",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
