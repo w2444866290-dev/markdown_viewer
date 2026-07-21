@@ -66,6 +66,9 @@ struct FindBarView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("find-toggle-replace")
+                .accessibilityLabel("替换选项")
+                .accessibilityValue(state.showReplace ? "已展开" : "已收起")
+                .help("展开 / 收起替换")
                 .onHover { hoverChevron = $0 }
 
                 // Search field — spec: 240×28, bg rgba(0,0,0,0.045), radius 6
@@ -76,6 +79,7 @@ struct FindBarView: View {
                         .foregroundColor(DesignTokens.swiftUI.titleText)
                         .focused($fieldFocused)
                         .accessibilityIdentifier("find-query")
+                        .accessibilityLabel("查找")
                         .onChange(of: state.query) { newValue in
                             state.onSearch?(newValue)
                         }
@@ -108,18 +112,21 @@ struct FindBarView: View {
                     ToggleChip(
                         "Aa",
                         identifier: "find-case-sensitive",
+                        tooltip: "区分大小写",
                         isOn: $state.caseSensitive
                     )
                         .onChange(of: state.caseSensitive) { _ in searchNow() }
                     ToggleChip(
                         "W",
                         identifier: "find-whole-word",
+                        tooltip: "全词匹配",
                         isOn: $state.wholeWord
                     )
                         .onChange(of: state.wholeWord) { _ in searchNow() }
                     ToggleChip(
                         ".*",
                         identifier: "find-regex",
+                        tooltip: "正则表达式",
                         isOn: $state.useRegex
                     )
                         .onChange(of: state.useRegex) { _ in searchNow() }
@@ -145,8 +152,13 @@ struct FindBarView: View {
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(canNav && hoverPrev ? Self.hoverFill : .clear)
                         )
-                        .allowsHitTesting(canNav)
+                        // HTML uses a default cursor and no hover fill when there are
+                        // no matches. `disabled` preserves that appearance while also
+                        // exposing the unavailable state to VoiceOver and keyboard UI.
+                        .disabled(!canNav)
                         .accessibilityIdentifier("find-previous")
+                        .accessibilityLabel("上一个")
+                        .help("上一个 · ⇧回车")
                         .onHover { hoverPrev = $0 }
                     Button("↓") { state.onNavigate?(1) }
                         .buttonStyle(.plain)
@@ -159,8 +171,10 @@ struct FindBarView: View {
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(canNav && hoverNext ? Self.hoverFill : .clear)
                         )
-                        .allowsHitTesting(canNav)
+                        .disabled(!canNav)
                         .accessibilityIdentifier("find-next")
+                        .accessibilityLabel("下一个")
+                        .help("下一个 · 回车")
                         .onHover { hoverNext = $0 }
                 }
 
@@ -186,6 +200,8 @@ struct FindBarView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("find-close")
+                .accessibilityLabel("关闭查找")
+                .help("关闭 · Esc")
                 .onHover { hoverClose = $0 }
             }
 
@@ -198,6 +214,7 @@ struct FindBarView: View {
                         .font(.system(size: 13))
                         .foregroundColor(DesignTokens.swiftUI.titleText)
                         .accessibilityIdentifier("find-replacement")
+                        .accessibilityLabel("替换为")
                         .padding(.horizontal, 9)
                         .frame(width: 240, height: 28)
                         .background(Self.inputFill)
@@ -214,6 +231,7 @@ struct FindBarView: View {
                             .background(Color.black.opacity(hoverReplace ? 0.08 : 0.05))
                             .cornerRadius(6)
                             .accessibilityIdentifier("find-replace-current")
+                            .help("替换当前 · 回车")
                             .onHover { hoverReplace = $0 }
                         Button("全部替换") { state.onReplaceAll?() }
                             .buttonStyle(.plain)
@@ -224,6 +242,7 @@ struct FindBarView: View {
                             .background(Color.black.opacity(hoverReplaceAll ? 0.08 : 0.05))
                             .cornerRadius(6)
                             .accessibilityIdentifier("find-replace-all")
+                            .help("全部替换")
                             .onHover { hoverReplaceAll = $0 }
                     }
                 }
@@ -355,15 +374,22 @@ struct FindFocusBridge: NSViewRepresentable {
 private struct ToggleChip: View {
     let label: String
     let identifier: String
+    let tooltip: String
     @Binding var isOn: Bool
     /// Hover is an ADDITIONAL cue on top of the ON/OFF states - spec (design
     /// L143-145) hover = background rgba(0,0,0,0.05). Shown only for an OFF chip;
     /// an ON chip already reads via its stronger 0.10 fill + ring, left intact.
     @State private var hovered = false
 
-    init(_ label: String, identifier: String, isOn: Binding<Bool>) {
+    init(
+        _ label: String,
+        identifier: String,
+        tooltip: String,
+        isOn: Binding<Bool>
+    ) {
         self.label = label
         self.identifier = identifier
+        self.tooltip = tooltip
         self._isOn = isOn
     }
 
@@ -391,6 +417,9 @@ private struct ToggleChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(identifier)
+        .accessibilityLabel(tooltip)
+        .accessibilityValue(isOn ? "已启用" : "未启用")
+        .help(tooltip)
         .onHover { hovered = $0 }
     }
 }

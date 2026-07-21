@@ -25,24 +25,16 @@ final class Toaster: ObservableObject {
 
     func flash(_ s: String) {
         message = s
-        MotionPolicy.perform(
-            reduceMotion: MotionPolicy.systemReduceMotion,
-            animation: .easeOut(duration: 0.18)
-        ) {
-            visible = true
-        }
+        // The prototype mounts the pill immediately, without a separate
+        // fade-in animation. Keep the 1.6 s lifetime as the only transition.
+        visible = true
 
         dismissTask?.cancel()
         dismissTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.automaticDismissDelayNanoseconds)
             guard !Task.isCancelled else { return }
             self?.dismissTask = nil
-            MotionPolicy.perform(
-                reduceMotion: MotionPolicy.systemReduceMotion,
-                animation: .easeOut(duration: 0.18)
-            ) {
-                self?.visible = false
-            }
+            self?.visible = false
         }
     }
 
@@ -66,7 +58,6 @@ final class Toaster: ObservableObject {
 /// `✓ {{ toast }}` over rgba(28,28,30,0.9), white text, radius 99,
 /// padding 7×16, font-size 12, shadow 0 8px 28px rgba(0,0,0,0.2).
 struct ToastView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let message: String
 
     var body: some View {
@@ -81,6 +72,5 @@ struct ToastView: View {
             )
             .shadow(color: .black.opacity(0.2), radius: 14, y: 8)
             .accessibilityIdentifier("toast")
-            .transition(MotionPolicy.transition(.opacity, reduceMotion: reduceMotion))
     }
 }

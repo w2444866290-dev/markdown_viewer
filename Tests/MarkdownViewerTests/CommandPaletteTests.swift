@@ -5,31 +5,31 @@ import Testing
 @Suite("Command palette")
 struct CommandPaletteTests {
     @Test
-    func passivePaletteStaysInlineUntilTheAppHasActivated() {
+    func paletteUsesTheOwningWindowForEveryLaunchMode() {
         #expect(PalettePresentationPolicy.mode(
             isVisualTest: true,
             launchesForeground: false,
             hasActivated: false
-        ) == .inlinePassive)
+        ) == .inlineMain)
         #expect(PalettePresentationPolicy.mode(
             isVisualTest: true,
             launchesForeground: false,
             hasActivated: true
-        ) == .childPanel)
+        ) == .inlineMain)
     }
 
     @Test
-    func ordinaryAndExplicitForegroundLaunchesUseTheChildPanel() {
+    func ordinaryAndExplicitForegroundLaunchesUseTheOwningWindow() {
         #expect(PalettePresentationPolicy.mode(
             isVisualTest: false,
             launchesForeground: false,
             hasActivated: false
-        ) == .childPanel)
+        ) == .inlineMain)
         #expect(PalettePresentationPolicy.mode(
             isVisualTest: true,
             launchesForeground: true,
             hasActivated: false
-        ) == .childPanel)
+        ) == .inlineMain)
     }
 
     @Test
@@ -38,6 +38,8 @@ struct CommandPaletteTests {
         #expect(PalettePresentationMetrics.listOuterMaxHeight == 356)
         #expect(PalettePresentationMetrics.panelMaxHeight == 403)
         #expect(PalettePresentationMetrics.veilOpacity == 0.6)
+        #expect(PalettePresentationMetrics.entranceDuration == 0.12)
+        #expect(PalettePresentationMetrics.entranceOffset == 4)
     }
 
     @Test
@@ -58,7 +60,7 @@ struct CommandPaletteTests {
     }
 
     @Test
-    func commandKClosesTheKeyablePalettePanelWithoutDoubleToggling() {
+    func commandKClosesTheInWindowPaletteWithoutDoubleToggling() {
         #expect(PaletteKeyboard.command(
             forKeyCode: 40,
             modifiers: .command

@@ -59,7 +59,7 @@ struct DebugDiagnosticVisualState: Codable, Equatable {
         documentVisible: false,
         sidebarVisible: false,
         paletteVisible: false,
-        palettePresentation: PalettePresentationMode.childPanel.rawValue,
+        palettePresentation: PalettePresentationMode.inlineMain.rawValue,
         findPanelVisible: false,
         replaceRowVisible: false,
         previewActive: false,

@@ -11,6 +11,20 @@ enum EditorHeaderLayout {
     }
 }
 
+/// Non-typographic interaction geometry shared by the tab strip controls.
+/// These values mirror the authoritative prototype without coupling rendering
+/// to WebKit text rasterization.
+enum EditorHeaderVisualPolicy {
+    static let tabHeight: CGFloat = 28
+    static let tabCornerRadius: CGFloat = 6
+    static let tabCloseSlot: CGFloat = 16
+    static let dirtyIndicatorDiameter: CGFloat = 7
+    static let actionHoverOpacity: Double = 0.05
+    static let activeTabOpacity: Double = 0.06
+    static let pressedOpacity: Double = 0.08
+    static let confirmCloseHeight: CGFloat = 18
+}
+
 // MARK: - Editor header (44px): sidebar toggle + tabs + actions
 
 struct EditorHeader: View {
@@ -25,9 +39,10 @@ struct EditorHeader: View {
                              frame: CGSize(width: 26, height: 26),
                              identifier: "toggle-sidebar",
                              tip: "显示 / 隐藏侧栏") { color in
-                CIcon { CustomIcons.sidebarToggle }
-                    .frame(width: 16, height: 13)
-                    .foregroundColor(color)
+                    CIcon { CustomIcons.sidebarToggle }
+                        .frame(width: 16, height: 13)
+                        .offset(y: 0.5)
+                        .foregroundColor(color)
             }
 
             // Tabs area
@@ -67,9 +82,12 @@ struct EditorHeader: View {
                                  frame: CGSize(width: 28, height: 26),
                                  identifier: "open-document",
                                  tip: "打开 · ⌘O") { color in
-                    CIcon { CustomIcons.openFolder }
-                        .frame(width: 15, height: 14)
-                        .foregroundColor(color)
+                CIcon { CustomIcons.openFolder }
+                    .frame(width: 15, height: 14)
+                    // An odd-width SVG in an even-width control has the same
+                    // half-point centring rule as the reference SVG.
+                    .offset(x: 0.5)
+                    .foregroundColor(color)
                 }
             }
         }
@@ -86,10 +104,10 @@ private struct PreviewModeButton: View {
             Text(docManager.previewMode ? "✐ 编辑" : "预览")
                 .font(.system(size: 11.5))
                 .foregroundColor(
-                    docManager.previewMode
-                        ? DesignTokens.swiftUI.accent
-                        : (hovered
-                            ? DesignTokens.swiftUI.secondaryText
+                    hovered
+                        ? DesignTokens.swiftUI.secondaryText
+                        : (docManager.previewMode
+                            ? DesignTokens.swiftUI.accent
                             : DesignTokens.swiftUI.placeholderText)
                 )
                 .frame(
@@ -101,16 +119,21 @@ private struct PreviewModeButton: View {
                 .background(
                     RoundedRectangle(cornerRadius: 6)
                         .fill(
-                            docManager.previewMode
-                                ? DesignTokens.swiftUI.accent.opacity(0.12)
-                                : (hovered ? Color.black.opacity(0.05) : Color.clear)
+                            hovered
+                                ? Color.black.opacity(EditorHeaderVisualPolicy.actionHoverOpacity)
+                                : (docManager.previewMode
+                                    ? DesignTokens.swiftUI.accent.opacity(0.12)
+                                    : Color.clear)
                         )
                 )
                 .debugVisualAnchor("preview-control-frame")
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("toggle-preview")
+        .accessibilityLabel(docManager.previewMode ? "返回编辑模式" : "切换到纯预览")
+        .accessibilityValue(docManager.previewMode ? "已启用" : "未启用")
         .onHover { hovered = $0 }
+        .headerPointingHandCursor()
         .mvTip(docManager.previewMode ? "返回编辑 · ⌘⇧P" : "纯预览（隐藏语法）· ⌘⇧P")
     }
 }
@@ -122,8 +145,8 @@ private struct HeaderButtonStyle: ButtonStyle {
         configuration.label
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(configuration.isPressed
-                        ? Color.black.opacity(0.08)
+                .fill(configuration.isPressed
+                        ? Color.black.opacity(EditorHeaderVisualPolicy.pressedOpacity)
                         : Color.clear)
             )
     }
@@ -148,14 +171,18 @@ private struct HeaderIconButton<Label: View>: View {
                 .frame(width: frame.width, height: frame.height)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(hover ? Color.black.opacity(0.05) : Color.clear)
+                        .fill(hover
+                            ? Color.black.opacity(EditorHeaderVisualPolicy.actionHoverOpacity)
+                            : Color.clear)
                 )
                 .contentShape(Rectangle())
         }
         .buttonStyle(HeaderButtonStyle())
         .accessibilityIdentifier(identifier)
+        .accessibilityLabel(tip)
         .mvTip(tip)
         .onHover { hover = $0 }
+        .headerPointingHandCursor()
     }
 }
 
@@ -188,22 +215,27 @@ private struct EditorTabPill: View {
         }
         .padding(.leading, 12)
         .padding(.trailing, 7)  // spec: padding 0 7px 0 12px
-        .frame(height: 28)
+        .frame(height: EditorHeaderVisualPolicy.tabHeight)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: EditorHeaderVisualPolicy.tabCornerRadius)
                 .fill(isActive
-                    ? Color.black.opacity(0.06)
-                    : (isHovered ? Color.black.opacity(0.05) : .clear))
+                    ? Color.black.opacity(EditorHeaderVisualPolicy.activeTabOpacity)
+                    : (isHovered
+                        ? Color.black.opacity(EditorHeaderVisualPolicy.actionHoverOpacity)
+                        : .clear))
         )
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("tab-\(tab.id.uuidString)")
         .accessibilityLabel(tab.name)
         .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : [.isButton])
+        .accessibilityValue(tab.isDirty ? "有未保存的更改" : "已保存")
+        .accessibilityHint(isConfirming ? "再次激活将关闭并丢弃未保存的更改" : "激活文档")
         .accessibilityAction { docManager.activateTab(tab.id) }
         // Route through activateTab so the OUTGOING tab's live edits reconcile first.
         .onTapGesture { docManager.activateTab(tab.id) }
         .onHover { isHovered = $0 }
+        .headerPointingHandCursor()
     }
 
     // spec L105: red pill "确认关闭?" — height 18, padding 0 7px, radius 6,
@@ -215,7 +247,7 @@ private struct EditorTabPill: View {
                 .foregroundColor(DesignTokens.swiftUI.danger)
                 .lineLimit(1)
                 .padding(.horizontal, 7)
-                .frame(height: 18)
+                .frame(height: EditorHeaderVisualPolicy.confirmCloseHeight)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
                         .fill(DesignTokens.swiftUI.danger.opacity(0.10))
@@ -236,7 +268,11 @@ private struct EditorTabPill: View {
                 // spec L110: amber dot 7×7 #E8A33D
                 Circle()
                     .fill(DesignTokens.swiftUI.accent)
-                    .frame(width: 7, height: 7)
+                    .frame(
+                        width: EditorHeaderVisualPolicy.dirtyIndicatorDiameter,
+                        height: EditorHeaderVisualPolicy.dirtyIndicatorDiameter
+                    )
+                    .help("未保存 · ⌘S 保存")
             }
             if isHovered {
                 // spec L112: × font-size 13, no weight; color #aeaeb2; hover bg rgba(0,0,0,0.08) + color #1d1d1f
@@ -249,16 +285,55 @@ private struct EditorTabPill: View {
                         .frame(width: 16, height: 16)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(closeHovered ? Color.black.opacity(0.08) : Color.clear)
+                                .fill(closeHovered
+                                    ? Color.black.opacity(EditorHeaderVisualPolicy.pressedOpacity)
+                                    : Color.clear)
                         )
                         .contentShape(Rectangle())
                 }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("tab-close-\(tab.id.uuidString)")
                     .accessibilityLabel("关闭 \(tab.name)")
+                    .help("关闭 · ⌘W")
                     .onHover { closeHovered = $0 }
             }
         }
-        .frame(width: 16, height: 16)  // always reserved → tab width never jitters
+        .frame(
+            width: EditorHeaderVisualPolicy.tabCloseSlot,
+            height: EditorHeaderVisualPolicy.tabCloseSlot
+        )  // always reserved → tab width never jitters
+    }
+}
+
+/// Keeps each pointer hand scoped to the control that asked for it. This
+/// preserves a surrounding native cursor, including the document I-beam,
+/// when a header control disappears or the pointer crosses into a child.
+private struct HeaderPointingHandCursor: ViewModifier {
+    @State private var isPushed = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { isHovering in
+                setActive(isHovering)
+            }
+            .onDisappear {
+                setActive(false)
+            }
+    }
+
+    private func setActive(_ active: Bool) {
+        guard active != isPushed else { return }
+        if active {
+            NSCursor.pointingHand.push()
+        } else {
+            NSCursor.pop()
+        }
+        isPushed = active
+    }
+}
+
+private extension View {
+    func headerPointingHandCursor() -> some View {
+        modifier(HeaderPointingHandCursor())
     }
 }

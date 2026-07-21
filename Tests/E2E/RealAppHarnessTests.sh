@@ -765,7 +765,7 @@ for state, (label, mode, scroll_y, overrides) in states.items():
     diagnostic.parent.mkdir(parents=True)
     visual = {
         "documentVisible": True,
-        "palettePresentation": "inline-passive",
+        "palettePresentation": "inline-main",
         "sidebarVisible": True,
         "paletteVisible": False,
         "findPanelVisible": False,

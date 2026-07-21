@@ -172,6 +172,7 @@ struct MarkdownBlockEditorView: View {
             initialY: initialScrollY,
             onResolve: { scrollView in
                 nativeScrollView.scrollView = scrollView
+                MarkdownDocumentScrollIndicatorPolicy.apply(to: scrollView)
                 docManager.pullActiveScrollY = { [weak scrollView] in
                     scrollView?.contentView.bounds.origin.y ?? 0
                 }
@@ -753,5 +754,15 @@ private struct HeadingPositionPreferenceKey: PreferenceKey {
 
     static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+/// Uses the system overlay scroller rather than a decorative SwiftUI thumb.
+/// AppKit retains drag tracking, hover behavior, and accessibility semantics.
+enum MarkdownDocumentScrollIndicatorPolicy {
+    static func apply(to scrollView: NSScrollView) {
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
     }
 }

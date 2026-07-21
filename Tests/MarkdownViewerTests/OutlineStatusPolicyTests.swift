@@ -84,6 +84,10 @@ struct OutlineStatusPolicyTests {
         #expect(OutlineBehaviorPolicy.railExpansionDuration == 0.18)
         #expect(OutlineBehaviorPolicy.railRowHeightDuration == 0.24)
         #expect(OutlineBehaviorPolicy.railRowStagger == 0.012)
+        #expect(OutlineBehaviorPolicy.railMinimumHitHeight == 190)
+        #expect(OutlineBehaviorPolicy.currentTickColorDuration == 0.20)
+        #expect(OutlineBehaviorPolicy.currentLabelColorDuration == 0.15)
+        #expect(OutlineBehaviorPolicy.rowHoverDuration == 0.12)
         #expect(abs(OutlineBehaviorPolicy.railExpansionSettlingDelay(
             rowIndex: 12
         ) - 0.384) < 0.000_001)

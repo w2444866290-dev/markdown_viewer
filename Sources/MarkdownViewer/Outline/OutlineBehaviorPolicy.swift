@@ -6,6 +6,12 @@ enum OutlineBehaviorPolicy {
     static let railExpansionDuration: TimeInterval = 0.18
     static let railRowHeightDuration: TimeInterval = 0.24
     static let railRowStagger: TimeInterval = 0.012
+    // The prototype's 130pt content minimum plus its 30pt top and bottom
+    // padding produces a 190pt interactive rail, even for a one-heading file.
+    static let railMinimumHitHeight: CGFloat = 190
+    static let currentTickColorDuration: TimeInterval = 0.20
+    static let currentLabelColorDuration: TimeInterval = 0.15
+    static let rowHoverDuration: TimeInterval = 0.12
     static let jumpDuration: TimeInterval = 0.30
     static let jumpTopInset: CGFloat = 40
     static let washDuration: TimeInterval = 0.90

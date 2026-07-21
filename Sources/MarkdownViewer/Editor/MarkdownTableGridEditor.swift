@@ -32,6 +32,23 @@ enum MarkdownTableEditorLayout {
     }
 }
 
+enum MarkdownTableToolbarVisualPolicy {
+    static let hoverFillOpacity = 0.14
+    static let pressedFillOpacity = 0.22
+    static let disabledContentOpacity = 0.42
+    static let focusRingOpacity = 0.70
+
+    static func fillOpacity(
+        isEnabled: Bool,
+        isHovering: Bool,
+        isPressed: Bool
+    ) -> Double {
+        guard isEnabled else { return 0 }
+        if isPressed { return pressedFillOpacity }
+        return isHovering ? hoverFillOpacity : 0
+    }
+}
+
 struct MarkdownTableCellFocusRequestState {
     private var wasSelected = false
 
@@ -404,6 +421,9 @@ struct MarkdownTableGridEditor: View {
                             .stroke(Color(hex: 0xE9E9EF), lineWidth: 1)
                     )
                     .debugVisualAnchor("table-grid-frame")
+                    .accessibilityIdentifier("table-grid-scroller")
+                    .accessibilityLabel("表格横向滚动区域")
+                    .accessibilityHint("可左右拖动查看隐藏列")
                     .onChange(of: store.currentFindTableCell) { cell in
                         guard let cell else { return }
                         proxy.scrollTo(cell, anchor: .center)
@@ -506,14 +526,20 @@ struct MarkdownTableGridEditor: View {
         _ label: String,
         tip: String,
         identifier: String,
+        isEnabled: Bool = true,
         muted: Bool = false,
         danger: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        Button(label, action: action)
-            .buttonStyle(GridToolbarButtonStyle(muted: muted, danger: danger))
-            .mvTip(tip)
-            .accessibilityIdentifier(identifier)
+        MarkdownTableToolbarButton(
+            label: label,
+            tip: tip,
+            identifier: identifier,
+            isEnabled: isEnabled,
+            muted: muted,
+            danger: danger,
+            action: action
+        )
     }
 
     private func gridRow(
@@ -583,8 +609,13 @@ struct MarkdownTableGridEditor: View {
                     .overlay {
                         if store.activeTableCell == cell {
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(DesignTokens.swiftUI.accent.opacity(0.7), lineWidth: 2)
-                                .padding(.horizontal, 10)
+                                .stroke(
+                                    DesignTokens.swiftUI.accent.opacity(
+                                        MarkdownTableToolbarVisualPolicy.focusRingOpacity
+                                    ),
+                                    lineWidth: 2
+                                )
+                                .padding(.horizontal, 12)
                                 .padding(.vertical, header ? 5 : 2)
                                 .allowsHitTesting(false)
                         }
@@ -854,23 +885,58 @@ private final class MarkdownTableTextField: NSTextField {
     }
 }
 
+private struct MarkdownTableToolbarButton: View {
+    let label: String
+    let tip: String
+    let identifier: String
+    let isEnabled: Bool
+    let muted: Bool
+    let danger: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(label, action: action)
+            .buttonStyle(GridToolbarButtonStyle(
+                muted: muted,
+                danger: danger,
+                isHovering: isHovering
+            ))
+            .disabled(!isEnabled)
+            .onHover { hovering in
+                isHovering = isEnabled && hovering
+            }
+            .mvTip(tip)
+            .accessibilityIdentifier(identifier)
+    }
+}
+
 private struct GridToolbarButtonStyle: ButtonStyle {
     let muted: Bool
     let danger: Bool
+    let isHovering: Bool
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        let foreground: Color = danger
+            ? Color(hex: 0xFF9A8F)
+            : (muted ? Color(hex: 0xD0D0D5) : .white)
         configuration.label
             .font(.system(size: 11))
-            .foregroundColor(
-                danger
-                    ? Color(hex: 0xFF9A8F)
-                    : (muted ? Color(hex: 0xD0D0D5) : .white)
-            )
+            .foregroundColor(foreground.opacity(
+                isEnabled ? 1 : MarkdownTableToolbarVisualPolicy.disabledContentOpacity
+            ))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(configuration.isPressed ? Color.white.opacity(0.14) : .clear)
+                    .fill(Color.white.opacity(
+                        MarkdownTableToolbarVisualPolicy.fillOpacity(
+                            isEnabled: isEnabled,
+                            isHovering: isHovering,
+                            isPressed: configuration.isPressed
+                        )
+                    ))
             )
     }
 }

@@ -30,6 +30,10 @@ struct OutlineRailView: View {
                     .padding(.vertical, 30)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(width: railWidth, alignment: .leading)
+                    .frame(
+                        minHeight: OutlineBehaviorPolicy.railMinimumHitHeight,
+                        alignment: .center
+                    )
                     .contentShape(Rectangle())
                     .onHover(perform: setRailHover)
                     .debugVisualAnchor("outline-rail-frame")
@@ -91,6 +95,15 @@ struct OutlineRailView: View {
                         ),
                         value: interaction.expanded
                     )
+                    .animation(
+                        MotionPolicy.animation(
+                            .easeOut(
+                                duration: OutlineBehaviorPolicy.currentTickColorDuration
+                            ),
+                            reduceMotion: reduceMotion
+                        ),
+                        value: isActive
+                    )
 
                 Text(heading.title)
                     .font(.system(size: labelSizes[levelIndex], weight: .regular))
@@ -121,8 +134,20 @@ struct OutlineRailView: View {
                         value: interaction.expanded
                     )
                     .animation(
-                        MotionPolicy.animation(.easeOut(duration: 0.12), reduceMotion: reduceMotion),
+                        MotionPolicy.animation(
+                            .easeOut(duration: OutlineBehaviorPolicy.rowHoverDuration),
+                            reduceMotion: reduceMotion
+                        ),
                         value: isHovered
+                    )
+                    .animation(
+                        MotionPolicy.animation(
+                            .easeOut(
+                                duration: OutlineBehaviorPolicy.currentLabelColorDuration
+                            ),
+                            reduceMotion: reduceMotion
+                        ),
+                        value: isActive
                     )
             }
             .frame(minWidth: 26, maxWidth: 220, alignment: .leading)
@@ -147,8 +172,16 @@ struct OutlineRailView: View {
             MarkdownAccessibilitySurface.outlineHeading(index: index)
         )
         .accessibilityLabel(heading.title)
-        .onHover { hovering in
-            interaction.setHoveredIndex(hovering ? index : nil)
+        .accessibilityHint("跳转到此标题")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .help(heading.title)
+        .onHover { isHovering in
+            interaction.setHoveredIndex(isHovering ? index : nil)
+            if isHovering {
+                NSCursor.pointingHand.set()
+            } else {
+                NSCursor.arrow.set()
+            }
         }
     }
 

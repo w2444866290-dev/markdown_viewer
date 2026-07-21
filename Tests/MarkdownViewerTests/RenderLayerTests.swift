@@ -14,7 +14,7 @@ extension StylerSuites {
         @Test func codeCardPaintsFullWidthFill() throws {
             let bitmap = try RenderProbe.backgroundBitmap(for: "```swift\nlet answer = 42\n```")
 
-            let fillRun = bitmap.maxHorizontalRun(near: NSColor(hex: 0xFAFAFA), tolerance: 2)
+            let fillRun = bitmap.maxHorizontalRun(near: NSColor(hex: 0xF6F6F9), tolerance: 2)
             #expect(fillRun >= 280)
         }
 

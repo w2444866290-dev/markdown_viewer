@@ -210,7 +210,7 @@ struct DebugDiagnosticSnapshotTests {
             documentVisible: true,
             sidebarVisible: true,
             paletteVisible: false,
-            palettePresentation: PalettePresentationMode.inlinePassive.rawValue,
+            palettePresentation: PalettePresentationMode.inlineMain.rawValue,
             findPanelVisible: false,
             replaceRowVisible: false,
             previewActive: false
@@ -224,7 +224,7 @@ struct DebugDiagnosticSnapshotTests {
         var persisted = try decode(from: fileURL)
         #expect(persisted.visual.documentVisible)
         #expect(persisted.visual.sidebarVisible)
-        #expect(persisted.visual.palettePresentation == "inline-passive")
+        #expect(persisted.visual.palettePresentation == "inline-main")
         #expect(persisted.visual.sourceEditorVisible)
         #expect(persisted.visual.anchors["source-editor-frame"] == DebugDiagnosticRect(
             CGRect(x: 12, y: 34, width: 640, height: 48)

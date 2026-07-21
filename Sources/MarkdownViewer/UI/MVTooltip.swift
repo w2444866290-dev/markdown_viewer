@@ -53,6 +53,11 @@ struct MVTipPreferenceKey: PreferenceKey {
     }
 }
 
+enum MVTooltipTiming {
+    static let dwell: TimeInterval = 0.480
+    static let entryDuration: TimeInterval = 0.12
+}
+
 // MARK: - Per-target modifier
 
 private struct MVTooltipModifier: ViewModifier {
@@ -61,8 +66,6 @@ private struct MVTooltipModifier: ViewModifier {
     @State private var isHovered = false
     @State private var isShown = false
     @State private var pendingTask: DispatchWorkItem?
-
-    private static let dwell: TimeInterval = 0.480
 
     func body(content: Content) -> some View {
         content
@@ -89,7 +92,7 @@ private struct MVTooltipModifier: ViewModifier {
             isShown = true
         }
         pendingTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.dwell, execute: task)
+        DispatchQueue.main.asyncAfter(deadline: .now() + MVTooltipTiming.dwell, execute: task)
     }
 
     private func cancelAndHide() {
@@ -97,6 +100,27 @@ private struct MVTooltipModifier: ViewModifier {
         pendingTask?.cancel()
         pendingTask = nil
         if isShown { isShown = false }
+    }
+}
+
+/// The reference animates tooltip entry only (`tipIn 0.12s ease`). When the
+/// pointer leaves, the conditional node is removed immediately rather than
+/// receiving a second fade-out transition.
+private struct MVTooltipEntryModifier: ViewModifier {
+    let reduceMotion: Bool
+    @State private var opacity = 0.0
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(opacity)
+            .onAppear {
+                MotionPolicy.perform(
+                    reduceMotion: reduceMotion,
+                    animation: .easeOut(duration: MVTooltipTiming.entryDuration)
+                ) {
+                    opacity = 1
+                }
+            }
     }
 }
 
@@ -137,18 +161,11 @@ private struct MVTooltipHostModifier: ViewModifier {
                             y: overflowsBottom ? centreYAbove : centreYBelow
                         )
                         .allowsHitTesting(false)
-                        .transition(MotionPolicy.transition(
-                            .opacity,
-                            reduceMotion: reduceMotion
-                        ))
+                        .accessibilityHidden(true)
+                        .modifier(MVTooltipEntryModifier(reduceMotion: reduceMotion))
+                        .id(payload.text)
                     }
                 }
-                // Drive the 0.12s fade-in/out (spec) when the active tip appears or
-                // clears. Keyed on the payload so `.transition(.opacity)` animates.
-                .animation(
-                    MotionPolicy.animation(.easeOut(duration: 0.12), reduceMotion: reduceMotion),
-                    value: payload
-                )
                 .allowsHitTesting(false)
             }
             .onPreferenceChange(MVTipPreferenceKey.self) { payload in

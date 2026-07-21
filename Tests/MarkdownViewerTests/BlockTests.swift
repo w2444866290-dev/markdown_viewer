@@ -21,16 +21,16 @@ extension StylerSuites {
             #expect(t == 2)
             #expect(StylerProbe.pointSize(ts, t) == 26)
             #expect(StylerProbe.color(ts, t) == DesignTokens.headingText)
-            expectClose(StylerProbe.cgFloat(ts, .kern, t), -0.2, "H1 kern")
+            #expect(StylerProbe.attr(ts, .kern, t) == nil)
             #expect(!StylerProbe.isNonBody(ts, t))
         }
 
-        // Case 2: H2 font + non-CJK kern.
-        @Test func h2FontAndKern() {
+        // Case 2: H2 semantic font. Native glyph metrics are intentionally left to AppKit.
+        @Test func h2Font() {
             let ts = StylerProbe.styled("## A")
             guard let a = requireIndex(ts, of: "A") else { return }
             #expect(StylerProbe.pointSize(ts, a) == 18)
-            expectClose(StylerProbe.cgFloat(ts, .kern, a), 0.3, "H2 kern")
+            #expect(StylerProbe.attr(ts, .kern, a) == nil)
         }
 
         // Case 2: H3 font, no kern.

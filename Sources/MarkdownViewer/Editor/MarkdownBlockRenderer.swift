@@ -490,6 +490,7 @@ struct MarkdownBlockRenderer: View, Equatable {
                     Button("↩") { onFootnoteBack(item.id) }
                         .buttonStyle(.plain)
                         .foregroundColor(DesignTokens.swiftUI.accent)
+                        .markdownPointingHandCursor()
                         .mvTip("回到引用")
                         .accessibilityIdentifier("footnote-back-\(item.id)")
                 }
@@ -544,6 +545,7 @@ struct MarkdownBlockRenderer: View, Equatable {
             }
             .buttonStyle(.plain)
             .disabled(!interactionPolicy.allowsTaskToggle)
+            .markdownPointingHandCursor(enabled: interactionPolicy.allowsTaskToggle)
             .accessibilityLabel(checked ? "已完成任务" : "未完成任务")
             .accessibilityValue(checked ? "已勾选" : "未勾选")
             .accessibilityIdentifier(
@@ -889,7 +891,53 @@ struct MarkdownInlineText: View {
     }
 }
 
+/// Gives compact rendered-document controls the pointer cursor declared by the
+/// prototype without replacing their native SwiftUI button semantics.
+private struct MarkdownPointingHandCursor: ViewModifier {
+    let enabled: Bool
+    @State private var pushed = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                guard enabled else {
+                    popIfNeeded()
+                    return
+                }
+                if hovering {
+                    pushIfNeeded()
+                } else {
+                    popIfNeeded()
+                }
+            }
+            .onChange(of: enabled) { isEnabled in
+                if !isEnabled { popIfNeeded() }
+            }
+            .onDisappear { popIfNeeded() }
+    }
+
+    private func pushIfNeeded() {
+        guard !pushed else { return }
+        NSCursor.pointingHand.push()
+        pushed = true
+    }
+
+    private func popIfNeeded() {
+        guard pushed else { return }
+        NSCursor.pop()
+        pushed = false
+    }
+}
+
+private extension View {
+    func markdownPointingHandCursor(enabled: Bool = true) -> some View {
+        modifier(MarkdownPointingHandCursor(enabled: enabled))
+    }
+}
+
 private struct MarkdownCodeBlock: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let source: String
     let paperWidth: CGFloat
     let windowWidth: CGFloat
@@ -927,9 +975,18 @@ private struct MarkdownCodeBlock: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 11))
                     .foregroundColor(hovered
-                        ? DesignTokens.swiftUI.secondaryText
+                        ? DesignTokens.swiftUI.titleText
                         : DesignTokens.swiftUI.placeholderText)
                     .opacity(hovered ? 1 : 0)
+                    .animation(
+                        MotionPolicy.animation(
+                            .easeInOut(duration: 0.15),
+                            reduceMotion: reduceMotion
+                        ),
+                        value: hovered
+                    )
+                    .markdownPointingHandCursor()
+                    .mvTip("复制代码")
                     .accessibilityIdentifier(
                         MarkdownAccessibilitySurface.codeCopy(
                             blockIndex: diagnosticIndex,

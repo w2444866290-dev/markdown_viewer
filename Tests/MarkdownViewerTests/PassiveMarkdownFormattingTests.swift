@@ -154,6 +154,20 @@ struct PassiveMarkdownFormattingTests {
         #expect(color(.backgroundColor, at: literal.location, in: rendered) == nil)
     }
 
+    @Test("inline code preserves the following link's semantic destination")
+    func inlineCodePreservesFollowingLinkDestination() throws {
+        let rendered = PassiveMarkdownInlineRenderer.render(
+            "`code` then [guide](https://example.com)",
+            style: style
+        )
+        let guide = try range(of: "guide", in: rendered)
+
+        #expect(PassiveMarkdownInlineRenderer.linkDestination(
+            atUTF16Index: guide.location,
+            in: rendered
+        ) == "https://example.com")
+    }
+
     @Test("link labels stay visible and hover reports each exact destination")
     @MainActor
     func visibleLinksAndHoverCallback() throws {

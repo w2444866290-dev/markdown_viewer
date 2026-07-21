@@ -143,8 +143,8 @@ def evaluate(
     if not isinstance(visual, dict):
         return None, ["diagnostic snapshot has no visual object"]
 
-    if visual.get("palettePresentation") != "inline-passive":
-        failures.append("visual.palettePresentation is not inline-passive")
+    if visual.get("palettePresentation") != "inline-main":
+        failures.append("visual.palettePresentation is not inline-main")
 
     if snapshot.get("schemaVersion") != 1:
         failures.append("diagnostic schemaVersion is not 1")

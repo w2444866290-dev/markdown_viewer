@@ -1,6 +1,35 @@
 import SwiftUI
 import AppKit
 
+/// Width bounds shared by pointer dragging and the native accessibility
+/// adjustable action on the resize handle.
+enum SidebarResizePolicy {
+    static let accessibilityStep: CGFloat = 8
+
+    static func clampedWidth(_ proposedWidth: CGFloat) -> CGFloat {
+        max(
+            DesignTokens.sidebarMinWidth,
+            min(DesignTokens.sidebarMaxWidth, proposedWidth)
+        )
+    }
+}
+
+/// The prototype's filter field has no resting focus treatment. A focus ring is
+/// therefore reserved for the macOS keyboard-traversal case, never for the
+/// window's initial first responder or a pointer click.
+enum SidebarFilterFocusPolicy {
+    static func isKeyboardTraversal(keyCode: UInt16) -> Bool {
+        keyCode == 48 // Tab / Shift-Tab
+    }
+
+    static func showsRing(
+        isFocused: Bool,
+        hasPendingKeyboardTraversal: Bool
+    ) -> Bool {
+        isFocused && hasPendingKeyboardTraversal
+    }
+}
+
 /// Sidebar matching spec: 44px spacer → filter → file tree → ⌘K button.
 /// Background #F7F7F8, 28px rows with hover/active states, resize handle.
 struct SidebarView: View {
@@ -9,6 +38,9 @@ struct SidebarView: View {
     @State private var resizeHover = false
     @State private var resizeDragging = false
     @State private var resizeStartWidth: CGFloat = DesignTokens.sidebarWidth
+    /// Kept separately from the visual hover state so a drag that leaves the
+    /// narrow hit strip retains the col-resize cursor until its mouse-up.
+    @State private var resizeCursorApplied = false
     @State private var paletteHover = false
 
     /// Spec (design L1250): while a drag is IN PROGRESS the resize line turns the
@@ -16,6 +48,8 @@ struct SidebarView: View {
     /// only place this drag-accent appears, so it stays out of the shared tokens
     /// (mirrors FindBarView's local spec colors).
     private static let dragLine = Color(red: 10 / 255, green: 132 / 255, blue: 255 / 255).opacity(0.6)
+    /// The explicit source focus treatment is local to the sidebar filter.
+    private static let filterFocusRing = Color(red: 0, green: 122 / 255, blue: 1).opacity(0.45)
 
     // Sidebar filter query. LOCAL @State (not on the DocumentManager EnvironmentObject)
     // on purpose: only SidebarView reads it, so keeping it here means each keystroke
@@ -26,8 +60,11 @@ struct SidebarView: View {
 
     // Filter keyboard navigation (spec JS `onSideFilterKey` / `kbName`).
     @FocusState private var filterFocused: Bool
+    @State private var filterFocusRingVisible = false
+    @State private var pendingKeyboardFocusTraversal = false
     @State private var kbSel = 0
     @State private var keyMonitor: Any?
+    @State private var focusMonitor: Any?
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -36,25 +73,63 @@ struct SidebarView: View {
                 Color.clear.frame(height: 44)
 
                 // Filter — spec: plain input, no icon, padding 0 10px
-                TextField("筛选文档", text: $sideFilter)
+                // The prototype leaves the input's placeholder at WebKit's
+                // `darkgray` (#A9A9A9), while entered text uses --mv-fg.
+                // Supplying the prompt separately preserves those two visual
+                // roles instead of dimming the active foreground color.
+                TextField(
+                    "",
+                    text: $sideFilter,
+                    prompt: Text("筛选文档")
+                        .foregroundColor(Color(red: 169 / 255, green: 169 / 255, blue: 169 / 255))
+                )
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5))
                     .foregroundColor(DesignTokens.swiftUI.titleText)
                     .focused($filterFocused)
                     .accessibilityIdentifier("sidebar-filter")
+                    .accessibilityLabel("筛选文档")
+                    .accessibilityHint("输入以筛选文档。使用上下箭头选择，回车打开。")
                     .padding(.horizontal, 10)
                     .frame(height: 28)
                     .background(Color.black.opacity(0.04))
                     .cornerRadius(6)
+                    // Prototype focus-visible: 2 px #007AFF at 45% with a 1 px
+                    // outward offset. Overlaying it keeps the 28 px control frame
+                    // and the source layout's 2/12/8 parent spacing unchanged.
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(
+                                filterFocusRingVisible
+                                    ? Self.filterFocusRing
+                                    : .clear,
+                                lineWidth: 2
+                            )
+                            .padding(-3)
+                    )
                     .padding(.top, 2)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
                     // Reset keyboard selection whenever the filter query changes.
                     .onChange(of: sideFilter) { _ in kbSel = 0 }
                     .onChange(of: filterFocused) { focused in
-                        if focused { installKeyMonitor() } else { removeKeyMonitor() }
+                        if focused {
+                            filterFocusRingVisible = SidebarFilterFocusPolicy.showsRing(
+                                isFocused: true,
+                                hasPendingKeyboardTraversal: pendingKeyboardFocusTraversal
+                            )
+                            pendingKeyboardFocusTraversal = false
+                            installKeyMonitor()
+                        } else {
+                            filterFocusRingVisible = false
+                            removeKeyMonitor()
+                        }
                     }
-                    .onDisappear { removeKeyMonitor() }
+                    .onAppear { installFocusMonitor() }
+                    .onDisappear {
+                        removeKeyMonitor()
+                        removeFocusMonitor()
+                    }
 
                 // File tree — spec: padding 4px 10px 12px, gap 1px
                 ScrollView {
@@ -102,7 +177,11 @@ struct SidebarView: View {
                             .font(.system(size: 10.5, design: .monospaced))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.black.opacity(0.05))
+                            // WebKit floors the source rgba(0,0,0,0.05) blend
+                            // against #F7F7F8 to #EAEAEB. SwiftUI rounds it up
+                            // at 0.05, so this equivalent compositing alpha
+                            // keeps the rendered pixels at the source value.
+                            .background(Color.black.opacity(0.051))
                             .cornerRadius(6)
                         Text("全部命令")
                             .font(.system(size: 11.5))
@@ -113,6 +192,10 @@ struct SidebarView: View {
                     .padding(.horizontal, 16)
                     .frame(height: 38)
                     .contentShape(Rectangle())
+                    // The source flex row lands on the lower physical pixel in
+                    // its 38 pt container. Preserve that shared half-point snap
+                    // for the keycap and label rather than tuning either string.
+                    .offset(y: 0.5)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("open-command-palette")
@@ -129,7 +212,27 @@ struct SidebarView: View {
                 .allowsHitTesting(true)
                 .accessibilityIdentifier("sidebar-resize-handle")
                 .accessibilityLabel("调整侧栏宽度")
-                .onHover { resizeHover = $0 }
+                .accessibilityValue("\(Int(docManager.sidebarWidth.rounded())) 点")
+                .accessibilityHint("左右拖动以调整侧栏宽度")
+                .accessibilityAdjustableAction { direction in
+                    let adjustment: CGFloat
+                    switch direction {
+                    case .increment:
+                        adjustment = SidebarResizePolicy.accessibilityStep
+                    case .decrement:
+                        adjustment = -SidebarResizePolicy.accessibilityStep
+                    @unknown default:
+                        return
+                    }
+                    docManager.sidebarWidth = SidebarResizePolicy.clampedWidth(
+                        docManager.sidebarWidth + adjustment
+                    )
+                    docManager.scheduleSessionSave()
+                }
+                .onHover { hovering in
+                    resizeHover = hovering
+                    setResizeCursor(active: hovering || resizeDragging)
+                }
                 .overlay(
                     Rectangle()
                         // Three-state (spec L1250): dragging -> accent blue, hover ->
@@ -158,11 +261,9 @@ struct SidebarView: View {
                                     width: resizeStartWidth
                                 )
                             }
-                            let newWidth = max(
-                                DesignTokens.sidebarMinWidth,
-                                min(DesignTokens.sidebarMaxWidth,
-                                    resizeStartWidth + value.translation.width
-                                )
+                            setResizeCursor(active: true)
+                            let newWidth = SidebarResizePolicy.clampedWidth(
+                                resizeStartWidth + value.translation.width
                             )
                             docManager.sidebarWidth = newWidth
                             DebugPointerTrace.shared.recordSidebarResize(
@@ -177,14 +278,12 @@ struct SidebarView: View {
                             let startWidth = resizeDragging
                                 ? resizeStartWidth
                                 : docManager.sidebarWidth
-                            let finalWidth = max(
-                                DesignTokens.sidebarMinWidth,
-                                min(DesignTokens.sidebarMaxWidth,
-                                    startWidth + value.translation.width
-                                )
+                            let finalWidth = SidebarResizePolicy.clampedWidth(
+                                startWidth + value.translation.width
                             )
                             docManager.sidebarWidth = finalWidth
                             resizeDragging = false
+                            setResizeCursor(active: resizeHover)
                             DebugPointerTrace.shared.recordSidebarResize(
                                 "sidebar-resize-ended",
                                 width: finalWidth
@@ -196,6 +295,10 @@ struct SidebarView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(MarkdownAccessibilitySurface.sidebarSurface)
+        .onDisappear {
+            setResizeCursor(active: false)
+            removeFocusMonitor()
+        }
     }
 
     // Browse mode renders the nested `fileTree`; filtered mode renders a FLAT
@@ -259,6 +362,45 @@ struct SidebarView: View {
     private func removeKeyMonitor() {
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
     }
+
+    /// Observe keyboard traversal before AppKit moves the first responder. The
+    /// pending value is consumed by `filterFocused` on that same interaction;
+    /// it intentionally expires on the next main-loop turn when Tab moved to a
+    /// different control. This is safe during SwiftUI state updates because it
+    /// never asks `NSApplication` for its transient current event.
+    private func installFocusMonitor() {
+        guard focusMonitor == nil else { return }
+        focusMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            guard SidebarFilterFocusPolicy.isKeyboardTraversal(keyCode: event.keyCode) else {
+                return event
+            }
+            pendingKeyboardFocusTraversal = true
+            DispatchQueue.main.async {
+                if pendingKeyboardFocusTraversal {
+                    pendingKeyboardFocusTraversal = false
+                }
+            }
+            return event
+        }
+    }
+
+    private func removeFocusMonitor() {
+        if let m = focusMonitor { NSEvent.removeMonitor(m); focusMonitor = nil }
+        pendingKeyboardFocusTraversal = false
+    }
+
+    /// Uses the native AppKit resize cursor and balances exactly one push/pop.
+    /// This avoids turning the draggable separator into a visual-only substitute,
+    /// and avoids overwriting the document's I-beam/hand cursor after mouse-up.
+    private func setResizeCursor(active: Bool) {
+        guard active != resizeCursorApplied else { return }
+        if active {
+            NSCursor.resizeLeftRight.push()
+        } else {
+            NSCursor.pop()
+        }
+        resizeCursorApplied = active
+    }
 }
 
 // MARK: - Sidebar node row
@@ -283,7 +425,11 @@ private struct SidebarNodeRow: View {
     private var isKbSelected: Bool { kbSelectedID == node.id }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // The prototype lays out the tree as one flat flex column with a 1 pt
+        // gap between every visible row. Children are recursive here, so the
+        // parent stack must supply that same gap before each child as well.
+        // With zero spacing nested rows accumulated upward by 1 pt per level.
+        VStack(alignment: .leading, spacing: 1) {
             Button(action: {
                 if node.isDirectory {
                     if isExpanded {
@@ -301,7 +447,10 @@ private struct SidebarNodeRow: View {
                         Text(isExpanded ? "▾" : "▸")
                             .font(.system(size: 9))
                             .foregroundColor(DesignTokens.swiftUI.placeholderText.opacity(0.7))
-                            .frame(width: 9)
+                            // The source's fixed-width flex child has no
+                            // text-align override, so this glyph is leading
+                            // aligned rather than SwiftUI's default centering.
+                            .frame(width: 9, alignment: .leading)
                         CIcon { CustomIcons.sidebarFolder(size: NSSize(width: 13, height: 11)) }
                             .frame(width: 13, height: 11)
                     } else {
@@ -339,6 +488,10 @@ private struct SidebarNodeRow: View {
                         Circle()
                             .fill(DesignTokens.swiftUI.accent)
                             .frame(width: 7, height: 7)
+                            // The row conveys this state as one accessible unit below.
+                            // Keeping the decorative dot out of the child tree prevents
+                            // VoiceOver from announcing a nameless second element.
+                            .accessibilityHidden(true)
                     }
                 }
                 .padding(.leading, CGFloat(10 + depth * 16))
@@ -358,6 +511,16 @@ private struct SidebarNodeRow: View {
                     isDirectory: node.isDirectory
                 )
             )
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityValue(accessibilityValue)
+            .accessibilityHint(accessibilityHint)
+            .accessibilityAddTraits(
+                (isActive || isKbSelected) ? [.isButton, .isSelected] : [.isButton]
+            )
+            // The source attaches this title to the dirty marker. The native row
+            // remains one keyboard-accessible button, so expose the same hint at
+            // its hit target without adding a noninteractive visual surrogate.
+            .help(nodeHasDirtyTab ? "未保存 · ⌘S 保存" : "")
             .onHover { hovering in
                 hoveredNodeID = hovering ? node.id : nil
             }
@@ -393,5 +556,24 @@ private struct SidebarNodeRow: View {
 
     private var nodeHasDirtyTab: Bool {
         docManager.fileNodeHasDirtyTab(node)
+    }
+
+    private var accessibilityLabel: String {
+        node.isDirectory ? "文件夹 \(node.name)" : "文档 \(node.name)"
+    }
+
+    private var accessibilityValue: String {
+        var states: [String] = []
+        if isActive { states.append("当前文档") }
+        else if isKbSelected { states.append("键盘选中") }
+        if nodeHasDirtyTab { states.append("未保存") }
+        return states.isEmpty ? "未选中" : states.joined(separator: "，")
+    }
+
+    private var accessibilityHint: String {
+        if node.isDirectory {
+            return isExpanded ? "收起文件夹" : "展开文件夹"
+        }
+        return "打开文档"
     }
 }

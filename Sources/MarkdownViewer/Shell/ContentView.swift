@@ -57,9 +57,9 @@ enum VisualTestStateApplier {
         case .defaultState:
             return
         case .palette:
-            // Use the production palette state transition. The presentation
-            // policy keeps an inactive passive launch inside its ordered-out
-            // main surface, then returns to the child panel after activation.
+            // Use the production palette state transition. The command surface
+            // is an interactive overlay in the document window for both normal
+            // and passive visual launches.
             documentManager.openCommandPalette()
         case .find:
             findState.openFind()
@@ -140,7 +140,6 @@ struct ContentView: View {
     // Double-Shift → quick search (spec JS L478-490): event monitor + timing holder.
     @State private var shiftMonitor: Any?
     @State private var shiftTracker = DoubleShiftTracker()
-    @State private var visualTestHasActivated = NSApplication.shared.isActive
 
     private var tabPadLeft: CGFloat {
         docManager.sidebarOpen ? 12 : 84
@@ -150,7 +149,7 @@ struct ContentView: View {
         PalettePresentationPolicy.mode(
             isVisualTest: AppEnv.visualTest,
             launchesForeground: AppEnv.visualTestForegroundOnLaunch,
-            hasActivated: visualTestHasActivated
+            hasActivated: false
         )
     }
 
@@ -163,10 +162,6 @@ struct ContentView: View {
                     // narrow overlap above the following HStack sibling.
                     .zIndex(1)
                     .debugVisualAnchor("sidebar-frame")
-                    .transition(MotionPolicy.transition(
-                        .move(edge: .leading).combined(with: .opacity),
-                        reduceMotion: reduceMotion
-                    ))
             }
 
             VStack(spacing: 0) {
@@ -286,23 +281,30 @@ struct ContentView: View {
         )
         .background(DesignTokens.swiftUI.paper)
         .ignoresSafeArea()
-        // Ordinary and activated launches use the production child panel. An
-        // inactive passive visual launch renders the same palette view inside the
-        // ordered-out main surface so there is no second window to expose or focus.
-        .background {
-            if palettePresentationMode == .childPanel {
-                PaletteBlurHost(docManager: docManager)
-            }
+        // Product-owned traffic controls occupy the same fixed 44 pt sidebar
+        // header that the prototype reserves, while AppKit retains the window
+        // close, minimize, and zoom actions.
+        .overlay(alignment: .topLeading) {
+            NativeTrafficControls()
+                .padding(.top, 16)
+                .padding(.leading, 14)
         }
-        .overlay {
-            if palettePresentationMode == .inlinePassive, docManager.paletteOpen {
-                CommandPaletteView()
-                    .environmentObject(docManager)
-            }
-        }
+        // The prototype places the native drag target above window chrome but
+        // below the palette and toast.  It is visual feedback only: keeping it
+        // hit-test transparent leaves the real root `onDrop` target, its file
+        // admission policy, and its accessibility semantics active.
         .overlay {
             if isDragging {
                 dragOverlay
+            }
+        }
+        // Keep the palette in this document window. It covers the drag surface
+        // and traffic controls (z-index 40 and ordinary chrome in the
+        // prototype), while the toast added next remains above it at z-index 60.
+        .overlay {
+            if docManager.paletteOpen {
+                CommandPaletteView()
+                    .environmentObject(docManager)
             }
         }
         .overlay(alignment: .top) {
@@ -310,10 +312,6 @@ struct ContentView: View {
                 ToastView(message: toaster.message)
                     .debugVisualAnchor("toast-frame")
                     .padding(.top, 56)
-                    .transition(MotionPolicy.transition(
-                        .opacity,
-                        reduceMotion: reduceMotion
-                    ))
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDragging) { providers in
@@ -324,10 +322,6 @@ struct ContentView: View {
             docManager.openSelection(url, admission: .system)
         }
         .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
-        .animation(
-            MotionPolicy.animation(.easeInOut(duration: 0.18), reduceMotion: reduceMotion),
-            value: docManager.sidebarOpen
-        )
         .onAppear {
             resetDocumentModels(for: docManager.activeTabID)
             guard !hasInitialized else { return }
@@ -407,11 +401,6 @@ struct ContentView: View {
             publishNonMarkdownDiagnosticSurfaceIfNeeded()
         }
         .onDisappear { removeShiftMonitor() }
-        .onReceive(NotificationCenter.default.publisher(
-            for: NSApplication.didBecomeActiveNotification
-        )) { _ in
-            visualTestHasActivated = true
-        }
         .mvTooltipHost()
     }
 
@@ -438,6 +427,8 @@ struct ContentView: View {
                 .shadow(color: .black.opacity(0.14), radius: 14, y: 8)
         }
         .padding(10)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
         .accessibilityIdentifier("file-drop-overlay")
     }
 

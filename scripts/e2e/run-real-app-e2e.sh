@@ -3248,7 +3248,7 @@ if diagnostic.get("schemaVersion") != 1 \
         or visual.get("documentVisible") is not True \
         or visual.get("sidebarVisible") is not True \
         or visual.get("paletteVisible") is not False \
-        or visual.get("palettePresentation") != "child-panel" \
+        or visual.get("palettePresentation") != "inline-main" \
         or visual.get("findPanelVisible") is not False \
         or visual.get("replaceRowVisible") is not False \
         or visual.get("previewActive") is not False \

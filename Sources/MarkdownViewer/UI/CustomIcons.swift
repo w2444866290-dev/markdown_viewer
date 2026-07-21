@@ -91,21 +91,30 @@ enum CustomIcons {
     /// Sidebar folder: filled folder (spec L69, viewBox 0 0 14 12, fill #C7C7CC).
     static func sidebarFolder(size: NSSize) -> NSImage {
         NSImage(size: size, flipped: false) { _ in
+            // SVG uses the browser default preserveAspectRatio="xMidYMid meet".
+            // The 14x12 viewBox therefore scales uniformly into the 13x11
+            // layout box rather than stretching its path coordinates.
+            let scale = min(size.width / 14, size.height / 12)
+            let originX = (size.width - 14 * scale) / 2
+            let originY = (size.height - 12 * scale) / 2
+            func point(_ x: CGFloat, _ svgY: CGFloat) -> NSPoint {
+                NSPoint(x: originX + x * scale, y: originY + (12 - svgY) * scale)
+            }
             let p = NSBezierPath()
-            p.move(to: NSPoint(x: 1, y: 12 - 9.5))               // M1 9.5
-            p.curve(to: NSPoint(x: 2.5, y: 12 - 11),              // Q1 11 → 2.5 11
-                    controlPoint1: NSPoint(x: 1, y: 12 - 11), controlPoint2: NSPoint(x: 2.5, y: 12 - 11))
-            p.line(to: NSPoint(x: 5, y: 12 - 11))                 // L5 11
-            p.line(to: NSPoint(x: 6.5, y: 12 - 9.5))              // L6.5 9.5
-            p.line(to: NSPoint(x: 11.5, y: 12 - 9.5))             // L11.5 9.5
-            p.curve(to: NSPoint(x: 13, y: 12 - 7.5),              // Q13 9.5 → 13 7.5
-                    controlPoint1: NSPoint(x: 13, y: 12 - 9.5), controlPoint2: NSPoint(x: 13, y: 12 - 7.5))
-            p.line(to: NSPoint(x: 13, y: 12 - 3))                 // L13 3
-            p.curve(to: NSPoint(x: 11.5, y: 12 - 1.5),            // Q13 1.5 → 11.5 1.5
-                    controlPoint1: NSPoint(x: 13, y: 12 - 1.5), controlPoint2: NSPoint(x: 11.5, y: 12 - 1.5))
-            p.line(to: NSPoint(x: 2.5, y: 12 - 1.5))              // L2.5 1.5
-            p.curve(to: NSPoint(x: 1, y: 12 - 3),                 // Q1 1.5 → 1 3
-                    controlPoint1: NSPoint(x: 1, y: 12 - 1.5), controlPoint2: NSPoint(x: 1, y: 12 - 3))
+            p.move(to: point(1, 9.5))               // M1 9.5
+            p.curve(to: point(2.5, 11),              // Q1 11 -> 2.5 11
+                    controlPoint1: point(1, 11), controlPoint2: point(2.5, 11))
+            p.line(to: point(5, 11))                 // L5 11
+            p.line(to: point(6.5, 9.5))              // L6.5 9.5
+            p.line(to: point(11.5, 9.5))             // L11.5 9.5
+            p.curve(to: point(13, 7.5),              // Q13 9.5 -> 13 7.5
+                    controlPoint1: point(13, 9.5), controlPoint2: point(13, 7.5))
+            p.line(to: point(13, 3))                 // L13 3
+            p.curve(to: point(11.5, 1.5),            // Q13 1.5 -> 11.5 1.5
+                    controlPoint1: point(13, 1.5), controlPoint2: point(11.5, 1.5))
+            p.line(to: point(2.5, 1.5))              // L2.5 1.5
+            p.curve(to: point(1, 3),                 // Q1 1.5 -> 1 3
+                    controlPoint1: point(1, 1.5), controlPoint2: point(1, 3))
             p.close()
             NSColor(hex: 0xC7C7CC).setFill()
             p.fill()
@@ -116,18 +125,41 @@ enum CustomIcons {
     /// Sidebar / palette file: document with two lines (spec L72, viewBox 0 0 11 13).
     static func docFile(size: NSSize) -> NSImage {
         NSImage(size: size, flipped: false) { _ in
-            let p = NSBezierPath(roundedRect: NSRect(x: 0.7, y: 0.7, width: 9.6, height: 11.6),
-                                  xRadius: 1.6, yRadius: 1.6)
-            p.lineWidth = 1.0
+            // Match the SVG's default uniform viewBox scaling. Its strokes
+            // scale with the path, unlike an AppKit path transform by itself.
+            let scale = min(size.width / 11, size.height / 13)
+            let originX = (size.width - 11 * scale) / 2
+            let originY = (size.height - 13 * scale) / 2
+            func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+                NSPoint(x: originX + x * scale, y: originY + y * scale)
+            }
+            let p = NSBezierPath(
+                roundedRect: NSRect(
+                    x: originX + 0.7 * scale,
+                    y: originY + 0.7 * scale,
+                    width: 9.6 * scale,
+                    height: 11.6 * scale
+                ),
+                xRadius: 1.6 * scale,
+                yRadius: 1.6 * scale
+            )
+            p.lineWidth = scale
             NSColor.white.setFill()
             p.fill()
             NSColor(hex: 0xC2C2C8).setStroke()
             p.stroke()
             let lineColor = NSColor(hex: 0xC2C2C8)
             lineColor.setStroke()
-            NSBezierPath.defaultLineWidth = 1.0
-            NSBezierPath.strokeLine(from: NSPoint(x: 3, y: 9), to: NSPoint(x: 8, y: 9))
-            NSBezierPath.strokeLine(from: NSPoint(x: 3, y: 6.5), to: NSPoint(x: 8, y: 6.5))
+            let upperLine = NSBezierPath()
+            upperLine.move(to: point(3, 9))
+            upperLine.line(to: point(8, 9))
+            upperLine.lineWidth = scale
+            upperLine.stroke()
+            let lowerLine = NSBezierPath()
+            lowerLine.move(to: point(3, 6.5))
+            lowerLine.line(to: point(8, 6.5))
+            lowerLine.lineWidth = scale
+            lowerLine.stroke()
             return true
         }
     }

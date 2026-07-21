@@ -287,6 +287,7 @@ struct WindowGeometryConfigurator: NSViewRepresentable {
             guard let window = nsView.window, !context.coordinator.didApply else { return }
             context.coordinator.didApply = true
             WindowMovementPolicy.apply(to: window)
+            WindowChromeController.shared.configure(window: window)
             window.minSize = NSSize(width: 860, height: 560)
             window.setFrame(
                 NSRect(origin: window.frame.origin, size: frameSize),

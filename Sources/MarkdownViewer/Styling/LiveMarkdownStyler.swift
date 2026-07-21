@@ -12,7 +12,6 @@ enum LiveMarkdownStyler {
     private static let quoteBackground = NSColor.clear
 
     private static let headingRegex = try! NSRegularExpression(pattern: "^(#{1,6})\\s+(.+)$", options: [.anchorsMatchLines])
-    private static let cjkRegex = try! NSRegularExpression(pattern: "[\u{2E80}-\u{9FFF}\u{3040}-\u{30FF}\u{AC00}-\u{D7AF}\u{FF00}-\u{FFEF}\u{3000}-\u{303F}]")
     private static let listRegex = try! NSRegularExpression(pattern: "^(\\s*(?:[-*+] |\\d+\\. ))(.+)$", options: [.anchorsMatchLines])
     private static let taskRegex = try! NSRegularExpression(pattern: "^(\\s*[-*+] \\[[ xX]\\] )(.+)$", options: [.anchorsMatchLines])
 
@@ -193,15 +192,6 @@ enum LiveMarkdownStyler {
                     .foregroundColor: DesignTokens.headingText,
                     .paragraphStyle: headingParagraphStyle(level: level)
                 ], range: substringRange)
-                let textRange = heading.range(at: 2)
-                if textRange.location != NSNotFound, textRange.length > 0 {
-                    let headingText = nsString.substring(with: textRange)
-                    if level == 1 {
-                        textStorage.addAttributes([.kern: -0.2], range: textRange)
-                    } else if level == 2, !containsCJK(headingText) {
-                        textStorage.addAttributes([.kern: 0.3], range: textRange)
-                    }
-                }
                 textStorage.addAttributes(hiddenMarkupAttributes(), range: heading.range(at: 1))
                 index += 1
                 continue
@@ -276,11 +266,6 @@ enum LiveMarkdownStyler {
 
             index += 1
         }
-    }
-
-    private static func containsCJK(_ text: String) -> Bool {
-        let range = NSRange(location: 0, length: (text as NSString).length)
-        return cjkRegex.firstMatch(in: text, range: range) != nil
     }
 
     private static func firstMatch(_ regex: NSRegularExpression, in nsString: NSString, exactly range: NSRange) -> NSTextCheckingResult? {

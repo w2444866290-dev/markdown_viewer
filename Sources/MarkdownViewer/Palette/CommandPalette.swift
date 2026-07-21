@@ -10,6 +10,8 @@ enum PalettePresentationMetrics {
     static let listContentMaxHeight: CGFloat = 340
     static let listPadding: CGFloat = 8
     static let veilOpacity: CGFloat = 0.6
+    static let entranceDuration: TimeInterval = 0.12
+    static let entranceOffset: CGFloat = 4
 
     static var listOuterMaxHeight: CGFloat {
         listContentMaxHeight + 2 * listPadding
@@ -118,10 +120,13 @@ enum PaletteKeyboard {
 }
 
 struct CommandPaletteView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject var docManager: DocumentManager
     @State private var query: String = ""
     @State private var selectedIndex: Int = 0
     @State private var eventMonitor: Any?
+    @State private var panelEntered = false
+    @State private var pointingCursorIsPushed = false
     @FocusState private var searchFocused: Bool
 
     private var commands: [PaletteCommandDefinition] {
@@ -188,13 +193,17 @@ struct CommandPaletteView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
-                // The captured reference renders this as a literal 60% veil.
-                // Keep the content sharp underneath instead of blurring the whole window.
+                // The captured reference renders this as a literal 60% veil
+                // over the existing document. Do not insert an AppKit material
+                // view here: in a SwiftUI overlay it composites as an opaque
+                // material surface instead of sampling this document window.
                 Color(red: 248/255, green: 248/255, blue: 250/255)
                     .opacity(PalettePresentationMetrics.veilOpacity)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture { docManager.closeCommandPalette() }
+                    .accessibilityLabel("关闭命令面板")
+                    .accessibilityAddTraits(.isButton)
 
                 VStack(spacing: 0) {
                     Spacer().frame(height: PalettePresentationMetrics.topInset)
@@ -208,6 +217,7 @@ struct CommandPaletteView: View {
                             .frame(height: PalettePresentationMetrics.searchHeight)
                             .focused($searchFocused)
                             .onChange(of: query) { _ in
+                                releasePointingCursor()
                                 selectedIndex = 0
                             }
 
@@ -257,6 +267,7 @@ struct CommandPaletteView: View {
                         // CSS max-height applies to its content box, with 8pt padding
                         // outside that limit. Preserve the resulting 356pt outer height.
                         .frame(maxHeight: PalettePresentationMetrics.listOuterMaxHeight)
+                        .accessibilityLabel("命令面板结果")
                     }
                     .frame(width: PalettePresentationMetrics.panelWidth(for: geometry.size.width))
                     .background(DesignTokens.swiftUI.paper)
@@ -269,6 +280,10 @@ struct CommandPaletteView: View {
                     .debugVisualAnchor("palette-panel-frame")
                     .contentShape(RoundedRectangle(cornerRadius: 14))
                     .onTapGesture { searchFocused = true }
+                    // `overlayIn` in the prototype animates this panel only,
+                    // not the dimming veil behind it.
+                    .opacity(panelEntered ? 1 : 0)
+                    .offset(y: panelEntered ? 0 : -PalettePresentationMetrics.entranceOffset)
 
                     Spacer(minLength: 0)
                 }
@@ -277,6 +292,15 @@ struct CommandPaletteView: View {
         .ignoresSafeArea()
         .onAppear {
             installKeyMonitor()
+            panelEntered = reduceMotion
+            DispatchQueue.main.async {
+                MotionPolicy.perform(
+                    reduceMotion: reduceMotion,
+                    animation: .easeOut(duration: PalettePresentationMetrics.entranceDuration)
+                ) {
+                    panelEntered = true
+                }
+            }
             guard AppEnv.allowsAutomaticFocusRequests else { return }
             DispatchQueue.main.async { searchFocused = true }  // autofocus the field
         }
@@ -286,7 +310,11 @@ struct CommandPaletteView: View {
                 itemCount: itemCount
             )
         }
-        .onDisappear { removeKeyMonitor() }
+        .onDisappear {
+            panelEntered = false
+            releasePointingCursor()
+            removeKeyMonitor()
+        }
     }
 
     private func execute(_ command: PaletteCommandID) {
@@ -355,7 +383,10 @@ struct CommandPaletteView: View {
             onEscape: { docManager.closeCommandPalette() }
         )
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.window is KeyablePanel,
+            // This view is only installed while the in-window palette is
+            // present. Do not require a temporary child NSPanel: keyboard
+            // navigation now belongs to the owning document window as well.
+            guard event.window != nil,
                   let command = PaletteKeyboard.command(
                     forKeyCode: event.keyCode,
                     modifiers: event.modifierFlags
@@ -375,6 +406,22 @@ struct CommandPaletteView: View {
     private func removeKeyMonitor() {
         if let m = eventMonitor { NSEvent.removeMonitor(m) }
         eventMonitor = nil
+    }
+
+    private func updatePointingCursor(_ hovering: Bool) {
+        guard hovering != pointingCursorIsPushed else { return }
+        pointingCursorIsPushed = hovering
+        if hovering {
+            NSCursor.pointingHand.push()
+        } else {
+            NSCursor.pop()
+        }
+    }
+
+    private func releasePointingCursor() {
+        guard pointingCursorIsPushed else { return }
+        pointingCursorIsPushed = false
+        NSCursor.pop()
     }
 
     private func sectionHeader(_ title: String, topPadding: Bool) -> some View {
@@ -436,7 +483,13 @@ struct CommandPaletteView: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            if hovering { selectedIndex = index }
+            // The reference explicitly uses `cursor: pointer` for command and
+            // document rows. SwiftUI's plain button style preserves the visual
+            // geometry but does not guarantee that cursor on macOS.
+            if hovering {
+                selectedIndex = index
+            }
+            updatePointingCursor(hovering)
         }
     }
 }

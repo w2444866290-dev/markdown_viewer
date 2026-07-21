@@ -37,6 +37,7 @@ enum BlockSourceHighlighter {
         let semiboldFont: NSFont
         let markerFont: NSFont
         let headingFont: NSFont?
+        let baseTextColor: NSColor
         let paragraphStyle: NSParagraphStyle
         let inlineCodeFont: NSFont
     }
@@ -256,7 +257,7 @@ enum BlockSourceHighlighter {
     ) -> [NSAttributedString.Key: Any] {
         return [
             .font: style.baseFont,
-            .foregroundColor: DesignTokens.bodyText,
+            .foregroundColor: style.baseTextColor,
             .paragraphStyle: style.paragraphStyle,
             .ligature: 0,
         ]
@@ -353,6 +354,12 @@ enum BlockSourceHighlighter {
             semiboldFont: semiboldFont,
             markerFont: baseFont,
             headingFont: headingFont,
+            // The prototype's code and table source cards use #444 rather than
+            // the regular reading text. This is a source-state color only; it
+            // deliberately does not tune the native glyph metrics.
+            baseTextColor: isMonospaced
+                ? NSColor(srgbRed: 68 / 255, green: 68 / 255, blue: 68 / 255, alpha: 1)
+                : DesignTokens.bodyText,
             paragraphStyle: paragraph,
             inlineCodeFont: NSFont.monospacedSystemFont(
                 ofSize: max(11, bodyFontSize * 0.85),
@@ -611,6 +618,7 @@ struct BlockSourceEditor: NSViewRepresentable {
             if reenableUndo { undo?.enableUndoRegistration() }
             undo?.removeAllActions()
 
+            host.configureChrome(for: kind)
             host.setHorizontalScrolling(Self.scrollsHorizontally(kind))
             applyHighlight()
             applyAccessibility()
@@ -642,6 +650,7 @@ struct BlockSourceEditor: NSViewRepresentable {
             lastBodyFontSize = parent.bodyFontSize
             lastFindHighlights = parent.findHighlights
             if kindChanged || fontSizeChanged {
+                host.configureChrome(for: kind)
                 host.setHorizontalScrolling(Self.scrollsHorizontally(kind))
                 applyHighlight()
                 scheduleMeasurement()
@@ -977,7 +986,8 @@ struct BlockSourceEditor: NSViewRepresentable {
             guard let textView else { return }
             textView.identifier = NSUserInterfaceItemIdentifier(parent.accessibilityIdentifier)
             textView.setAccessibilityIdentifier(parent.accessibilityIdentifier)
-            textView.setAccessibilityLabel("Markdown block source")
+            textView.setAccessibilityLabel("Markdown 源代码编辑器")
+            textView.setAccessibilityHelp("编辑当前 Markdown 区块。按 Escape 完成编辑。")
         }
 
         private func scheduleLiveChange() {
@@ -1129,9 +1139,19 @@ final class BlockSourceTextView: NSTextView {
 }
 
 final class BlockSourceEditorHostView: NSView {
+    private static let codeCardBorder = NSColor(
+        srgbRed: 233 / 255,
+        green: 233 / 255,
+        blue: 239 / 255,
+        alpha: 1
+    )
+
     let textView: BlockSourceTextView
     let scrollView = NSScrollView(frame: .zero)
+    private let sourceCard = NSView(frame: .zero)
     private let amberRail = NSView(frame: .zero)
+    private let cardAccentRail = NSView(frame: .zero)
+    private var blockKind: MarkdownBlockKind = .paragraph
     private(set) var scrollsHorizontally = false
     private var measuredHeight: CGFloat = 34
     var onLayout: (() -> Void)?
@@ -1143,10 +1163,24 @@ final class BlockSourceEditorHostView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
+        sourceCard.wantsLayer = true
+        sourceCard.layer?.backgroundColor = DesignTokens.codeBackground.cgColor
+        sourceCard.layer?.borderColor = Self.codeCardBorder.cgColor
+        sourceCard.layer?.borderWidth = 1
+        sourceCard.layer?.cornerRadius = 6
+        sourceCard.layer?.masksToBounds = true
+        sourceCard.isHidden = true
+        addSubview(sourceCard)
+
         amberRail.wantsLayer = true
         amberRail.layer?.backgroundColor = DesignTokens.accent.cgColor
         amberRail.layer?.cornerRadius = 1.5
         addSubview(amberRail)
+
+        cardAccentRail.wantsLayer = true
+        cardAccentRail.layer?.backgroundColor = DesignTokens.accent.cgColor
+        cardAccentRail.isHidden = true
+        addSubview(cardAccentRail)
 
         scrollView.drawsBackground = false
         scrollView.backgroundColor = .clear
@@ -1170,6 +1204,24 @@ final class BlockSourceEditorHostView: NSView {
 
     var editorViewportWidth: CGFloat {
         max(0, scrollView.contentSize.width)
+    }
+
+    /// Mirrors the three source-editing surfaces from the prototype without
+    /// replacing the native NSTextView: plain blocks use the external amber
+    /// rail, code uses that rail plus an inset code card, and table source puts
+    /// the amber rail inside its code card.
+    func configureChrome(for kind: MarkdownBlockKind) {
+        blockKind = kind
+        let usesCard = kind == .code || kind == .table
+        sourceCard.isHidden = !usesCard
+        amberRail.isHidden = kind == .table
+        cardAccentRail.isHidden = kind != .table
+        textView.textContainerInset = usesCard
+            ? NSSize(width: 14, height: 12)
+            : NSSize(width: 3, height: 1)
+        textView.needsDisplay = true
+        needsLayout = true
+        onLayout?()
     }
 
     func setHorizontalScrolling(_ enabled: Bool) {
@@ -1201,12 +1253,22 @@ final class BlockSourceEditorHostView: NSView {
     override func layout() {
         super.layout()
         amberRail.frame = NSRect(x: 0, y: 0, width: 3, height: bounds.height)
-        scrollView.frame = NSRect(
-            x: 11,
+        let usesCard = blockKind == .code || blockKind == .table
+        let editorLeading = usesCard ? 14.0 : 11.0
+        let editorFrame = NSRect(
+            x: editorLeading,
             y: 0,
-            width: max(0, bounds.width - 11),
+            width: max(0, bounds.width - editorLeading),
             height: bounds.height
         )
+        sourceCard.frame = usesCard ? editorFrame : .zero
+        cardAccentRail.frame = NSRect(
+            x: editorFrame.minX,
+            y: 0,
+            width: 3,
+            height: bounds.height
+        )
+        scrollView.frame = editorFrame
         onLayout?()
     }
 }
