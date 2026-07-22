@@ -488,8 +488,8 @@ debug_app_is_reusable() {
     cmp -s "$expected_manifest" "$packaged_manifest" \
         || reject_reuse "signed input manifest does not match current inputs" \
         || return 1
-    cmp -s "$ROOT_DIR/Resources/AppIcon.icns" "$icon" \
-        || reject_reuse "packaged icon does not match Resources/AppIcon.icns" \
+    cmp -s "$ROOT_DIR/Resources/AppIconDebug.icns" "$icon" \
+        || reject_reuse "packaged icon does not match Resources/AppIconDebug.icns" \
         || return 1
 
     local packaged_fixture_sha
@@ -504,6 +504,7 @@ debug_app_is_reusable() {
     [[ "$(plist_value "$plist" CFBundleExecutable || true)" == "MarkdownViewer" \
         && "$(plist_value "$plist" CFBundleIdentifier || true)" == "local.codex.markdownviewer.debug" \
         && "$(plist_value "$plist" CFBundleName || true)" == "MarkdownViewerDebug" \
+        && "$(plist_value "$plist" CFBundleDisplayName || true)" == "MarkdownViewer Debug" \
         && "$(plist_value "$plist" CFBundleShortVersionString || true)" == "$MARKETING_VERSION" \
         && "$(plist_value "$plist" CFBundleVersion || true)" == "$BUILD_NUMBER" \
         && "$(plist_value "$plist" MVGitCommit || true)" == "$BUILD_SHA" ]] \
@@ -571,7 +572,9 @@ while (( attempt <= 3 )); do
     mkdir -p "$STAGE_APP/Contents/Resources/DebugFixtures"
     cp "$BINARY" "$STAGE_APP/Contents/MacOS/MarkdownViewer"
     cp "$ROOT_DIR/Resources/Info.plist" "$STAGE_APP/Contents/Info.plist"
-    cp "$ROOT_DIR/Resources/AppIcon.icns" "$STAGE_APP/Contents/Resources/AppIcon.icns"
+    # Keep Debug immediately recognizable in Spotlight, Finder, and the Dock.
+    # Release continues to package the unbadged AppIcon.icns.
+    cp "$ROOT_DIR/Resources/AppIconDebug.icns" "$STAGE_APP/Contents/Resources/AppIcon.icns"
     cp "$FIXTURE" "$STAGE_APP/Contents/Resources/DebugFixtures/格式示例.md"
     cp "$AFTER_MANIFEST" "$STAGE_APP/$MANIFEST_RELATIVE_PATH"
     chmod 0444 "$STAGE_APP/$MANIFEST_RELATIVE_PATH"
@@ -585,6 +588,8 @@ while (( attempt <= 3 )); do
         || /usr/libexec/PlistBuddy -c "Add :MVGitCommit string $BUILD_SHA" "$STAGE_PLIST"
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier local.codex.markdownviewer.debug" "$STAGE_PLIST"
     /usr/libexec/PlistBuddy -c "Set :CFBundleName MarkdownViewerDebug" "$STAGE_PLIST"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName MarkdownViewer Debug" "$STAGE_PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string MarkdownViewer Debug" "$STAGE_PLIST"
 
     codesign --force --deep --sign - "$STAGE_APP"
     REUSE_REASON=""

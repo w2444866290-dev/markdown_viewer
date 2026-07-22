@@ -47,6 +47,7 @@ mkdir -p \
 cp "$ROOT/scripts/build-debug.sh" "$TEST_ROOT/scripts/build-debug.sh"
 cp "$ROOT/Resources/Info.plist" "$TEST_ROOT/Resources/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$TEST_ROOT/Resources/AppIcon.icns"
+cp "$ROOT/Resources/AppIconDebug.icns" "$TEST_ROOT/Resources/AppIconDebug.icns"
 cp "$ROOT/Package.swift" "$TEST_ROOT/Package.swift"
 cp "$ROOT/VERSION" "$TEST_ROOT/VERSION"
 cp "$ROOT/ui/格式示例.md" "$TEST_ROOT/ui/格式示例.md"
@@ -103,6 +104,7 @@ SCRIPT="$TEST_ROOT/scripts/build-debug.sh"
 EXPECTED_APP="$TEST_ROOT/dist/debug/MarkdownViewer.app"
 EXPECTED_MANIFEST="$EXPECTED_APP/Contents/Resources/BuildDebugInputs.manifest"
 PACKAGED_FIXTURE="$EXPECTED_APP/Contents/Resources/DebugFixtures/格式示例.md"
+PACKAGED_ICON="$EXPECTED_APP/Contents/Resources/AppIcon.icns"
 SOURCE_INPUT="$TEST_ROOT/Sources/MarkdownViewer/Input.swift"
 export FAKE_SWIFT_BIN_DIR="$TEMP_ROOT/swift-bin"
 export FAKE_SWIFT_LOG="$SWIFT_LOG"
@@ -124,6 +126,11 @@ assert_output_path "$TEMP_ROOT/first.stdout" "first build"
     || fail "first build did not package the Debug fixture"
 cmp -s "$TEST_ROOT/ui/格式示例.md" "$PACKAGED_FIXTURE" \
     || fail "packaged Debug fixture does not match ui/格式示例.md"
+cmp -s "$TEST_ROOT/Resources/AppIconDebug.icns" "$PACKAGED_ICON" \
+    || fail "packaged Debug icon does not contain the Debug badge"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' \
+    "$EXPECTED_APP/Contents/Info.plist")" == "MarkdownViewer Debug" ]] \
+    || fail "packaged Debug display name is not distinct from Release"
 rg -q $'^file\t[0-9a-f]{64}\tui/格式示例\\.md$' "$EXPECTED_MANIFEST" \
     || fail "input manifest does not cover ui/格式示例.md"
 if rg -q 'Markdown Viewer\\.dc\\.html|support\\.js' "$EXPECTED_MANIFEST"; then
