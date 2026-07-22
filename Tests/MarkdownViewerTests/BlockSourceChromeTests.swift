@@ -6,6 +6,11 @@ import Testing
 @Suite(.serialized)
 struct BlockSourceChromeTests {
     @Test
+    func entryBackgroundUsesPrototypeTransitionDuration() {
+        #expect(BlockSourceEditorHostView.backgroundTransitionDuration == 0.13)
+    }
+
+    @Test
     func plainAndCardSourceUseTheirPrototypeInsetsAndLeadingEdges() {
         let host = BlockSourceEditorHostView(textView: BlockSourceTextView(frame: .zero))
         host.frame = NSRect(x: 0, y: 0, width: 640, height: 80)

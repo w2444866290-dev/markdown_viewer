@@ -86,6 +86,7 @@ enum MarkdownHorizontalScrollerLayout {
 }
 
 struct MarkdownBlockRenderer: View, Equatable {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let block: MarkdownBlock
     let bodyFontSize: CGFloat
     let previewMode: Bool
@@ -103,7 +104,7 @@ struct MarkdownBlockRenderer: View, Equatable {
     let onTableCell: (MarkdownTableCell) -> Void
     var onRender: (UUID) -> Void = { _ in }
     var onFootnoteBack: (String) -> Void = { _ in }
-    var onHoverURL: (String) -> Void = { _ in }
+    var onHoverURL: (String, CGRect?) -> Void = { _, _ in }
     var onOpenURL: (String) -> Void = { _ in }
 
     @State private var hovered = false
@@ -527,6 +528,13 @@ struct MarkdownBlockRenderer: View, Equatable {
                 .fill(editHoverActive ? Color.black.opacity(0.035) : Color.clear)
                 .padding(.horizontal, -14)
                 .padding(.vertical, -5)
+                .animation(
+                    MotionPolicy.animation(
+                        .easeInOut(duration: 0.13),
+                        reduceMotion: reduceMotion
+                    ),
+                    value: editHoverActive
+                )
         }
     }
 
@@ -858,7 +866,7 @@ struct MarkdownInlineText: View {
     var findHighlights: [PassiveFindHighlight] = []
     var accessibilityBlockIndex: Int? = nil
     var accessibilityLeafScope: String? = nil
-    var onHoverURL: (String) -> Void = { _ in }
+    var onHoverURL: (String, CGRect?) -> Void = { _, _ in }
     var onOpenURL: (String) -> Void = { _ in }
     var lineSpacing: CGFloat = 0
 
@@ -1166,7 +1174,7 @@ private struct MarkdownTableBlock: View {
     let diagnosticIndex: Int
     let interactionPolicy: MarkdownBlockInteractionPolicy
     let onCell: (MarkdownTableCell) -> Void
-    let onHoverURL: (String) -> Void
+    let onHoverURL: (String, CGRect?) -> Void
     let onOpenURL: (String) -> Void
     @State private var hovered = false
 
@@ -1187,11 +1195,24 @@ private struct MarkdownTableBlock: View {
     private var tableCard: some View {
         Group {
             if let grid = try? MarkdownTableGrid(parsing: source) {
+                let columnWidths = resolvedColumnWidths(for: grid)
                 ScrollView(.horizontal, showsIndicators: true) {
-                    VStack(spacing: 0) {
-                        tableRow(grid.header, row: -1, grid: grid, header: true)
+                    VStack(alignment: .leading, spacing: 0) {
+                        tableRow(
+                            grid.header,
+                            row: -1,
+                            grid: grid,
+                            header: true,
+                            columnWidths: columnWidths
+                        )
                         ForEach(Array(grid.rows.enumerated()), id: \.offset) { row, cells in
-                            tableRow(cells, row: row, grid: grid, header: false)
+                            tableRow(
+                                cells,
+                                row: row,
+                                grid: grid,
+                                header: false,
+                                columnWidths: columnWidths
+                            )
                         }
                     }
                     .frame(
@@ -1242,13 +1263,10 @@ private struct MarkdownTableBlock: View {
         _ cells: [String],
         row: Int,
         grid: MarkdownTableGrid,
-        header: Bool
+        header: Bool,
+        columnWidths: [CGFloat]
     ) -> some View {
-        let columnWidth = MarkdownTableLayout.columnWidth(
-            availableWidth: paperWidth,
-            columnCount: grid.columnCount
-        )
-        return HStack(spacing: 0) {
+        HStack(spacing: 0) {
             ForEach(cells.indices, id: \.self) { column in
                 tableCell(
                     value: cells[column],
@@ -1256,10 +1274,11 @@ private struct MarkdownTableBlock: View {
                     column: column,
                     grid: grid,
                     header: header,
-                    columnWidth: columnWidth
+                    columnWidth: columnWidths[column]
                 )
             }
         }
+        .background(header ? Color(hex: 0xF6F6F9) : Color(hex: 0xFBFBFC))
         .overlay(alignment: .bottom) {
             if header || row < grid.rows.count - 1 {
                 Rectangle().fill(Color(hex: 0xF0F0F1)).frame(height: 1)
@@ -1350,13 +1369,49 @@ private struct MarkdownTableBlock: View {
             onOpenURL: onOpenURL
         )
         .frame(
-            minWidth: max(0, columnWidth - 28),
+            width: max(0, columnWidth - 28),
             alignment: alignment(grid.alignments[column])
         )
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .frame(minHeight: MarkdownTableLayout.rowHeight(header: header))
         .background(header ? Color(hex: 0xF6F6F9) : Color(hex: 0xFBFBFC))
+    }
+
+    private func resolvedColumnWidths(for grid: MarkdownTableGrid) -> [CGFloat] {
+        let minimum = MarkdownTableLayout.columnWidth(
+            availableWidth: paperWidth,
+            columnCount: grid.columnCount
+        )
+        return grid.header.indices.map { column in
+            let headerWidth = intrinsicCellWidth(grid.header[column], header: true)
+            let bodyWidth = grid.rows.reduce(CGFloat.zero) { widest, row in
+                max(widest, intrinsicCellWidth(row[column], header: false))
+            }
+            return max(minimum, max(headerWidth, bodyWidth))
+        }
+    }
+
+    private func intrinsicCellWidth(_ source: String, header: Bool) -> CGFloat {
+        let rendered = PassiveMarkdownInlineRenderer.render(
+            header ? source.uppercased() : source,
+            style: PassiveMarkdownInlineStyle(
+                font: NSFont.systemFont(
+                    ofSize: header ? 12 : 13.5,
+                    weight: header ? .bold : .regular
+                ),
+                color: header ? DesignTokens.titleText : DesignTokens.bodyText,
+                kern: header ? 0.4 : 0
+            )
+        )
+        let bounds = rendered.boundingRect(
+            with: NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            ),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        return ceil(bounds.width) + 28
     }
 
     private func highlights(

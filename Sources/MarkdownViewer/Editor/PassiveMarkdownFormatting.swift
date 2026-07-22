@@ -649,7 +649,7 @@ struct PassiveInlineLinkHoverLayer: NSViewRepresentable {
     let accessibilityBlockIndex: Int?
     let accessibilityLeafScope: String?
     let lineSpacing: CGFloat
-    let onHoverURL: (String) -> Void
+    let onHoverURL: (String, CGRect?) -> Void
     var onOpenURL: (String) -> Void = { _ in }
 
     func makeNSView(context: Context) -> PassiveInlineLinkTrackingView {
@@ -658,13 +658,13 @@ struct PassiveInlineLinkHoverLayer: NSViewRepresentable {
             accessibilityBlockIndex: accessibilityBlockIndex,
             accessibilityLeafScope: accessibilityLeafScope,
             lineSpacing: lineSpacing,
-            onHoverURL: onHoverURL,
+            onHoverTarget: onHoverURL,
             onOpenURL: onOpenURL
         )
     }
 
     func updateNSView(_ view: PassiveInlineLinkTrackingView, context: Context) {
-        view.onHoverURL = onHoverURL
+        view.onHoverTarget = onHoverURL
         view.onOpenURL = onOpenURL
         view.accessibilityBlockIndex = accessibilityBlockIndex
         view.accessibilityLeafScope = accessibilityLeafScope
@@ -681,7 +681,7 @@ struct PassiveInlineLinkHoverLayer: NSViewRepresentable {
 }
 
 final class PassiveInlineLinkTrackingView: NSView {
-    var onHoverURL: (String) -> Void
+    var onHoverTarget: (String, CGRect?) -> Void
     var onOpenURL: (String) -> Void
     var accessibilityBlockIndex: Int? {
         didSet {
@@ -716,6 +716,7 @@ final class PassiveInlineLinkTrackingView: NSView {
     private let textContainer = NSTextContainer()
     private var tracking: NSTrackingArea?
     private var hoveredURL = ""
+    private var hoveredAnchorScreenRect: CGRect?
     private var accessibilityLinks: [PassiveInlineAccessibilityLink] = []
     private var accessibilityLinksByKey: [String: PassiveInlineAccessibilityLink] = [:]
 
@@ -726,14 +727,14 @@ final class PassiveInlineLinkTrackingView: NSView {
         accessibilityBlockIndex: Int? = nil,
         accessibilityLeafScope: String? = nil,
         lineSpacing: CGFloat = 0,
-        onHoverURL: @escaping (String) -> Void,
+        onHoverTarget: @escaping (String, CGRect?) -> Void,
         onOpenURL: @escaping (String) -> Void
     ) {
         self.attributed = attributed
         self.accessibilityBlockIndex = accessibilityBlockIndex
         self.accessibilityLeafScope = accessibilityLeafScope
         self.lineSpacing = lineSpacing
-        self.onHoverURL = onHoverURL
+        self.onHoverTarget = onHoverTarget
         self.onOpenURL = onOpenURL
         super.init(frame: .zero)
         textContainer.lineFragmentPadding = 0
@@ -748,6 +749,24 @@ final class PassiveInlineLinkTrackingView: NSView {
 
     convenience init(
         attributed: NSAttributedString,
+        accessibilityBlockIndex: Int? = nil,
+        accessibilityLeafScope: String? = nil,
+        lineSpacing: CGFloat = 0,
+        onHoverURL: @escaping (String) -> Void,
+        onOpenURL: @escaping (String) -> Void
+    ) {
+        self.init(
+            attributed: attributed,
+            accessibilityBlockIndex: accessibilityBlockIndex,
+            accessibilityLeafScope: accessibilityLeafScope,
+            lineSpacing: lineSpacing,
+            onHoverTarget: { destination, _ in onHoverURL(destination) },
+            onOpenURL: onOpenURL
+        )
+    }
+
+    convenience init(
+        attributed: NSAttributedString,
         onHoverURL: @escaping (String) -> Void
     ) {
         self.init(
@@ -755,7 +774,7 @@ final class PassiveInlineLinkTrackingView: NSView {
             accessibilityBlockIndex: nil,
             accessibilityLeafScope: nil,
             lineSpacing: 0,
-            onHoverURL: onHoverURL,
+            onHoverTarget: { destination, _ in onHoverURL(destination) },
             onOpenURL: { _ in }
         )
     }
@@ -810,6 +829,10 @@ final class PassiveInlineLinkTrackingView: NSView {
         updateHover(at: convert(event.locationInWindow, from: nil))
     }
 
+    override func mouseEntered(with event: NSEvent) {
+        updateHover(at: convert(event.locationInWindow, from: nil))
+    }
+
     override func mouseExited(with event: NSEvent) {
         clearHover()
     }
@@ -818,6 +841,13 @@ final class PassiveInlineLinkTrackingView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         guard let destination = linkDestination(at: point) else { return }
         onOpenURL(destination)
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        // A middle-button press must not activate the link, but the pointer is
+        // still hovering its glyph. Keeping hover state current also matches
+        // WebKit when the pointer arrives without an intermediate mouseMoved.
+        updateHover(at: convert(event.locationInWindow, from: nil))
     }
 
     override func resetCursorRects() {
@@ -859,6 +889,10 @@ final class PassiveInlineLinkTrackingView: NSView {
         setHoveredURL(destination)
     }
 
+    func reportHover(at point: NSPoint) {
+        updateHover(at: point)
+    }
+
     private func updateTextContainerSize() {
         let width = max(1, bounds.width)
         let height = max(1, bounds.height)
@@ -870,10 +904,23 @@ final class PassiveInlineLinkTrackingView: NSView {
     }
 
     private func updateHover(at point: NSPoint) {
-        setHoveredURL(linkDestination(at: point) ?? "")
+        guard let hit = linkHit(at: point) else {
+            setHoveredURL("")
+            return
+        }
+        setHoveredURL(hit.destination, anchorScreenRect: hit.anchorScreenRect)
     }
 
     func linkDestination(at point: NSPoint) -> String? {
+        linkHit(at: point)?.destination
+    }
+
+    private struct LinkHit {
+        let destination: String
+        let anchorScreenRect: CGRect?
+    }
+
+    private func linkHit(at point: NSPoint) -> LinkHit? {
         updateTextContainerSize()
         let glyphCount = layoutManager.numberOfGlyphs
         guard glyphCount > 0 else {
@@ -896,16 +943,38 @@ final class PassiveInlineLinkTrackingView: NSView {
             return nil
         }
         let character = layoutManager.characterIndexForGlyph(at: glyph)
-        return PassiveMarkdownInlineRenderer.linkDestination(
+        var characterRange = NSRange(location: 0, length: 0)
+        guard let destination = PassiveMarkdownInlineRenderer.linkDestination(
             atUTF16Index: character,
             in: textStorage
+        ), textStorage.attribute(
+            .link,
+            at: character,
+            effectiveRange: &characterRange
+        ) != nil else { return nil }
+
+        let linkGlyphRange = layoutManager.glyphRange(
+            forCharacterRange: characterRange,
+            actualCharacterRange: nil
         )
+        let localRect = layoutManager.boundingRect(
+            forGlyphRange: linkGlyphRange,
+            in: textContainer
+        )
+        let screenRect: CGRect?
+        if let window {
+            screenRect = window.convertToScreen(convert(localRect, to: nil))
+        } else {
+            screenRect = nil
+        }
+        return LinkHit(destination: destination, anchorScreenRect: screenRect)
     }
 
-    private func setHoveredURL(_ value: String) {
-        guard hoveredURL != value else { return }
+    private func setHoveredURL(_ value: String, anchorScreenRect: CGRect? = nil) {
+        guard hoveredURL != value || hoveredAnchorScreenRect != anchorScreenRect else { return }
         hoveredURL = value
-        onHoverURL(value)
+        hoveredAnchorScreenRect = anchorScreenRect
+        onHoverTarget(value, anchorScreenRect)
     }
 
     private func updateTextStorage() {

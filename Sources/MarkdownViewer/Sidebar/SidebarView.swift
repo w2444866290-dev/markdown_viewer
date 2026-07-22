@@ -191,6 +191,7 @@ struct SidebarView: View {
                         : DesignTokens.swiftUI.paletteKbd)
                     .padding(.horizontal, 16)
                     .frame(height: 38)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     // The source flex row lands on the lower physical pixel in
                     // its 38 pt container. Preserve that shared half-point snap
@@ -199,6 +200,7 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("open-command-palette")
+                .mvFocusVisible()
                 .onHover { paletteHover = $0 }
                 .mvTip("所有命令与文档 · ⌘K")
 

@@ -301,6 +301,42 @@ struct PassiveMarkdownFormattingTests {
         #expect(reflowed.frameInOwner.height < narrowHeight)
     }
 
+    @Test("runtime hover reports the rendered glyph anchor in screen coordinates")
+    @MainActor
+    func runtimeHoverAnchor() throws {
+        let rendered = PassiveMarkdownInlineRenderer.render(
+            "Read [note](mv-footnote:note).",
+            style: style
+        )
+        var target: (String, CGRect?)?
+        let tracker = PassiveInlineLinkTrackingView(
+            attributed: rendered,
+            accessibilityBlockIndex: 9,
+            onHoverTarget: { destination, rect in target = (destination, rect) },
+            onOpenURL: { _ in }
+        )
+        tracker.frame = NSRect(x: 0, y: 0, width: 260, height: 40)
+        let window = NSWindow(
+            contentRect: NSRect(x: 120, y: 160, width: 260, height: 40),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = tracker
+        tracker.layoutSubtreeIfNeeded()
+
+        let link = try #require(tracker.accessibilityChildren()?.compactMap {
+            $0 as? PassiveInlineAccessibilityLink
+        }.first)
+        tracker.reportHover(at: link.activationPointInParentSpace)
+
+        #expect(target?.0 == "mv-footnote:note")
+        let anchor = try #require(target?.1)
+        #expect(anchor.width > 0)
+        #expect(anchor.height > 0)
+        #expect(anchor.intersects(link.accessibilityFrame()))
+    }
+
     @Test("footnote references render as compact accent superscripts")
     @MainActor
     func footnoteReference() throws {

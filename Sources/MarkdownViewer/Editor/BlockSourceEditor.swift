@@ -1139,6 +1139,8 @@ final class BlockSourceTextView: NSTextView {
 }
 
 final class BlockSourceEditorHostView: NSView {
+    static let backgroundTransitionDuration: TimeInterval = 0.13
+
     private static let codeCardBorder = NSColor(
         srgbRed: 233 / 255,
         green: 233 / 255,
@@ -1152,6 +1154,7 @@ final class BlockSourceEditorHostView: NSView {
     private let amberRail = NSView(frame: .zero)
     private let cardAccentRail = NSView(frame: .zero)
     private var blockKind: MarkdownBlockKind = .paragraph
+    private var hasAnimatedEntryBackground = false
     private(set) var scrollsHorizontally = false
     private var measuredHeight: CGFloat = 34
     var onLayout: (() -> Void)?
@@ -1247,7 +1250,27 @@ final class BlockSourceEditorHostView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil { onWindowAttached?() }
+        if window != nil {
+            animateEntryBackgroundIfNeeded()
+            onWindowAttached?()
+        }
+    }
+
+    /// Continue the rendered block's hover wash into the newly mounted native
+    /// editor and let it settle to the editor background over the prototype's
+    /// 130 ms interval. The NSTextView stays live throughout the animation.
+    private func animateEntryBackgroundIfNeeded() {
+        guard !hasAnimatedEntryBackground else { return }
+        hasAnimatedEntryBackground = true
+        guard !MotionPolicy.systemReduceMotion, blockKind != .code, blockKind != .table,
+              let layer else { return }
+
+        let animation = CABasicAnimation(keyPath: "backgroundColor")
+        animation.fromValue = NSColor.black.withAlphaComponent(0.035).cgColor
+        animation.toValue = NSColor.clear.cgColor
+        animation.duration = Self.backgroundTransitionDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(animation, forKey: "mv-source-background-entry")
     }
 
     override func layout() {

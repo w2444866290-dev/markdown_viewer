@@ -1,6 +1,14 @@
 import AppKit
 import SwiftUI
 
+private struct FootnotePopoverSizePreferenceKey: PreferenceKey {
+    static var defaultValue = CGSize.zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
 struct MarkdownBlockEditorView: View {
     @EnvironmentObject private var docManager: DocumentManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -26,6 +34,8 @@ struct MarkdownBlockEditorView: View {
     @State private var footnotePopoverDefinitionID = ""
     @State private var footnotePopoverSourceBlockIndex: Int?
     @State private var footnotePopoverPoint = CGPoint.zero
+    @State private var footnotePopoverSize = CGSize.zero
+    @State private var editorGlobalFrame = CGRect.zero
     @State private var footnoteReturnBlocks: [String: UUID] = [:]
     @State private var scrollToBlockAction: ((UUID) -> Void)?
 
@@ -35,7 +45,8 @@ struct MarkdownBlockEditorView: View {
                 DesignTokens.paperWidth,
                 max(240, geometry.size.width - 138)
             )
-            let windowWidth = geometry.frame(in: .global).maxX
+            let globalFrame = geometry.frame(in: .global)
+            let windowWidth = globalFrame.maxX
             ScrollViewReader { proxy in
                 ZStack(alignment: .leading) {
                     ScrollView(.vertical, showsIndicators: true) {
@@ -82,9 +93,23 @@ struct MarkdownBlockEditorView: View {
                             .background(Color(hex: 0x1C1C1E, opacity: 0.95))
                             .cornerRadius(8)
                             .shadow(color: .black.opacity(0.22), radius: 14, y: 8)
+                            .background {
+                                GeometryReader { popoverGeometry in
+                                    Color.clear.preference(
+                                        key: FootnotePopoverSizePreferenceKey.self,
+                                        value: popoverGeometry.size
+                                    )
+                                }
+                            }
                             .position(
-                                x: min(max(160, footnotePopoverPoint.x), geometry.size.width - 160),
-                                y: max(26, footnotePopoverPoint.y - 34)
+                                x: min(
+                                    max(footnotePopoverSize.width / 2, footnotePopoverPoint.x),
+                                    geometry.size.width - footnotePopoverSize.width / 2
+                                ),
+                                y: max(
+                                    footnotePopoverSize.height / 2,
+                                    footnotePopoverPoint.y - 8 - footnotePopoverSize.height / 2
+                                )
                             )
                             .allowsHitTesting(false)
                             .accessibilityIdentifier(
@@ -98,10 +123,15 @@ struct MarkdownBlockEditorView: View {
                             .accessibilityValue(footnotePopoverText)
                     }
                 }
+                .onPreferenceChange(FootnotePopoverSizePreferenceKey.self) { size in
+                    footnotePopoverSize = size
+                }
                 .onAppear {
+                    editorGlobalFrame = globalFrame
                     wireScrollToBlockAction(proxy: proxy)
                     wireFindState(proxy: proxy)
                 }
+                .onChange(of: globalFrame) { editorGlobalFrame = $0 }
                 .onChange(of: reduceMotion) { _ in
                     wireScrollToBlockAction(proxy: proxy)
                 }
@@ -277,10 +307,11 @@ struct MarkdownBlockEditorView: View {
                     DebugDiagnosticWriter.shared.recordBlockRender(blockID)
                 },
                 onFootnoteBack: jumpBackToFootnoteReference,
-                onHoverURL: { destination in
+                onHoverURL: { destination, anchorScreenRect in
                     handleHoverDestination(
                         destination,
-                        sourceBlockIndex: diagnosticIndex
+                        sourceBlockIndex: diagnosticIndex,
+                        anchorScreenRect: anchorScreenRect
                     )
                 },
                 onOpenURL: { destination in
@@ -389,7 +420,11 @@ struct MarkdownBlockEditorView: View {
         return result
     }
 
-    private func handleHoverDestination(_ destination: String, sourceBlockIndex: Int) {
+    private func handleHoverDestination(
+        _ destination: String,
+        sourceBlockIndex: Int,
+        anchorScreenRect: CGRect?
+    ) {
         guard destination.hasPrefix("mv-footnote:") else {
             footnotePopoverText = ""
             footnotePopoverDefinitionID = ""
@@ -402,13 +437,24 @@ struct MarkdownBlockEditorView: View {
         footnotePopoverText = footnoteDefinitions[id] ?? ""
         footnotePopoverDefinitionID = id
         footnotePopoverSourceBlockIndex = sourceBlockIndex
-        guard let scrollView = nativeScrollView.scrollView,
-              let window = scrollView.window else { return }
-        let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
-        let local = scrollView.convert(windowPoint, from: nil)
-        footnotePopoverPoint = CGPoint(
-            x: local.x,
-            y: scrollView.bounds.height - local.y
+        if let anchor = localFootnoteAnchor(from: anchorScreenRect) {
+            footnotePopoverPoint = anchor
+        }
+    }
+
+    private func localFootnoteAnchor(from anchorScreenRect: CGRect?) -> CGPoint? {
+        guard let window = nativeScrollView.scrollView?.window,
+              let contentView = window.contentView else { return nil }
+
+        let screenRect = anchorScreenRect ?? CGRect(origin: NSEvent.mouseLocation, size: .zero)
+        let windowRect = window.convertFromScreen(screenRect)
+        let contentRect = contentView.convert(windowRect, from: nil)
+        let globalY = contentView.isFlipped
+            ? contentRect.minY
+            : contentView.bounds.height - contentRect.maxY
+        return CGPoint(
+            x: contentRect.midX - editorGlobalFrame.minX,
+            y: globalY - editorGlobalFrame.minY
         )
     }
 

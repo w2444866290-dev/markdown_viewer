@@ -132,8 +132,9 @@ private struct PreviewModeButton: View {
         .accessibilityIdentifier("toggle-preview")
         .accessibilityLabel(docManager.previewMode ? "返回编辑模式" : "切换到纯预览")
         .accessibilityValue(docManager.previewMode ? "已启用" : "未启用")
+        .mvFocusVisible()
         .onHover { hovered = $0 }
-        .headerPointingHandCursor()
+        .mvNativeCursor(.pointingHand)
         .mvTip(docManager.previewMode ? "返回编辑 · ⌘⇧P" : "纯预览（隐藏语法）· ⌘⇧P")
     }
 }
@@ -180,9 +181,10 @@ private struct HeaderIconButton<Label: View>: View {
         .buttonStyle(HeaderButtonStyle())
         .accessibilityIdentifier(identifier)
         .accessibilityLabel(tip)
+        .mvFocusVisible()
         .mvTip(tip)
         .onHover { hover = $0 }
-        .headerPointingHandCursor()
+        .mvNativeCursor(.pointingHand)
     }
 }
 
@@ -235,7 +237,7 @@ private struct EditorTabPill: View {
         // Route through activateTab so the OUTGOING tab's live edits reconcile first.
         .onTapGesture { docManager.activateTab(tab.id) }
         .onHover { isHovered = $0 }
-        .headerPointingHandCursor()
+        .mvNativeCursor(.pointingHand)
     }
 
     // spec L105: red pill "确认关闭?" — height 18, padding 0 7px, radius 6,
@@ -302,38 +304,5 @@ private struct EditorTabPill: View {
             width: EditorHeaderVisualPolicy.tabCloseSlot,
             height: EditorHeaderVisualPolicy.tabCloseSlot
         )  // always reserved → tab width never jitters
-    }
-}
-
-/// Keeps each pointer hand scoped to the control that asked for it. This
-/// preserves a surrounding native cursor, including the document I-beam,
-/// when a header control disappears or the pointer crosses into a child.
-private struct HeaderPointingHandCursor: ViewModifier {
-    @State private var isPushed = false
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { isHovering in
-                setActive(isHovering)
-            }
-            .onDisappear {
-                setActive(false)
-            }
-    }
-
-    private func setActive(_ active: Bool) {
-        guard active != isPushed else { return }
-        if active {
-            NSCursor.pointingHand.push()
-        } else {
-            NSCursor.pop()
-        }
-        isPushed = active
-    }
-}
-
-private extension View {
-    func headerPointingHandCursor() -> some View {
-        modifier(HeaderPointingHandCursor())
     }
 }
