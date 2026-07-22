@@ -1,0 +1,31 @@
+Sources/MarkdownViewer/Editor/BlockSourceEditor.swift
+  s_014c3d47548c6b::t_3b4805f3ae01ef 1142-1143,1157,1253-1273
+Sources/MarkdownViewer/Editor/MarkdownBlockEditorView.swift
+  s_014c3d47548c6b::t_11235849a65768 4-11,37-38,48-49,96-103,105-112,126-128,130,134,310,313-314,423-427,440-457
+Sources/MarkdownViewer/Editor/MarkdownBlockRenderer.swift
+  s_014c3d47548c6b::t_cea243154e6dee 89,107,531-537,869,1177,1198,1200-1207,1209-1215,1266-1267,1269,1277,1281,1372,1381-1416
+Sources/MarkdownViewer/Shell/EditorHeader.swift
+  s_014c3d47548c6b::t_cbb36a95f02c94 135,137,184,187,240
+Tests/MarkdownViewerTests/BlockSourceChromeTests.swift
+  s_014c3d47548c6b::t_c6ca9f2cfd7e42 8-12
+Tests/MarkdownViewerTests/PassiveMarkdownFormattingTests.swift
+  s_014c3d47548c6b::t_eb21b6831741d5 304-339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7048f402c3ca003a16ee8558ea6409adcc3d757e",
+  "prompts": {},
+  "sessions": {
+    "s_014c3d47548c6b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6ae3-d303-7792-8439-688b94632549",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
