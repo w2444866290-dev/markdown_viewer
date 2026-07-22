@@ -1,0 +1,25 @@
+Tests/E2E/BuildDebugIncrementalTests.sh
+  s_014c3d47548c6b::t_73b04a760ba0fd 50,107,129-133
+scripts/build-debug.sh
+  s_014c3d47548c6b::t_50adf1807a3732 491-492,507,575-577,591-592
+scripts/generate-debug-icon.swift
+  s_014c3d47548c6b::t_20d6a75083e262 1-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7fb2e1d74f7082a7bec29cb1737cd8453fe70edb",
+  "prompts": {},
+  "sessions": {
+    "s_014c3d47548c6b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6ae3-d303-7792-8439-688b94632549",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
