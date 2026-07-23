@@ -1,0 +1,23 @@
+Tests/E2E/RealAppHarnessTests.sh
+  s_014c3d47548c6b::t_45bf3f432bc85b 826
+scripts/e2e/run-real-app-e2e.sh
+  s_014c3d47548c6b::t_fffb5099cbf58f 47,1105-1113,5197-5199,5208,5224-5227,5617-5619,5627,5641-5644
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c3981f60c6a3569232d296f614bfbe517f63cd9c",
+  "prompts": {},
+  "sessions": {
+    "s_014c3d47548c6b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6ae3-d303-7792-8439-688b94632549",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
