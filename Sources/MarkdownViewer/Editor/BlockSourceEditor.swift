@@ -383,6 +383,7 @@ enum BlockSourceHighlighter {
 
 final class BlockSourceEditorBridge {
     struct Snapshot: Equatable {
+        let sessionToken: SourceEditingSessionToken
         let source: String
         let selection: NSRange
         let hasMarkedText: Bool
@@ -397,11 +398,13 @@ final class BlockSourceEditorBridge {
     @discardableResult
     func applyFindReplacement(
         source: String,
-        selection: NSRange
+        selection: NSRange,
+        sessionToken: SourceEditingSessionToken
     ) -> Snapshot? {
         coordinator?.applyFindReplacement(
             source: source,
-            selection: selection
+            selection: selection,
+            sessionToken: sessionToken
         )
     }
 
@@ -431,8 +434,12 @@ struct BlockSourceEditor: NSViewRepresentable {
         let isCurrent: Bool
     }
 
-    typealias ChangeHandler = (_ source: String, _ selection: NSRange) -> Void
-    typealias CommitHandler = (_ source: String, _ selection: NSRange) -> Void
+    typealias ChangeHandler = (
+        _ sessionToken: SourceEditingSessionToken,
+        _ source: String,
+        _ selection: NSRange
+    ) -> Void
+    typealias CommitHandler = ChangeHandler
     typealias KeyCommandInterceptor = (
         _ event: NSEvent,
         _ source: String,
@@ -443,7 +450,7 @@ struct BlockSourceEditor: NSViewRepresentable {
     let initialSource: String
     let blockKind: MarkdownBlockKind
     let bodyFontSize: CGFloat
-    let focusToken: AnyHashable
+    let focusToken: SourceEditingSessionToken
     var initialSelection: NSRange?
     var accessibilityIdentifier: String
     var findHighlights: [FindHighlight]
@@ -458,7 +465,7 @@ struct BlockSourceEditor: NSViewRepresentable {
         initialSource: String,
         blockKind: MarkdownBlockKind,
         bodyFontSize: CGFloat = BlockSourceHighlighter.defaultBodyFontSize,
-        focusToken: AnyHashable,
+        focusToken: SourceEditingSessionToken,
         initialSelection: NSRange? = nil,
         accessibilityIdentifier: String = "markdown-block-source-editor",
         findHighlights: [FindHighlight] = [],
@@ -523,7 +530,7 @@ struct BlockSourceEditor: NSViewRepresentable {
         private weak var host: BlockSourceEditorHostView?
         private weak var textView: BlockSourceTextView?
         private weak var lifecycleBridge: BlockSourceEditorBridge?
-        private var lastFocusToken: AnyHashable?
+        private var lastFocusToken: SourceEditingSessionToken?
         private var lastKind: MarkdownBlockKind?
         private var lastBodyFontSize: CGFloat?
         private var lastFindHighlights: [FindHighlight] = []
@@ -585,7 +592,7 @@ struct BlockSourceEditor: NSViewRepresentable {
         func load(
             source: String,
             kind: MarkdownBlockKind,
-            token: AnyHashable,
+            token: SourceEditingSessionToken,
             selection: NSRange?
         ) {
             guard let host, let textView else { return }
@@ -633,7 +640,7 @@ struct BlockSourceEditor: NSViewRepresentable {
         func update(
             source: String,
             kind: MarkdownBlockKind,
-            token: AnyHashable,
+            token: SourceEditingSessionToken,
             selection: NSRange?
         ) {
             guard let host else { return }
@@ -867,8 +874,9 @@ struct BlockSourceEditor: NSViewRepresentable {
         }
 
         fileprivate func liveSnapshot() -> BlockSourceEditorBridge.Snapshot? {
-            guard let textView else { return nil }
+            guard let textView, let sessionToken = lastFocusToken else { return nil }
             return BlockSourceEditorBridge.Snapshot(
+                sessionToken: sessionToken,
                 source: textView.string,
                 selection: textView.selectedRange(),
                 hasMarkedText: textView.hasMarkedText()
@@ -882,9 +890,11 @@ struct BlockSourceEditor: NSViewRepresentable {
 
         fileprivate func applyFindReplacement(
             source: String,
-            selection: NSRange
+            selection: NSRange,
+            sessionToken: SourceEditingSessionToken
         ) -> BlockSourceEditorBridge.Snapshot? {
-            guard let textView,
+            guard lastFocusToken == sessionToken,
+                  let textView,
                   Self.isValid(selection: selection, in: source) else {
                 return nil
             }
@@ -908,7 +918,7 @@ struct BlockSourceEditor: NSViewRepresentable {
         }
 
         private func commit() {
-            guard let textView else { return }
+            guard let textView, let sessionToken = lastFocusToken else { return }
             if textView.hasMarkedText() { textView.unmarkText() }
             compositionPending = false
             applyHighlight()
@@ -917,7 +927,7 @@ struct BlockSourceEditor: NSViewRepresentable {
             let snapshot = Snapshot(textView)
             guard snapshot != lastCommitted else { return }
             lastCommitted = snapshot
-            parent.onCommit(snapshot.source, snapshot.selection)
+            parent.onCommit(sessionToken, snapshot.source, snapshot.selection)
         }
 
         private func compositionEnded() {
@@ -999,7 +1009,7 @@ struct BlockSourceEditor: NSViewRepresentable {
         }
 
         private func emitLiveChangeNow() {
-            guard let textView else { return }
+            guard let textView, let sessionToken = lastFocusToken else { return }
             if textView.hasMarkedText() {
                 compositionPending = true
                 return
@@ -1008,7 +1018,7 @@ struct BlockSourceEditor: NSViewRepresentable {
             guard snapshot != lastEmitted else { return }
             lastEmitted = snapshot
             applyAccessibility()
-            parent.onChange(snapshot.source, snapshot.selection)
+            parent.onChange(sessionToken, snapshot.source, snapshot.selection)
         }
 
         private func scheduleMeasurement() {

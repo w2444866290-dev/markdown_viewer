@@ -29,6 +29,10 @@ def require_directory(raw_path: str, label: str) -> pathlib.Path:
 
 def actions() -> list[dict[str, object]]:
     source = "# Markdown 全格式示例"
+    paragraph = (
+        "这是一份**实时富文本**编辑器的演示文档。点击任意段落即可编辑，"
+        "光标移开后立即渲染成富文本 \u2014\u2014 下面覆盖了 Markdown 的*绝大多数*语法。"
+    )
     return [
         {"kind": "move-safe-point", "waitMs": 40},
         {
@@ -51,7 +55,6 @@ def actions() -> list[dict[str, object]]:
             "expectedValue": source,
             "waitMs": 80,
         },
-        {"kind": "key", "key": "escape", "waitMs": 40},
         {
             "kind": "element-click",
             "identifier": "document-block-1-paragraph",
@@ -62,12 +65,14 @@ def actions() -> list[dict[str, object]]:
             "kind": "element-check",
             "identifier": "document-block-1-source-editor",
             "role": "AXTextArea",
+            "expectedValue": paragraph,
             "waitMs": 40,
         },
         {
             "kind": "focused-element-check",
             "identifier": "document-block-1-source-editor",
             "role": "AXTextArea",
+            "expectedValue": paragraph,
             "waitMs": 80,
         },
     ]

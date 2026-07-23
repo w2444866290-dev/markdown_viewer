@@ -2132,6 +2132,10 @@ plan = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 validation = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
 runner = pathlib.Path(sys.argv[3]).read_text(encoding="utf-8")
 source = "# Markdown 全格式示例"
+paragraph = (
+    "这是一份**实时富文本**编辑器的演示文档。点击任意段落即可编辑，"
+    "光标移开后立即渲染成富文本 \u2014\u2014 下面覆盖了 Markdown 的*绝大多数*语法。"
+)
 assert plan == {
     "schemaVersion": 1,
     "actions": [
@@ -2156,7 +2160,6 @@ assert plan == {
             "expectedValue": source,
             "waitMs": 80,
         },
-        {"kind": "key", "key": "escape", "waitMs": 40},
         {
             "kind": "element-click",
             "identifier": "document-block-1-paragraph",
@@ -2167,26 +2170,27 @@ assert plan == {
             "kind": "element-check",
             "identifier": "document-block-1-source-editor",
             "role": "AXTextArea",
+            "expectedValue": paragraph,
             "waitMs": 40,
         },
         {
             "kind": "focused-element-check",
             "identifier": "document-block-1-source-editor",
             "role": "AXTextArea",
+            "expectedValue": paragraph,
             "waitMs": 80,
         },
     ],
 }
 assert validation["valid"] is True
 assert validation["budgetMs"] == 4000
-assert validation["estimatedForegroundMs"] == 1190
+assert validation["estimatedForegroundMs"] == 1150
 assert validation["cleanupReserveMs"] == 400
 assert [action["kind"] for action in validation["actions"]] == [
     "move-safe-point",
     "element-click",
     "element-check",
     "focused-element-check",
-    "key",
     "element-click",
     "element-check",
     "focused-element-check",
@@ -2199,14 +2203,14 @@ assert validation["actions"][2]["detail"] == (
     "expectedValueUTF16=16"
 )
 assert validation["actions"][3]["detail"] == validation["actions"][2]["detail"]
-assert validation["actions"][4]["detail"] == "escape"
-assert validation["actions"][5]["detail"] == (
+assert validation["actions"][4]["detail"] == (
     "identifier=document-block-1-paragraph,role=AXButton"
 )
-assert validation["actions"][6]["detail"] == (
-    "identifier=document-block-1-source-editor,role=AXTextArea"
+assert validation["actions"][5]["detail"] == (
+    "identifier=document-block-1-source-editor,role=AXTextArea,"
+    f"expectedValueUTF16={len(paragraph.encode('utf-16-le')) // 2}"
 )
-assert validation["actions"][7]["detail"] == validation["actions"][6]["detail"]
+assert validation["actions"][6]["detail"] == validation["actions"][5]["detail"]
 assert "block-activation) run_foreground_block_activation" in runner
 assert "build-foreground-block-activation-plan.py" in runner
 assert "foreground target window did not return offscreen at normal level" in runner

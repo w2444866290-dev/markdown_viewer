@@ -58,6 +58,26 @@ struct BlockSourceLifecycleTests {
         #expect(try Data(contentsOf: documentURL) == Data("before".utf8))
     }
 
+    @Test("block switch flushes marked text before activating the target")
+    func blockSwitchFlushesOutgoingMarkedText() throws {
+        let document = MarkdownDocument(source: "before\n\nother")
+        let first = try #require(document.blocks.first)
+        let second = try #require(document.blocks.last)
+        let store = BlockEditorStore(tabID: UUID(), document: document) { _ in }
+        store.beginSourceEditing(blockID: first.id)
+        let editor = LiveEditor(store: store, blockID: first.id)
+        defer { editor.teardown() }
+        editor.appendMarkedText("输入")
+
+        store.beginSourceEditing(blockID: second.id)
+
+        #expect(!editor.textView.hasMarkedText())
+        #expect(store.source == "before输入\n\nother")
+        #expect(store.activeBlockID == second.id)
+        #expect(store.activeSourceEditingToken?.blockID == second.id)
+        #expect(store.snapshotDocument().block(id: second.id)?.source == "other")
+    }
+
     @Test("saving an expanded block snapshot does not become dirty again on editor teardown")
     func expandedBlockSaveAcceptsDurableSnapshot() throws {
         let root = try temporaryRoot(named: "expanded-save")
@@ -342,14 +362,21 @@ struct BlockSourceLifecycleTests {
         let coordinator: BlockSourceEditor.Coordinator
         let host: BlockSourceEditorHostView
         let window: FocusTestWindow
+        let blockID: UUID
+        private var generation: UInt64 = 0
 
         init(rejections: Int) {
+            let blockID = UUID()
+            self.blockID = blockID
             let editor = BlockSourceEditor(
                 initialSource: "body",
                 blockKind: .paragraph,
-                focusToken: "initial",
-                onChange: { _, _ in },
-                onCommit: { _, _ in }
+                focusToken: SourceEditingSessionToken(
+                    blockID: blockID,
+                    generation: 0
+                ),
+                onChange: { _, _, _ in },
+                onCommit: { _, _, _ in }
             )
             coordinator = editor.makeCoordinator()
             host = BlockSourceEditorHostView(
@@ -360,11 +387,15 @@ struct BlockSourceLifecycleTests {
             coordinator.attach(host: host)
         }
 
-        func load(token: String) {
+        func load(token _: String) {
+            generation &+= 1
             coordinator.load(
                 source: "body",
                 kind: .paragraph,
-                token: token,
+                token: SourceEditingSessionToken(
+                    blockID: blockID,
+                    generation: generation
+                ),
                 selection: NSRange(location: 4, length: 0)
             )
         }
@@ -386,21 +417,30 @@ struct BlockSourceLifecycleTests {
 
         init(store: BlockEditorStore, blockID: UUID) {
             let block = store.document.block(id: blockID)!
+            let sessionToken = store.activeSourceEditingToken!
             let editor = BlockSourceEditor(
                 initialSource: block.source,
                 blockKind: block.kind,
-                focusToken: block.id,
+                focusToken: sessionToken,
                 initialSelection: NSRange(
                     location: (block.source as NSString).length,
                     length: 0
                 ),
                 lifecycleBridge: store.sourceEditorBridge,
-                onChange: { [weak store] source, selection in
-                    store?.updateActiveDraft(source, selection: selection)
+                onChange: { [weak store] callbackToken, source, selection in
+                    store?.updateActiveDraft(
+                        source,
+                        selection: selection,
+                        sessionToken: callbackToken
+                    )
                 },
-                onCommit: { [weak store] source, selection in
-                    store?.updateActiveDraft(source, selection: selection)
-                    store?.commitActiveEditing()
+                onCommit: { [weak store] callbackToken, source, selection in
+                    store?.updateActiveDraft(
+                        source,
+                        selection: selection,
+                        sessionToken: callbackToken
+                    )
+                    store?.commitActiveEditing(sessionToken: callbackToken)
                 }
             )
             coordinator = editor.makeCoordinator()

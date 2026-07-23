@@ -10,6 +10,11 @@ struct MarkdownTableCell: Hashable, Sendable {
     }
 }
 
+struct SourceEditingSessionToken: Hashable, Sendable {
+    let blockID: UUID
+    let generation: UInt64
+}
+
 /// Per-tab native block document state.
 ///
 /// The store survives tab switches, owns one undo history, and exposes only local
@@ -29,6 +34,7 @@ final class BlockEditorStore: ObservableObject {
     @Published private(set) var document: MarkdownDocument
     @Published private(set) var activeBlockID: UUID?
     private(set) var activeSelection: NSRange?
+    private(set) var activeSourceEditingToken: SourceEditingSessionToken?
     @Published private(set) var activeTableID: UUID?
     @Published private(set) var tableDraft: MarkdownTableGrid?
     @Published var activeTableCell: MarkdownTableCell?
@@ -41,6 +47,7 @@ final class BlockEditorStore: ObservableObject {
     @Published private(set) var currentFindIndex = 0
 
     private var activeDraftSource: String?
+    private var nextSourceEditingGeneration: UInt64 = 0
     private var suspendedEditingState: SuspendedEditingState?
     private var findOptions = BlockFindOptions(query: "")
     private let onDraftDivergence: () -> Void
@@ -75,7 +82,7 @@ final class BlockEditorStore: ObservableObject {
             }
         }
         guard let activeBlockID,
-              let draft = sourceEditorBridge.snapshot()?.source ?? activeDraftSource,
+              let draft = currentSourceEditorSnapshot()?.source ?? activeDraftSource,
               draft != document.block(id: activeBlockID)?.source else {
             return document
         }
@@ -90,7 +97,7 @@ final class BlockEditorStore: ObservableObject {
     }
 
     var snapshotSelection: NSRange? {
-        sourceEditorBridge.snapshot()?.selection ?? activeSelection
+        currentSourceEditorSnapshot()?.selection ?? activeSelection
     }
 
     var activeBlock: MarkdownBlock? {
@@ -108,22 +115,51 @@ final class BlockEditorStore: ObservableObject {
     }
 
     func beginSourceEditing(blockID: UUID, selection: NSRange? = nil) {
-        guard activeTableID == nil, let block = document.block(id: blockID) else { return }
-        if activeBlockID != blockID { commitActiveEditing() }
+        guard activeTableID == nil else { return }
+        if let activeSourceEditingToken {
+            if activeSourceEditingToken.blockID == blockID {
+                if let selection { activeSelection = selection }
+                return
+            }
+            finishSourceEditingForTransition(activeSourceEditingToken)
+        }
+        guard let block = document.block(id: blockID) else { return }
+        nextSourceEditingGeneration &+= 1
+        let token = SourceEditingSessionToken(
+            blockID: blockID,
+            generation: nextSourceEditingGeneration
+        )
         activeSelection = selection
         activeDraftSource = block.source
+        activeSourceEditingToken = token
         activeBlockID = blockID
         refreshFind(preservingCurrent: true)
     }
 
     func updateActiveDraft(_ source: String, selection: NSRange? = nil) {
-        guard let activeBlockID else { return }
+        guard let token = activeSourceEditingToken else { return }
+        updateActiveDraft(source, selection: selection, sessionToken: token)
+    }
+
+    func updateActiveDraft(
+        _ source: String,
+        selection: NSRange? = nil,
+        sessionToken: SourceEditingSessionToken
+    ) {
+        guard activeSourceEditingToken == sessionToken,
+              activeBlockID == sessionToken.blockID else { return }
         activeDraftSource = source
         activeSelection = selection
-        if document.block(id: activeBlockID)?.source != source {
+        if document.block(id: sessionToken.blockID)?.source != source {
             onDraftDivergence()
         }
         refreshFind(preservingCurrent: true)
+    }
+
+    func commitActiveEditing(sessionToken: SourceEditingSessionToken) {
+        guard activeSourceEditingToken == sessionToken,
+              activeBlockID == sessionToken.blockID else { return }
+        commitActiveEditing()
     }
 
     func commitActiveEditing() {
@@ -132,12 +168,7 @@ final class BlockEditorStore: ObservableObject {
             return
         }
         guard let id = activeBlockID else { return }
-        defer {
-            activeBlockID = nil
-            activeDraftSource = nil
-            activeSelection = nil
-            refreshFind(preservingCurrent: true)
-        }
+        defer { clearActiveSourceEditingState(refreshingFind: true) }
         guard let draft = activeDraftSource,
               draft != document.block(id: id)?.source else { return }
         mutate(affectedBlockIDs: [id], actionName: "编辑块") { document in
@@ -146,10 +177,49 @@ final class BlockEditorStore: ObservableObject {
     }
 
     func flushActiveEditingForLifecycleBoundary() {
-        if activeBlockID != nil {
-            sourceEditorBridge.flushForLifecycleBoundary()
+        if let token = activeSourceEditingToken {
+            let snapshot = sourceEditorBridge.flushForLifecycleBoundary()
+            if let snapshot, snapshot.sessionToken == token {
+                updateActiveDraft(
+                    snapshot.source,
+                    selection: snapshot.selection,
+                    sessionToken: token
+                )
+            }
+            commitActiveEditing(sessionToken: token)
         }
         commitActiveEditing()
+    }
+
+    private func finishSourceEditingForTransition(
+        _ token: SourceEditingSessionToken
+    ) {
+        let snapshot = sourceEditorBridge.flushForLifecycleBoundary()
+        if let snapshot, snapshot.sessionToken == token {
+            updateActiveDraft(
+                snapshot.source,
+                selection: snapshot.selection,
+                sessionToken: token
+            )
+        }
+        commitActiveEditing(sessionToken: token)
+    }
+
+    private func currentSourceEditorSnapshot() -> BlockSourceEditorBridge.Snapshot? {
+        guard let token = activeSourceEditingToken,
+              let snapshot = sourceEditorBridge.snapshot(),
+              snapshot.sessionToken == token else {
+            return nil
+        }
+        return snapshot
+    }
+
+    private func clearActiveSourceEditingState(refreshingFind: Bool = false) {
+        activeSourceEditingToken = nil
+        activeBlockID = nil
+        activeDraftSource = nil
+        activeSelection = nil
+        if refreshingFind { refreshFind(preservingCurrent: true) }
     }
 
     /// Adopt the exact document snapshot that reached disk without ending the
@@ -164,7 +234,7 @@ final class BlockEditorStore: ObservableObject {
         recordMutation(affectedBlockIDs: affectedBlockIDs)
 
         if let blockID = activeBlockID {
-            let liveSnapshot = sourceEditorBridge.snapshot()
+            let liveSnapshot = currentSourceEditorSnapshot()
             let liveSource = liveSnapshot?.source ?? activeDraftSource
             if savedDocument.block(id: blockID)?.source == liveSource {
                 activeDraftSource = liveSource
@@ -173,9 +243,7 @@ final class BlockEditorStore: ObservableObject {
                 // A multiline draft may expand one source editor into several
                 // durable blocks. The saved document is authoritative, so end
                 // that no-longer-representable single-block editing session.
-                activeBlockID = nil
-                activeDraftSource = nil
-                activeSelection = nil
+                clearActiveSourceEditingState()
             }
         }
         if let tableID = activeTableID,
@@ -192,7 +260,7 @@ final class BlockEditorStore: ObservableObject {
     /// preferred because unmarking IME text can move the caret.
     func suspendEditingForTabSwitch() {
         if let blockID = activeBlockID {
-            let selectionBeforeFlush = sourceEditorBridge.snapshot()?.selection
+            let selectionBeforeFlush = currentSourceEditorSnapshot()?.selection
                 ?? activeSelection
             flushActiveEditingForLifecycleBoundary()
             guard document.block(id: blockID) != nil else {
@@ -201,7 +269,7 @@ final class BlockEditorStore: ObservableObject {
             }
             suspendedEditingState = .source(
                 blockID: blockID,
-                selection: sourceEditorBridge.snapshot()?.selection
+                selection: currentSourceEditorSnapshot()?.selection
                     ?? selectionBeforeFlush
             )
             return
@@ -246,25 +314,21 @@ final class BlockEditorStore: ObservableObject {
     }
 
     func cancelFocusWithoutDiscarding() {
-        commitActiveEditing()
+        flushActiveEditingForLifecycleBoundary()
     }
 
     func splitBlock(id: UUID, atUTF16Offset offset: Int) {
         mutate(affectedBlockIDs: [id], actionName: "拆分块") { document in
             _ = try document.splitBlock(id: id, atUTF16Offset: offset)
         }
-        activeBlockID = nil
-        activeDraftSource = nil
-        activeSelection = nil
+        clearActiveSourceEditingState()
     }
 
     func mergeWithPrevious(id: UUID) {
         mutate(affectedBlockIDs: [id], actionName: "合并块") { document in
             _ = try document.mergeBlockWithPrevious(id: id)
         }
-        activeBlockID = nil
-        activeDraftSource = nil
-        activeSelection = nil
+        clearActiveSourceEditingState()
     }
 
     func handleBoundaryAction(
@@ -300,9 +364,7 @@ final class BlockEditorStore: ObservableObject {
                 MVLog.warn("block split failed: \(error)", category: "editor")
                 return
             }
-            activeBlockID = nil
-            activeDraftSource = nil
-            activeSelection = nil
+            clearActiveSourceEditingState()
             mutate(
                 affectedBlockIDs: [activeID, rightID],
                 actionName: "拆分块"
@@ -364,9 +426,7 @@ final class BlockEditorStore: ObservableObject {
     ) {
         guard let draft = activeDraftSource,
               let original = document.block(id: blockID) else { return }
-        activeBlockID = nil
-        activeDraftSource = nil
-        activeSelection = nil
+        clearActiveSourceEditingState()
 
         var targetID = blockID
         mutate(affectedBlockIDs: [blockID], actionName: "退出容器") { document in
@@ -397,7 +457,11 @@ final class BlockEditorStore: ObservableObject {
     }
 
     func beginTableEditing(blockID: UUID, cell: MarkdownTableCell?) {
-        commitActiveEditing()
+        if let token = activeSourceEditingToken {
+            finishSourceEditingForTransition(token)
+        } else {
+            commitActiveEditing()
+        }
         guard let grid = try? document.tableGrid(for: blockID) else { return }
         tableStructureGeneration = tableEditorBridge.beginEditingSession()
         activeTableID = blockID
@@ -661,10 +725,11 @@ final class BlockEditorStore: ObservableObject {
         advanceAfterReplacement: Bool
     ) -> Int {
         guard let blockID = activeBlockID,
+              let sessionToken = activeSourceEditingToken,
               !matches.isEmpty,
               matches.allSatisfy({ $0.blockID == blockID }),
               let originalBlock = document.block(id: blockID),
-              let draft = sourceEditorBridge.snapshot()?.source ?? activeDraftSource else {
+              let draft = currentSourceEditorSnapshot()?.source ?? activeDraftSource else {
             return 0
         }
         let draftBlock = MarkdownBlock(
@@ -705,16 +770,15 @@ final class BlockEditorStore: ObservableObject {
         activeSelection = selection
         _ = sourceEditorBridge.applyFindReplacement(
             source: replacementSource,
-            selection: selection
+            selection: selection,
+            sessionToken: sessionToken
         )
         mutate(affectedBlockIDs: [blockID], actionName: actionName) { document in
             _ = try document.replaceBlock(id: blockID, with: replacementSource)
         }
 
         if document.block(id: blockID)?.source != replacementSource {
-            activeBlockID = nil
-            activeDraftSource = nil
-            activeSelection = nil
+            clearActiveSourceEditingState()
         }
         refreshFind(preservingCurrent: matches.count == 1)
         if advanceAfterReplacement, let match = matches.first {
@@ -746,7 +810,7 @@ final class BlockEditorStore: ObservableObject {
         if let blockID = activeBlockID {
             return .source(
                 blockID: blockID,
-                selection: sourceEditorBridge.snapshot()?.selection ?? activeSelection
+                selection: currentSourceEditorSnapshot()?.selection ?? activeSelection
             )
         }
         if let blockID = activeTableID {
@@ -934,9 +998,7 @@ final class BlockEditorStore: ObservableObject {
     private func resynchronizeActiveSourceDraftAfterHistoryMutation() {
         guard let blockID = activeBlockID else { return }
         guard let block = document.block(id: blockID) else {
-            activeBlockID = nil
-            activeDraftSource = nil
-            activeSelection = nil
+            clearActiveSourceEditingState()
             return
         }
         let length = (block.source as NSString).length
@@ -944,10 +1006,13 @@ final class BlockEditorStore: ObservableObject {
         let selection = NSRange(location: location, length: 0)
         activeDraftSource = block.source
         activeSelection = selection
-        _ = sourceEditorBridge.applyFindReplacement(
-            source: block.source,
-            selection: selection
-        )
+        if let sessionToken = activeSourceEditingToken {
+            _ = sourceEditorBridge.applyFindReplacement(
+                source: block.source,
+                selection: selection,
+                sessionToken: sessionToken
+            )
+        }
     }
 
     private func resynchronizeTableDraftAfterHistoryMutation() {

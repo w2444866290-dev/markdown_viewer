@@ -51,10 +51,13 @@ struct BlockSourceChromeTests {
         let editor = BlockSourceEditor(
             initialSource: "body",
             blockKind: .paragraph,
-            focusToken: "accessibility",
+            focusToken: SourceEditingSessionToken(
+                blockID: UUID(),
+                generation: 1
+            ),
             accessibilityIdentifier: "source-editor-accessibility-test",
-            onChange: { _, _ in },
-            onCommit: { _, _ in }
+            onChange: { _, _, _ in },
+            onCommit: { _, _, _ in }
         )
         let coordinator = editor.makeCoordinator()
         let host = BlockSourceEditorHostView(textView: BlockSourceTextView(frame: .zero))

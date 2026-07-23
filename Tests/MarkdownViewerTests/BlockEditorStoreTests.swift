@@ -186,6 +186,59 @@ struct BlockEditorStoreTests {
         #expect(snapshots.count == 1)
     }
 
+    @Test("stale source callbacks cannot overwrite a newly activated block")
+    func staleSourceCallbacksAreRejectedAfterBlockSwitch() throws {
+        let original = MarkdownDocument(source: "# A\n\nB")
+        let first = try #require(original.blocks[safe: 0])
+        let second = try #require(original.blocks[safe: 1])
+        let store = BlockEditorStore(tabID: UUID(), document: original) { _ in }
+
+        store.beginSourceEditing(blockID: first.id)
+        let firstSession = try #require(store.activeSourceEditingToken)
+        store.beginSourceEditing(blockID: second.id)
+        let secondSession = try #require(store.activeSourceEditingToken)
+
+        store.updateActiveDraft(
+            first.source,
+            selection: NSRange(location: first.source.utf16.count, length: 0),
+            sessionToken: firstSession
+        )
+        store.commitActiveEditing(sessionToken: firstSession)
+
+        #expect(store.source == original.source)
+        #expect(store.activeBlockID == second.id)
+        #expect(store.activeSourceEditingToken == secondSession)
+        #expect(store.snapshotDocument().block(id: second.id)?.source == second.source)
+    }
+
+    @Test("reactivating the same block creates a new source session generation")
+    func staleSourceCallbacksAreRejectedAfterBlockReentry() throws {
+        let original = MarkdownDocument(source: "# A\n\nB")
+        let first = try #require(original.blocks[safe: 0])
+        let second = try #require(original.blocks[safe: 1])
+        let store = BlockEditorStore(tabID: UUID(), document: original) { _ in }
+
+        store.beginSourceEditing(blockID: first.id)
+        let staleSession = try #require(store.activeSourceEditingToken)
+        store.beginSourceEditing(blockID: second.id)
+        store.beginSourceEditing(blockID: first.id)
+        let currentSession = try #require(store.activeSourceEditingToken)
+
+        #expect(currentSession.blockID == staleSession.blockID)
+        #expect(currentSession.generation > staleSession.generation)
+
+        store.updateActiveDraft(
+            "# CORRUPTED",
+            selection: NSRange(location: 11, length: 0),
+            sessionToken: staleSession
+        )
+        store.commitActiveEditing(sessionToken: staleSession)
+
+        #expect(store.source == original.source)
+        #expect(store.activeSourceEditingToken == currentSession)
+        #expect(store.snapshotDocument().block(id: first.id)?.source == first.source)
+    }
+
     @Test
     func committedSourceEditSupportsUndoAndRedo() throws {
         let original = MarkdownDocument(source: "alpha\n\nomega")

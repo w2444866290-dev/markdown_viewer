@@ -332,11 +332,15 @@ struct MarkdownBlockEditorView: View {
         let diagnosticIndex = store.document.blocks.firstIndex(where: {
             $0.id == block.id
         }) ?? -1
+        guard let sessionToken = store.activeSourceEditingToken,
+              sessionToken.blockID == block.id else {
+            preconditionFailure("Active source block is missing its editing session")
+        }
         return BlockSourceEditor(
             initialSource: block.source,
             blockKind: block.kind,
             bodyFontSize: bodyFontSize,
-            focusToken: block.id,
+            focusToken: sessionToken,
             initialSelection: store.activeSelection,
             accessibilityIdentifier: MarkdownAccessibilitySurface.sourceEditor(
                 blockIndex: diagnosticIndex
@@ -349,13 +353,21 @@ struct MarkdownBlockEditorView: View {
             },
             onHeightChange: { activeEditorHeight = $0 },
             lifecycleBridge: store.sourceEditorBridge,
-            onChange: { source, selection in
-                store.updateActiveDraft(source, selection: selection)
+            onChange: { callbackToken, source, selection in
+                store.updateActiveDraft(
+                    source,
+                    selection: selection,
+                    sessionToken: callbackToken
+                )
                 if AppEnv.debug { refreshDerivedState() }
             },
-            onCommit: { source, selection in
-                store.updateActiveDraft(source, selection: selection)
-                store.commitActiveEditing()
+            onCommit: { callbackToken, source, selection in
+                store.updateActiveDraft(
+                    source,
+                    selection: selection,
+                    sessionToken: callbackToken
+                )
+                store.commitActiveEditing(sessionToken: callbackToken)
             },
             onKeyCommand: { event, source, selection in
                 editingResult(
@@ -371,6 +383,7 @@ struct MarkdownBlockEditorView: View {
                 )
             }
         )
+        .id(sessionToken)
         .frame(height: activeEditorHeight)
         .debugVisualAnchor("source-editor-frame")
         .padding(.leading, -BlockSourceEditorLayout.leadingOverflow)
