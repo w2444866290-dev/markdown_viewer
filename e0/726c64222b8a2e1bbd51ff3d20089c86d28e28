@@ -1,0 +1,23 @@
+Sources/MarkdownViewer/Editor/MarkdownBlockRenderer.swift
+  s_28c4ed1cef30fc::t_4b49e6aa47f6ab 60-70,99-144,208-211,579-583,586-588,596-597,684-701
+Tests/MarkdownViewerTests/MarkdownDisplayMetricsTests.swift
+  s_28c4ed1cef30fc::t_aa8ecf5704505a 85-86,91-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e0726c64222b8a2e1bbd51ff3d20089c86d28e28",
+  "prompts": {},
+  "sessions": {
+    "s_28c4ed1cef30fc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8d2b-0220-72e0-9126-2618a0b95654",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
