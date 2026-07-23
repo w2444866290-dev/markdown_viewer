@@ -44,6 +44,7 @@ REQUIRED_SIZES=("1180x760" "860x560" "1440x900")
 SIZES=("${REQUIRED_SIZES[@]}")
 SRGB_PROFILE="/System/Library/ColorSync/Profiles/sRGB Profile.icc"
 DEBUG_APP_BINARY="$ROOT/dist/debug/MarkdownViewer.app/Contents/MacOS/MarkdownViewer"
+DEBUG_APP_INFO_PLIST="$ROOT/dist/debug/MarkdownViewer.app/Contents/Info.plist"
 VISUAL_EVIDENCE_BUILDER="$ROOT/scripts/e2e/build-visual-evidence.py"
 VISUAL_LAUNCH_VERIFIER="$ROOT/scripts/e2e/verify-visual-launch-state.py"
 PASSIVE_LIFECYCLE_VERIFIER="$ROOT/scripts/e2e/verify-passive-lifecycle.py"
@@ -1101,6 +1102,15 @@ if [[ "$PREBUILT_DEBUG_APP" != "$ROOT/dist/debug/MarkdownViewer.app" \
     exit 4
 fi
 APP_SHA_START="$(debug_app_binary_sha256)"
+DEBUG_WINDOW_OWNER="$(
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$DEBUG_APP_INFO_PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$DEBUG_APP_INFO_PLIST" 2>/dev/null \
+        || true
+)"
+if [[ -z "$DEBUG_WINDOW_OWNER" ]]; then
+    echo "run-real-app-e2e.sh: Debug app window owner is unavailable" >&2
+    exit 4
+fi
 
 CURRENT_PID=""
 CURRENT_BINARY=""
@@ -5184,7 +5194,9 @@ passive_visual_state_scroll_y() {
 
 validate_passive_main_window() {
     local metadata="$1"
-    python3 - "$metadata" "$SIZE_WIDTH" "$SIZE_HEIGHT" "$CURRENT_PID" <<'PY'
+    python3 - \
+        "$metadata" "$SIZE_WIDTH" "$SIZE_HEIGHT" "$CURRENT_PID" \
+        "$DEBUG_WINDOW_OWNER" <<'PY'
 import json
 import math
 import sys
@@ -5193,6 +5205,7 @@ with open(sys.argv[1], encoding="utf-8") as handle:
     window = json.load(handle)
 expected_width, expected_height = map(float, sys.argv[2:4])
 expected_pid = int(sys.argv[4])
+expected_owner = sys.argv[5]
 bounds = window["bounds"]
 scale_x = bounds["width"] / expected_width
 scale_y = bounds["height"] / expected_height
@@ -5208,8 +5221,10 @@ if not exact and not uniform_presentation_scale:
     )
 if window["pid"] != expected_pid:
     raise SystemExit(f"passive window PID mismatch: {window['pid']} != {expected_pid}")
-if window["owner"] != "MarkdownViewerDebug":
-    raise SystemExit(f"unexpected window owner: {window['owner']}")
+if window["owner"] != expected_owner:
+    raise SystemExit(
+        f"unexpected window owner: {window['owner']} != {expected_owner}"
+    )
 if window["layer"] != 0:
     raise SystemExit(f"passive main-window selection resolved layer {window['layer']}")
 if window["onScreen"] is not False:
@@ -5599,7 +5614,9 @@ for SIZE in "${SIZES[@]}"; do
         --height "$SIZE_HEIGHT" \
         "${WINDOW_LOOKUP_OPTIONS[@]}" \
         > "$SIZE_DIR/window.json"
-    python3 - "$SIZE_DIR/window.json" "$SIZE_WIDTH" "$SIZE_HEIGHT" <<'PY'
+    python3 - \
+        "$SIZE_DIR/window.json" "$SIZE_WIDTH" "$SIZE_HEIGHT" \
+        "$DEBUG_WINDOW_OWNER" <<'PY'
 import json
 import math
 import sys
@@ -5607,6 +5624,7 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     window = json.load(handle)
 expected_width, expected_height = map(float, sys.argv[2:4])
+expected_owner = sys.argv[4]
 bounds = window["bounds"]
 scale_x = bounds["width"] / expected_width
 scale_y = bounds["height"] / expected_height
@@ -5620,8 +5638,10 @@ if not exact and not uniform_presentation_scale:
         f"window presentation mismatch: {bounds['width']}x{bounds['height']} "
         f"for logical {expected_width}x{expected_height}"
     )
-if window["owner"] != "MarkdownViewerDebug":
-    raise SystemExit(f"unexpected window owner: {window['owner']}")
+if window["owner"] != expected_owner:
+    raise SystemExit(
+        f"unexpected window owner: {window['owner']} != {expected_owner}"
+    )
 PY
     WINDOW_NUMBER="$(python3 - "$SIZE_DIR/window.json" <<'PY'
 import json

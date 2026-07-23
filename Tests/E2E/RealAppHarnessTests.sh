@@ -823,7 +823,7 @@ for state, (label, mode, scroll_y, overrides) in states.items():
     diagnostic.write_text(json.dumps(snapshot), encoding="utf-8")
     window = {
         "pid": 4242,
-        "owner": "MarkdownViewerDebug",
+        "owner": "MarkdownViewer Debug",
         "title": "",
         "windowNumber": 101,
         "bounds": {"x": 10000, "y": 0, "width": 1180, "height": 760},
