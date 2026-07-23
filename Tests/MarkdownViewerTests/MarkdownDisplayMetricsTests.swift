@@ -82,8 +82,68 @@ struct MarkdownDisplayMetricsTests {
         #expect(MarkdownVerticalLayout.bottomMargin(for: document.blocks[2]) == 18)
         #expect(MarkdownVerticalLayout.bottomMargin(for: document.blocks[3]) == 20)
         #expect(MarkdownVerticalLayout.bottomMargin(for: document.blocks[4]) == 16)
+        #expect(MarkdownVerticalLayout.headingTopMargin(level: 1) == 34)
+        #expect(MarkdownVerticalLayout.headingTopMargin(level: 6) == 18)
         #expect(MarkdownVerticalLayout.headingLineHeight(level: 1) == 33)
         #expect(MarkdownVerticalLayout.headingLineHeight(level: 6) == 16)
+    }
+
+    @Test("hover wash excludes outer block spacing")
+    func hoverWashContentBounds() {
+        let document = MarkdownDocument(source: """
+        # H1
+
+        paragraph
+
+        ## H2
+
+        ---
+
+        | A |
+        | --- |
+        | B |
+        """)
+
+        let firstHeading = MarkdownHoverLayout.outerSpacing(
+            for: document.blocks[0],
+            isFirstBlock: true,
+            previousBottomMargin: 0
+        )
+        let paragraph = MarkdownHoverLayout.outerSpacing(
+            for: document.blocks[1],
+            isFirstBlock: false,
+            previousBottomMargin: 16
+        )
+        let secondHeading = MarkdownHoverLayout.outerSpacing(
+            for: document.blocks[2],
+            isFirstBlock: false,
+            previousBottomMargin: 18
+        )
+        let rule = MarkdownHoverLayout.outerSpacing(
+            for: document.blocks[3],
+            isFirstBlock: false,
+            previousBottomMargin: 14
+        )
+
+        #expect(firstHeading?.top == 0)
+        #expect(firstHeading?.bottom == 16)
+        #expect(paragraph?.top == 0)
+        #expect(paragraph?.bottom == 18)
+        #expect(secondHeading?.top == 14)
+        #expect(secondHeading?.bottom == 14)
+        #expect(rule?.top == 2)
+        #expect(rule?.bottom == 16)
+        #expect(MarkdownHoverLayout.outerSpacing(
+            for: document.blocks[4],
+            isFirstBlock: false,
+            previousBottomMargin: 16
+        ) == nil)
+        #expect(MarkdownHoverLayout.horizontalOutset == 14)
+        #expect(MarkdownHoverLayout.verticalOutset == 5)
+        #expect(MarkdownHoverLayout.alignedBlockWidth(paperWidth: 640) == 640)
+        #expect(MarkdownHoverLayout.backgroundWidth(paperWidth: 640) == 668)
+        #expect(MarkdownHoverLayout.alignedBlockWidth(paperWidth: 506) == 506)
+        #expect(MarkdownHoverLayout.backgroundWidth(paperWidth: 506) == 534)
     }
 
     @Test("preview header controls use the authoritative label widths")

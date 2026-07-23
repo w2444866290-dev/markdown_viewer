@@ -57,6 +57,17 @@ enum MarkdownVerticalLayout {
         }
     }
 
+    static func headingTopMargin(level: Int) -> CGFloat {
+        switch min(6, max(1, level)) {
+        case 1: return 34
+        case 2: return 32
+        case 3: return 26
+        case 4: return 22
+        case 5: return 20
+        default: return 18
+        }
+    }
+
     static func headingLineHeight(level: Int) -> CGFloat {
         switch min(6, max(1, level)) {
         case 1: return 33
@@ -82,6 +93,52 @@ enum MarkdownHorizontalScrollerLayout {
         let usesCompactPaper = paperWidth < DesignTokens.paperWidth
         let usesCompactWindow = windowWidth < compactWindowUpperBound
         return usesCompactPaper || usesCompactWindow ? gutterHeight : 0
+    }
+}
+
+enum MarkdownHoverLayout {
+    static let horizontalOutset: CGFloat = 14
+    static let verticalOutset: CGFloat = 5
+
+    static func alignedBlockWidth(paperWidth: CGFloat) -> CGFloat {
+        max(0, paperWidth)
+    }
+
+    static func backgroundWidth(paperWidth: CGFloat) -> CGFloat {
+        alignedBlockWidth(paperWidth: paperWidth) + horizontalOutset * 2
+    }
+
+    static func outerSpacing(
+        for block: MarkdownBlock,
+        isFirstBlock: Bool,
+        previousBottomMargin: CGFloat
+    ) -> (top: CGFloat, bottom: CGFloat)? {
+        switch block.kind {
+        case .heading:
+            let trimmed = block.source.trimmingCharacters(in: .whitespacesAndNewlines)
+            let level = min(6, max(1, trimmed.prefix(while: { $0 == "#" }).count))
+            return (
+                isFirstBlock
+                    ? 0
+                    : MarkdownVerticalLayout.collapsedTopMargin(
+                        MarkdownVerticalLayout.headingTopMargin(level: level),
+                        after: previousBottomMargin
+                    ),
+                MarkdownVerticalLayout.headingBottomMargin(level: level)
+            )
+        case .paragraph, .quote, .list:
+            return (0, MarkdownVerticalLayout.bottomMargin(for: block))
+        case .horizontalRule:
+            return (
+                MarkdownVerticalLayout.collapsedTopMargin(
+                    16,
+                    after: previousBottomMargin
+                ),
+                MarkdownVerticalLayout.bottomMargin(for: block)
+            )
+        case .code, .table, .image, .footnotes:
+            return nil
+        }
     }
 }
 
@@ -148,6 +205,10 @@ struct MarkdownBlockRenderer: View, Equatable {
 
     private var interactiveRenderedBlock: some View {
         renderedBlock
+            .frame(
+                width: MarkdownHoverLayout.alignedBlockWidth(paperWidth: paperWidth),
+                alignment: .leading
+            )
             .background(hoverBackground)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -308,7 +369,6 @@ struct MarkdownBlockRenderer: View, Equatable {
             onOpenURL: onOpenURL,
             lineSpacing: bodyFontSize * 0.4 + 1.5
         )
-            .frame(width: prettyParagraphWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 4)
             .padding(.bottom, paragraphLineBoxBottomLeading)
@@ -321,11 +381,6 @@ struct MarkdownBlockRenderer: View, Equatable {
             ? 3.55
             : 0
         return 3.75 + inlineExpansion
-    }
-
-    private var prettyParagraphWidth: CGFloat {
-        let inset = 64 + min(16, max(0, paperWidth - 512) / 8)
-        return max(160, paperWidth - inset)
     }
 
     private var quote: some View {
@@ -521,13 +576,16 @@ struct MarkdownBlockRenderer: View, Equatable {
 
     @ViewBuilder
     private var hoverBackground: some View {
-        if block.kind == .code || block.kind == .table || block.kind == .image || block.kind == .footnotes {
-            Color.clear
-        } else {
+        if let spacing = MarkdownHoverLayout.outerSpacing(
+            for: block,
+            isFirstBlock: isFirstBlock,
+            previousBottomMargin: previousBottomMargin
+        ) {
             RoundedRectangle(cornerRadius: 8)
                 .fill(editHoverActive ? Color.black.opacity(0.035) : Color.clear)
-                .padding(.horizontal, -14)
-                .padding(.vertical, -5)
+                .padding(.horizontal, -MarkdownHoverLayout.horizontalOutset)
+                .padding(.top, spacing.top - MarkdownHoverLayout.verticalOutset)
+                .padding(.bottom, spacing.bottom - MarkdownHoverLayout.verticalOutset)
                 .animation(
                     MotionPolicy.animation(
                         .easeInOut(duration: 0.13),
@@ -535,6 +593,8 @@ struct MarkdownBlockRenderer: View, Equatable {
                     ),
                     value: editHoverActive
                 )
+        } else {
+            Color.clear
         }
     }
 
@@ -621,12 +681,24 @@ struct MarkdownBlockRenderer: View, Equatable {
         bottom: CGFloat
     ) {
         switch level {
-        case 1: return (26, -0.2, 4, 19, MarkdownVerticalLayout.headingLineHeight(level: 1), 34, 16)
-        case 2: return (20, -0.1, 3.5, 15, MarkdownVerticalLayout.headingLineHeight(level: 2), 32, 14)
-        case 3: return (17, 0, 3, 12, MarkdownVerticalLayout.headingLineHeight(level: 3), 26, 10)
-        case 4: return (15.5, 0, 2.5, 11, MarkdownVerticalLayout.headingLineHeight(level: 4), 22, 8)
-        case 5: return (14, 0.4, 2, 10, MarkdownVerticalLayout.headingLineHeight(level: 5), 20, 6)
-        default: return (13, 0.4, 2, 9, MarkdownVerticalLayout.headingLineHeight(level: 6), 18, 6)
+        case 1:
+            return (26, -0.2, 4, 19, MarkdownVerticalLayout.headingLineHeight(level: 1),
+                    MarkdownVerticalLayout.headingTopMargin(level: 1), 16)
+        case 2:
+            return (20, -0.1, 3.5, 15, MarkdownVerticalLayout.headingLineHeight(level: 2),
+                    MarkdownVerticalLayout.headingTopMargin(level: 2), 14)
+        case 3:
+            return (17, 0, 3, 12, MarkdownVerticalLayout.headingLineHeight(level: 3),
+                    MarkdownVerticalLayout.headingTopMargin(level: 3), 10)
+        case 4:
+            return (15.5, 0, 2.5, 11, MarkdownVerticalLayout.headingLineHeight(level: 4),
+                    MarkdownVerticalLayout.headingTopMargin(level: 4), 8)
+        case 5:
+            return (14, 0.4, 2, 10, MarkdownVerticalLayout.headingLineHeight(level: 5),
+                    MarkdownVerticalLayout.headingTopMargin(level: 5), 6)
+        default:
+            return (13, 0.4, 2, 9, MarkdownVerticalLayout.headingLineHeight(level: 6),
+                    MarkdownVerticalLayout.headingTopMargin(level: 6), 6)
         }
     }
 
