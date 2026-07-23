@@ -1,0 +1,35 @@
+Sources/MarkdownViewer/Editor/BlockEditorStore.swift
+  s_3162d03b7b99b6::t_037166e8501792 13-17,37,50,85,100,118-131,134,140-150,153,159-164,171,180-189,194-224,237,246,263,272,317,324,331,367,429,460-464,728,732,773-774,781,813,1001,1009-1015
+Sources/MarkdownViewer/Editor/BlockSourceEditor.swift
+  s_3162d03b7b99b6::t_85819c4a375fe3 386,401-402,406-407,437-442,453,468,533,595,643,877,879,893-894,896-897,921,930,1012,1021
+Sources/MarkdownViewer/Editor/MarkdownBlockEditorView.swift
+  s_3162d03b7b99b6::t_42894b900505ab 335-338,343,356-361,364-370,386
+Tests/E2E/RealAppHarnessTests.sh
+  s_3162d03b7b99b6::t_530a19c4d76820 2135-2138,2173,2180,2187,2206,2209-2211,2213
+Tests/MarkdownViewerTests/BlockEditorStoreTests.swift
+  s_3162d03b7b99b6::t_2506df36fed827 189-241
+Tests/MarkdownViewerTests/BlockSourceChromeTests.swift
+  s_3162d03b7b99b6::t_50fea01d766fc1 54-57,59-60
+Tests/MarkdownViewerTests/BlockSourceLifecycleTests.swift
+  s_3162d03b7b99b6::t_0f947dc28823a9 61-80,365-366,369-370,374-379,390-391,395-398,420,424,430-435,437-443
+scripts/e2e/build-foreground-block-activation-plan.py
+  s_3162d03b7b99b6::t_fd387fbe315f95 32-35,68,75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e23945d56751b126fc411d15c33b22d28e7449b7",
+  "prompts": {},
+  "sessions": {
+    "s_3162d03b7b99b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8d89-6493-7022-8f11-75ca2246eef8",
+        "model": "unknown"
+      },
+      "human_author": "wangjingxuan.114514 <wangjingxuan.114514@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
