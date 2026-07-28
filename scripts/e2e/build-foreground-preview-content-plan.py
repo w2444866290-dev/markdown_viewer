@@ -45,19 +45,19 @@ def preview_content_actions(raw_dir: pathlib.Path) -> list[dict[str, object]]:
         screenshot(raw_dir, "preview-content-on.png"),
         {
             "kind": "element-click",
-            "identifier": "document-block-19-task-2-checkbox",
+            "identifier": "document-block-30-task-0-checkbox",
             "role": "AXButton",
             "waitMs": 80,
         },
         screenshot(raw_dir, "preview-task-toggled.png"),
         {
             "kind": "element-move",
-            "identifier": "document-block-23-code-card",
+            "identifier": "document-block-35-code-card",
             "waitMs": 80,
         },
         {
             "kind": "element-click",
-            "identifier": "document-block-23-code-copy",
+            "identifier": "document-block-35-code-copy",
             "role": "AXButton",
             "waitMs": 80,
         },

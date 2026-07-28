@@ -56,9 +56,25 @@ struct MarkdownDocumentTests {
 
         #expect(document.source == source)
         #expect(document.blocks.map(\.kind) == [
-            .heading, .paragraph, .quote, .list, .code, .table, .image,
+            .heading, .paragraph, .quote, .list, .list, .code, .table, .image,
             .horizontalRule, .footnotes,
         ])
+    }
+
+    @Test("every list item is a lossless block, including nested items")
+    func listItemsAreIndependentBlocks() {
+        let source = "1. first\r\n2. second\r\n   - nested\r\n3. third"
+        let document = MarkdownDocument(source: source)
+
+        #expect(document.source == source)
+        #expect(document.blocks.map(\.kind) == [.list, .list, .list, .list])
+        #expect(document.blocks.map(\.source) == [
+            "1. first",
+            "2. second",
+            "   - nested",
+            "3. third",
+        ])
+        #expect(document.blocks.map(\.leadingTrivia) == ["", "\r\n", "\r\n", "\r\n"])
     }
 
     @Test("stable IDs survive Codable persistence")
@@ -252,14 +268,16 @@ struct MarkdownDocumentTests {
     func taskToggle() throws {
         let source = "- [ ] first\r\n- [X] second\r\n- ordinary"
         var document = MarkdownDocument(source: source)
-        let id = document.blocks[0].id
+        let firstID = document.blocks[0].id
+        let secondID = document.blocks[1].id
 
-        let firstChecked = try document.toggleTask(blockID: id, itemIndex: 0)
-        let secondChecked = try document.toggleTask(blockID: id, itemIndex: 1)
+        let firstChecked = try document.toggleTask(blockID: firstID, itemIndex: 0)
+        let secondChecked = try document.toggleTask(blockID: secondID, itemIndex: 0)
 
         #expect(firstChecked)
         #expect(!secondChecked)
-        #expect(document.blocks[0].id == id)
+        #expect(document.blocks[0].id == firstID)
+        #expect(document.blocks[1].id == secondID)
         #expect(document.source == "- [x] first\r\n- [ ] second\r\n- ordinary")
     }
 

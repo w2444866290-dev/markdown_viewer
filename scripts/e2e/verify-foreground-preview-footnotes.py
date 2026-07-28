@@ -105,7 +105,7 @@ def main() -> None:
         fail("fixture tab has no structured Markdown document")
     blocks = markdown.get("blocks")
     if not isinstance(blocks, list) \
-            or len(blocks) != 37 \
+            or len(blocks) != 49 \
             or any(not isinstance(block, dict) for block in blocks):
         fail("fixture block count or structure changed")
     rebuilt = "".join(
@@ -116,10 +116,10 @@ def main() -> None:
     if rebuilt != fixture \
             or any(not isinstance(block_id, str) or not block_id for block_id in block_ids) \
             or len(set(block_ids)) != len(block_ids) \
-            or blocks[35].get("kind") != "paragraph" \
-            or blocks[35].get("source") != EXPECTED_REFERENCE_BLOCK \
-            or blocks[36].get("kind") != "footnotes" \
-            or blocks[36].get("source") != EXPECTED_DEFINITION_BLOCK:
+            or blocks[47].get("kind") != "paragraph" \
+            or blocks[47].get("source") != EXPECTED_REFERENCE_BLOCK \
+            or blocks[48].get("kind") != "footnotes" \
+            or blocks[48].get("source") != EXPECTED_DEFINITION_BLOCK:
         fail("footnote navigation did not preserve the exact structured document")
 
     observed_find = diagnostic.get("find")

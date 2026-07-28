@@ -637,7 +637,7 @@ def main() -> None:
             or not math.isclose(fixture_scroll, 0, abs_tol=0.5):
         fail("fixture tab metadata or active identity changed")
     fixture_blocks = markdown_round_trip(fixture_tab, fixture)
-    if len(fixture_blocks) != 37 \
+    if len(fixture_blocks) != 49 \
             or sum(block.get("kind") == "heading" for block in fixture_blocks) != 15:
         fail("fixture block structure changed")
 
@@ -705,7 +705,7 @@ def main() -> None:
             "assertions": {
                 "activeFixtureSourceExact": fixture_tab["text"] == fixture,
                 "fixtureBlockModelRoundTripsExactly": (
-                    len(fixture_blocks) == 37
+                    len(fixture_blocks) == 49
                     and sum(
                         block.get("kind") == "heading"
                         for block in fixture_blocks

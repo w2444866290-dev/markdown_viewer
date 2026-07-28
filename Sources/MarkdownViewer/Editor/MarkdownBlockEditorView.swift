@@ -1,6 +1,39 @@
 import AppKit
 import SwiftUI
 
+enum MarkdownBlockKeyCommandMapper {
+    static func command(
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags,
+        charactersIgnoringModifiers: String?
+    ) -> MarkdownEditingCommand? {
+        let normalized = modifiers.intersection(.deviceIndependentFlagsMask)
+        if normalized.contains(.command) {
+            switch charactersIgnoringModifiers?.lowercased() {
+            case "b": return .bold
+            case "i": return .italic
+            case "e": return .inlineCode
+            default: return nil
+            }
+        }
+        guard normalized.isDisjoint(with: [.control, .option]) else { return nil }
+        switch keyCode {
+        case 36, 76:
+            return .enter
+        case 51:
+            return .backspace
+        case 48:
+            return normalized.contains(.shift) ? .shiftTab : .tab
+        case 126:
+            return .arrowUp
+        case 125:
+            return .arrowDown
+        default:
+            return nil
+        }
+    }
+}
+
 private struct FootnotePopoverSizePreferenceKey: PreferenceKey {
     static var defaultValue = CGSize.zero
 
@@ -395,29 +428,11 @@ struct MarkdownBlockEditorView: View {
         source: String,
         selection: NSRange
     ) -> MarkdownEditingResult? {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let command: MarkdownEditingCommand?
-        if modifiers.contains(.command) {
-            switch event.charactersIgnoringModifiers?.lowercased() {
-            case "b": command = .bold
-            case "i": command = .italic
-            case "e": command = .inlineCode
-            default: command = nil
-            }
-        } else if modifiers.isDisjoint(with: [.control, .option]) {
-            switch event.keyCode {
-            case 36, 76:
-                command = modifiers.contains(.shift) ? .shiftEnter : .enter
-            case 51: command = .backspace
-            case 48: command = modifiers.contains(.shift) ? .shiftTab : .tab
-            case 126: command = .arrowUp
-            case 125: command = .arrowDown
-            default: command = nil
-            }
-        } else {
-            command = nil
-        }
-        guard let command,
+        guard let command = MarkdownBlockKeyCommandMapper.command(
+                  keyCode: event.keyCode,
+                  modifiers: event.modifierFlags,
+                  charactersIgnoringModifiers: event.charactersIgnoringModifiers
+              ),
               let result = try? MarkdownEditingCommands.apply(
                 command,
                 to: source,

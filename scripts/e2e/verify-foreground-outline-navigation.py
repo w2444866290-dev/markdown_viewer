@@ -10,7 +10,7 @@ import os
 import pathlib
 
 
-TARGET_BLOCK_INDEX = 27
+TARGET_BLOCK_INDEX = 39
 TARGET_HEADING_INDEX = 12
 TARGET_HEADING_SOURCE = "## 表格"
 MIN_SCROLL_Y = 2_548
@@ -107,7 +107,7 @@ def main() -> None:
         fail("fixture tab has no structured Markdown document")
     blocks = markdown.get("blocks")
     if not isinstance(blocks, list) \
-            or len(blocks) != 37 \
+            or len(blocks) != 49 \
             or any(not isinstance(block, dict) for block in blocks):
         fail("fixture block count or structure changed")
     rebuilt = "".join(

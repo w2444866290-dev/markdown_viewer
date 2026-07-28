@@ -48,7 +48,7 @@ def navigation_actions(raw_dir: pathlib.Path) -> list[dict[str, object]]:
         {"kind": "move-safe-point", "waitMs": 40},
         {
             "kind": "element-click",
-            "identifier": "document-block-28-table-row-0-column-0",
+            "identifier": "document-block-40-table-row-0-column-0",
             "role": "AXButton",
             "waitMs": 80,
         },

@@ -3227,10 +3227,10 @@ if active.get("isMarkdown") is not True \
         or active.get("isDirty") is not True \
         or active.get("text") != expected \
         or rebuilt != expected \
-        or len(blocks) != 37 \
-        or blocks[28].get("kind") != "table" \
-        or blocks[28].get("source", "").count("E2E_TABLE") != 1 \
-        or "| --- | --- | :---: |" not in blocks[28].get("source", "") \
+        or len(blocks) != 49 \
+        or blocks[40].get("kind") != "table" \
+        or blocks[40].get("source", "").count("E2E_TABLE") != 1 \
+        or "| --- | --- | :---: |" not in blocks[40].get("source", "") \
         or not math.isclose(float(active.get("scrollY", -1)), 2326, abs_tol=0.5):
     raise SystemExit(1)
 visual = diagnostic.get("visual", {})
@@ -3313,11 +3313,11 @@ print(json.dumps({
         "activeDocumentDirty": active["isDirty"] is True,
         "onlyExpectedCellChanged": active["text"] == expected,
         "blockModelRoundTripsExactly": rebuilt == expected,
-        "blockCountPreserved": len(blocks) == 37,
-        "firstTablePreservedAtStableIndex": blocks[28]["kind"] == "table",
+        "blockCountPreserved": len(blocks) == 49,
+        "firstTablePreservedAtStableIndex": blocks[40]["kind"] == "table",
         "tableControlsNetShapeAndAlignmentPreserved": (
-            blocks[28]["source"].count("\n") == 5
-            and "| --- | --- | :---: |" in blocks[28]["source"]
+            blocks[40]["source"].count("\n") == 5
+            and "| --- | --- | :---: |" in blocks[40]["source"]
         ),
         "escapeClosedGrid": (
             diagnostic["activeTableCell"] is None
@@ -3568,9 +3568,9 @@ if active.get("isMarkdown") is not True \
         or active.get("isDirty") is not True \
         or active.get("text") != expected \
         or rebuilt != expected \
-        or len(blocks) != 37 \
-        or blocks[28].get("kind") != "table" \
-        or blocks[28].get("source") != expected_table \
+        or len(blocks) != 49 \
+        or blocks[40].get("kind") != "table" \
+        or blocks[40].get("source") != expected_table \
         or focus_sequence != expected_focus \
         or not math.isclose(float(active.get("scrollY", -1)), 2326, abs_tol=0.5) \
         or diagnostic.get("schemaVersion") != 1 \
@@ -3651,10 +3651,10 @@ print(json.dumps({
         "onlyAutomaticRowWasAdded": active["text"] == expected,
         "blockModelRoundTripsExactly": rebuilt == expected,
         "tableBlockAndAlignmentPreserved": (
-            len(blocks) == 37
-            and blocks[28]["kind"] == "table"
-            and blocks[28]["source"] == expected_table
-            and "| --- | --- | :---: |" in blocks[28]["source"]
+            len(blocks) == 49
+            and blocks[40]["kind"] == "table"
+            and blocks[40]["source"] == expected_table
+            and "| --- | --- | :---: |" in blocks[40]["source"]
         ),
         "exactFocusedCellSequenceObserved": focus_sequence == expected_focus,
         "oneAutomaticRowMutationRecorded": (
@@ -3755,11 +3755,11 @@ diagnostic = json.loads(pathlib.Path(diagnostic_path).read_text(encoding="utf-8"
 fixture = pathlib.Path(fixture_path).read_text(encoding="utf-8")
 expected = fixture.replace(
     "> \u2014\u2014 设计原则：读起来像一页纸，而不是一个应用。",
-    "> \u2014\u2014 设计原则：读起来像一页纸，而不是一个应用。\n> E2E_QUOTE",
+    "> \u2014\u2014 设计原则：读起来像一页纸，而不是一个应用。\n\n> E2E_QUOTE",
     1,
 ).replace(
-    "- 另一个第一层项目",
-    "- 另一个第一层项目\n- E2E_LIST **BOLD**",
+    "- 第一层项目",
+    "- 第一层项目\n- E2E_LIST **BOLD**",
     1,
 )
 active = next(
@@ -3777,11 +3777,11 @@ if active.get("isMarkdown") is not True \
         or active.get("isDirty") is not True \
         or active.get("text") != expected \
         or rebuilt != expected \
-        or len(blocks) != 37 \
+        or len(blocks) != 51 \
         or blocks[12].get("kind") != "quote" \
-        or blocks[12].get("source", "").endswith("\n> E2E_QUOTE") is not True \
-        or blocks[15].get("kind") != "list" \
-        or blocks[15].get("source", "").endswith("\n- E2E_LIST **BOLD**") is not True \
+        or blocks[13].get("source") != "> E2E_QUOTE" \
+        or blocks[17].get("kind") != "list" \
+        or blocks[17].get("source") != "- E2E_LIST **BOLD**" \
         or not math.isclose(float(active.get("scrollY", -1)), 650, abs_tol=0.5):
     raise SystemExit(1)
 visual = diagnostic.get("visual", {})
@@ -3794,8 +3794,8 @@ if diagnostic.get("schemaVersion") != 1 \
         or diagnostic.get("selection") is not None \
         or diagnostic.get("activeTableCell") is not None \
         or diagnostic.get("dirty") is not True \
-        or diagnostic.get("localMutationCount") != 4 \
-        or diagnostic.get("parseCount") != 5 \
+        or diagnostic.get("localMutationCount") != 6 \
+        or diagnostic.get("parseCount") != 7 \
         or not math.isclose(float(diagnostic.get("scrollY", -1)), 650, abs_tol=0.5) \
         or find.get("query") != "" \
         or find.get("matchCount") != 0 \
@@ -3838,11 +3838,11 @@ diagnostic = json.loads(pathlib.Path(diagnostic_path).read_text(encoding="utf-8"
 fixture = pathlib.Path(fixture_path).read_text(encoding="utf-8")
 expected = fixture.replace(
     "> \u2014\u2014 设计原则：读起来像一页纸，而不是一个应用。",
-    "> \u2014\u2014 设计原则：读起来像一页纸，而不是一个应用。\n> E2E_QUOTE",
+    "> \u2014\u2014 设计原则：读起来像一页纸，而不是一个应用。\n\n> E2E_QUOTE",
     1,
 ).replace(
-    "- 另一个第一层项目",
-    "- 另一个第一层项目\n- E2E_LIST **BOLD**",
+    "- 第一层项目",
+    "- 第一层项目\n- E2E_LIST **BOLD**",
     1,
 )
 active = next(tab for tab in session["tabs"] if tab.get("id") == session["activeTabID"])
@@ -3858,16 +3858,16 @@ print(json.dumps({
     "assertions": {
         "onlyExpectedStructuredEditsPersisted": active["text"] == expected,
         "blockModelRoundTripsExactly": rebuilt == expected,
-        "blockCountPreserved": len(blocks) == 37,
-        "quoteContinuationPersisted": blocks[12]["source"].endswith("\n> E2E_QUOTE"),
+        "blockCountReflectsTwoNewBlocks": len(blocks) == 51,
+        "quoteContinuationPersisted": blocks[13]["source"] == "> E2E_QUOTE",
         "listContinuationAndBoldPersisted": (
-            blocks[15]["source"].endswith("\n- E2E_LIST **BOLD**")
+            blocks[17]["source"] == "- E2E_LIST **BOLD**"
         ),
-        "tabAndShiftTabNetIndentPreserved": "\n  - E2E_LIST" not in blocks[15]["source"],
+        "tabAndShiftTabNetIndentPreserved": not blocks[17]["source"].startswith("  -"),
         "undoRedoRestoredFinalEdit": active["text"] == expected,
-        "fourLocalHistoryMutationsRecorded": (
-            diagnostic["localMutationCount"] == 4
-            and diagnostic["parseCount"] == 5
+        "sixLocalHistoryMutationsRecorded": (
+            diagnostic["localMutationCount"] == 6
+            and diagnostic["parseCount"] == 7
         ),
         "escapeClosedSourceEditor": (
             diagnostic["blockID"] is None
@@ -4010,7 +4010,7 @@ if active.get("isMarkdown") is not True \
         or active.get("isDirty") is not True \
         or active.get("text") != expected \
         or rebuilt != expected \
-        or len(blocks) != 36 \
+        or len(blocks) != 48 \
         or blocks[10].get("kind") != "paragraph" \
         or blocks[10].get("source") != merged \
         or blocks[11].get("kind") != "quote" \
@@ -4084,7 +4084,7 @@ print(json.dumps({
         "onlyExpectedBoundaryEditsPersisted": active["text"] == expected,
         "blockModelRoundTripsExactly": rebuilt == expected,
         "adjacentParagraphsMerged": (
-            len(blocks) == 36
+            len(blocks) == 48
             and blocks[10]["kind"] == "paragraph"
             and blocks[10]["source"] == merged
             and blocks[11]["kind"] == "quote"

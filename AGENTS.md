@@ -24,7 +24,9 @@ The window contains a resizable file sidebar at the far left, a content outline 
 
 - The editing area renders headings, paragraphs, emphasis, inline code, fenced code, quotes, nested lists, tasks, tables, links, images, horizontal rules, and footnotes as native blocks.
 - Clicking a rendered block reveals that block's Markdown source in place, while clicking a table cell opens the native grid editor for that table.
-- Enter, Backspace, Tab, Shift+Tab, arrow-boundary movement, and common inline formatting shortcuts preserve list, task, quote, and block structure.
+- Enter and Shift+Enter create the same next-block transition for ordinary rendered content.
+- Each list item is an independent editable block, and new ordered items continue and renumber their sibling sequence.
+- Fenced code keeps literal line insertion, tables keep native grid navigation, and Backspace, Tab, Shift+Tab, arrow-boundary movement, and common inline formatting shortcuts preserve container structure.
 - Pure preview mode is toggled with `Command+Shift+P` and removes block-source and table-grid editing affordances without introducing a second pane.
 - Code copying, task toggling, links, and footnote navigation remain interactive in pure preview.
 - `.md`, `.markdown`, and `.mdx` files use the rendered block experience.

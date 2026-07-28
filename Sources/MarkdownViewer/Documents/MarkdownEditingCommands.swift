@@ -3,7 +3,6 @@ import Foundation
 /// Source-editing commands handled before an active Markdown block is reparsed.
 enum MarkdownEditingCommand: Equatable {
     case enter
-    case shiftEnter
     case backspace
     case arrowUp
     case arrowDown
@@ -18,6 +17,7 @@ enum MarkdownEditingCommand: Equatable {
 /// `replacementSource`.
 enum MarkdownEditingBoundaryAction: Equatable {
     case splitBlock
+    case splitBlockWithPrefix(separator: String, rightPrefix: String)
     case exitList
     case exitQuote
     case mergeWithPrevious
@@ -33,6 +33,19 @@ struct MarkdownEditingResult: Equatable {
     let replacementSource: String
     let selection: NSRange
     let boundaryAction: MarkdownEditingBoundaryAction?
+}
+
+struct MarkdownListItemPrefix {
+    let start: Int
+    let indentation: String
+    let marker: String
+    let markerSpacing: String
+    let isTask: Bool
+    let contentStart: Int
+
+    var isOrdered: Bool {
+        !["-", "+", "*"].contains(marker)
+    }
 }
 
 enum MarkdownEditingCommandError: Error, Equatable {
@@ -64,12 +77,6 @@ enum MarkdownEditingCommands {
         switch command {
         case .enter:
             return applyEnter(to: source, selection: selection, blockKind: blockKind)
-        case .shiftEnter:
-            return applyShiftEnter(
-                to: source,
-                selection: selection,
-                blockKind: blockKind
-            )
         case .backspace:
             return applyBackspace(to: source, selection: selection)
         case .arrowUp:
@@ -168,60 +175,6 @@ enum MarkdownEditingCommands {
         )
     }
 
-    private static func applyShiftEnter(
-        to source: String,
-        selection: NSRange,
-        blockKind: MarkdownBlockKind
-    ) -> MarkdownEditingResult {
-        let lineEnding = preferredLineEnding(in: source, near: selection.location)
-        let collapsed = replacing(source, range: selection, with: "")
-        let caret = selection.location
-
-        if blockKind == .list || blockKind == .code || blockKind == .table {
-            return inserting(
-                lineEnding,
-                at: caret,
-                in: collapsed,
-                boundaryAction: nil
-            )
-        }
-
-        if blockKind == .quote {
-            let lines = sourceLines(collapsed)
-            let line = lines[indexOfLine(containing: caret, in: lines)]
-            let lineSource = (collapsed as NSString).substring(
-                with: NSRange(
-                    location: line.start,
-                    length: line.contentEnd - line.start
-                )
-            )
-            let caretInLine = caret - line.start
-            let sourceBeforeCaret = (lineSource as NSString).substring(
-                to: caretInLine
-            )
-            if let prefix = parseQuotePrefix(in: sourceBeforeCaret) {
-                return inserting(
-                    lineEnding + prefix.source,
-                    at: caret,
-                    in: collapsed,
-                    boundaryAction: nil
-                )
-            }
-            return inserting(
-                lineEnding,
-                at: caret,
-                in: collapsed,
-                boundaryAction: nil
-            )
-        }
-
-        return MarkdownEditingResult(
-            replacementSource: collapsed,
-            selection: NSRange(location: caret, length: 0),
-            boundaryAction: .splitBlock
-        )
-    }
-
     private static func applyListEnter(
         to source: String,
         caret: Int,
@@ -229,7 +182,7 @@ enum MarkdownEditingCommands {
         lineSource: String,
         caretInLine: Int,
         quotePrefix: QuotePrefix?,
-        listPrefix: ListPrefix,
+        listPrefix: MarkdownListItemPrefix,
         lineEnding: String
     ) -> MarkdownEditingResult {
         let nsLine = lineSource as NSString
@@ -252,7 +205,11 @@ enum MarkdownEditingCommands {
         }
 
         guard caretInLine >= listPrefix.contentStart else {
-            return inserting(lineEnding, at: caret, in: source, boundaryAction: nil)
+            return MarkdownEditingResult(
+                replacementSource: source,
+                selection: NSRange(location: caret, length: 0),
+                boundaryAction: .splitBlock
+            )
         }
 
         let quote = quotePrefix?.source ?? ""
@@ -268,11 +225,13 @@ enum MarkdownEditingCommands {
             + marker
             + listPrefix.markerSpacing
             + task
-        return inserting(
-            lineEnding + continuation,
-            at: caret,
-            in: source,
-            boundaryAction: nil
+        return MarkdownEditingResult(
+            replacementSource: source,
+            selection: NSRange(location: caret, length: 0),
+            boundaryAction: .splitBlockWithPrefix(
+                separator: lineEnding,
+                rightPrefix: continuation
+            )
         )
     }
 
@@ -303,13 +262,19 @@ enum MarkdownEditingCommands {
         }
 
         guard caretInLine >= prefix.contentStart else {
-            return inserting(lineEnding, at: caret, in: source, boundaryAction: nil)
+            return MarkdownEditingResult(
+                replacementSource: source,
+                selection: NSRange(location: caret, length: 0),
+                boundaryAction: .splitBlock
+            )
         }
-        return inserting(
-            lineEnding + prefix.source,
-            at: caret,
-            in: source,
-            boundaryAction: nil
+        return MarkdownEditingResult(
+            replacementSource: source,
+            selection: NSRange(location: caret, length: 0),
+            boundaryAction: .splitBlockWithPrefix(
+                separator: lineEnding + lineEnding,
+                rightPrefix: prefix.source
+            )
         )
     }
 
@@ -525,28 +490,15 @@ enum MarkdownEditingCommands {
 
     // MARK: - List markers
 
-    private struct ListPrefix {
-        let start: Int
-        let indentation: String
-        let marker: String
-        let markerSpacing: String
-        let isTask: Bool
-        let contentStart: Int
-
-        var isOrdered: Bool {
-            !["-", "+", "*"].contains(marker)
-        }
-    }
-
     private struct QuotePrefix {
         let source: String
         let contentStart: Int
     }
 
-    private static func parseListPrefix(
+    static func parseListPrefix(
         in line: String,
         startingAt offset: Int
-    ) -> ListPrefix? {
+    ) -> MarkdownListItemPrefix? {
         let nsLine = line as NSString
         guard offset >= 0, offset <= nsLine.length else { return nil }
         let suffix = nsLine.substring(
@@ -560,7 +512,7 @@ enum MarkdownEditingCommands {
             return nil
         }
 
-        return ListPrefix(
+        return MarkdownListItemPrefix(
             start: offset,
             indentation: nsSuffix.substring(with: match.range(at: 1)),
             marker: nsSuffix.substring(with: match.range(at: 2)),
@@ -584,7 +536,7 @@ enum MarkdownEditingCommands {
         )
     }
 
-    private static func nextOrderedMarker(
+    static func nextOrderedMarker(
         _ marker: String,
         indentation: String
     ) -> String {

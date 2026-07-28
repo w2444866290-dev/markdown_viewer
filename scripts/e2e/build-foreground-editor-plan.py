@@ -40,15 +40,6 @@ def editor_actions(raw_dir: pathlib.Path) -> list[dict[str, object]]:
         {"kind": "move-safe-point", "waitMs": 40},
         {
             "kind": "element-click",
-            "identifier": "document-block-12-quote",
-            "waitMs": 80,
-        },
-        {"kind": "key", "key": "return", "waitMs": 80},
-        {"kind": "text", "text": "E2E_QUOTE", "waitMs": 80},
-        screenshot(raw_dir, "quote-source-edited.png"),
-        {"kind": "key", "key": "escape", "waitMs": 80},
-        {
-            "kind": "element-click",
             "identifier": "document-block-15-list",
             "waitMs": 80,
         },
@@ -63,6 +54,15 @@ def editor_actions(raw_dir: pathlib.Path) -> list[dict[str, object]]:
         {"kind": "key", "key": "command+z", "waitMs": 80},
         screenshot(raw_dir, "list-undone.png"),
         {"kind": "key", "key": "command+shift+z", "waitMs": 80},
+        {
+            "kind": "element-click",
+            "identifier": "document-block-12-quote",
+            "waitMs": 80,
+        },
+        {"kind": "key", "key": "return", "waitMs": 80},
+        {"kind": "text", "text": "E2E_QUOTE", "waitMs": 80},
+        screenshot(raw_dir, "quote-source-edited.png"),
+        {"kind": "key", "key": "escape", "waitMs": 80},
         screenshot(raw_dir, "editor-structure-final.png"),
     ]
 
