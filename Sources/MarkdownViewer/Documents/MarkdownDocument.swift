@@ -86,10 +86,25 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
         document: MarkdownDocument,
         didMigrate: Bool
     ) {
-        guard blocks.count > 1 else { return (self, false) }
         var migrated = self
-        let ending = preferredLineEnding
         var didMigrate = false
+
+        // Older sessions persisted an entire list as one block. Reparse only
+        // those slices so the first item retains its stable ID and every later
+        // item receives an independent block without changing source bytes.
+        for block in blocks where block.kind == .list {
+            let parsedItems = Self.parse(block.source).blocks
+            guard parsedItems.count > 1,
+                  parsedItems.allSatisfy({ $0.kind == .list }) else {
+                continue
+            }
+            if (try? migrated.replaceBlock(id: block.id, with: block.source)) != nil {
+                didMigrate = true
+            }
+        }
+
+        guard migrated.blocks.count > 1 else { return (migrated, didMigrate) }
+        let ending = preferredLineEnding
 
         for index in migrated.blocks.indices.dropFirst() {
             let block = migrated.blocks[index]
@@ -196,7 +211,8 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
     mutating func splitBlock(
         id: UUID,
         atUTF16Offset offset: Int,
-        separator: String
+        separator: String,
+        rightPrefix: String = ""
     ) throws -> UUID {
         guard let index = blocks.firstIndex(where: { $0.id == id }) else {
             throw MarkdownDocumentError.blockNotFound(id)
@@ -215,8 +231,8 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
         )
         let right = MarkdownBlock(
             id: rightID,
-            kind: Self.standaloneKind(of: halves.right),
-            source: halves.right,
+            kind: Self.standaloneKind(of: rightPrefix + halves.right),
+            source: rightPrefix + halves.right,
             leadingTrivia: separator
         )
         blocks.replaceSubrange(index..<(index + 1), with: [left, right])
@@ -291,6 +307,31 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
             at: insertionIndex
         )
         return paragraphID
+    }
+
+    /// Make a source-empty paragraph durable at a list or quote boundary.
+    ///
+    /// A middle empty paragraph needs one blank-line boundary on each side.
+    /// At EOF only the leading boundary is required.
+    mutating func materializeEmptyParagraphBoundaries(id: UUID) throws {
+        guard let index = blocks.firstIndex(where: { $0.id == id }) else {
+            throw MarkdownDocumentError.blockNotFound(id)
+        }
+        guard blocks[index].kind == .paragraph, blocks[index].source.isEmpty else {
+            return
+        }
+
+        let ending = preferredLineEnding
+        let block = blocks[index]
+        blocks[index] = block.replacingLeadingTrivia(
+            Self.ensureBlankLineBoundary(block.leadingTrivia, lineEnding: ending)
+        )
+        if blocks.indices.contains(index + 1) {
+            let following = blocks[index + 1]
+            blocks[index + 1] = following.replacingLeadingTrivia(
+                Self.ensureBlankLineBoundary(following.leadingTrivia, lineEnding: ending)
+            )
+        }
     }
 
     /// Toggle the Nth task marker in a list block. Blank markers become lowercase
@@ -562,8 +603,13 @@ struct MarkdownDocument: Codable, Equatable, Sendable {
             case .list:
                 var cursor = index + 1
                 while cursor < lines.count, !isBlank(lines[cursor].content) {
-                    if isList(lines[cursor].content)
-                        || leadingWhitespaceWidth(lines[cursor].content) > 0 {
+                    // Every Markdown list marker owns one native editing block.
+                    // Indented markers are list items too, rather than continuation
+                    // source owned by their parent item.
+                    if isList(lines[cursor].content) {
+                        break
+                    }
+                    if leadingWhitespaceWidth(lines[cursor].content) > 0 {
                         cursor += 1
                         continue
                     }

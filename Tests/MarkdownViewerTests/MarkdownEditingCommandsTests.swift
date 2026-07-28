@@ -1,9 +1,26 @@
+import AppKit
 import Foundation
 import Testing
 @testable import MarkdownViewer
 
 @Suite("Markdown editing commands")
 struct MarkdownEditingCommandsTests {
+    @Test("Return and Shift-Return map to the same block command")
+    func shiftedReturnIsOrdinaryReturn() {
+        for keyCode: UInt16 in [36, 76] {
+            #expect(MarkdownBlockKeyCommandMapper.command(
+                keyCode: keyCode,
+                modifiers: [],
+                charactersIgnoringModifiers: "\r"
+            ) == .enter)
+            #expect(MarkdownBlockKeyCommandMapper.command(
+                keyCode: keyCode,
+                modifiers: [.shift],
+                charactersIgnoringModifiers: "\r"
+            ) == .enter)
+        }
+    }
+
     @Test
     func ordinaryEnterSplitsAtCaretAndDeletesSelection() throws {
         let split = try apply(.enter, to: "helloworld", at: 5)
@@ -45,12 +62,20 @@ struct MarkdownEditingCommandsTests {
     @Test
     func unorderedListsContinueTheirMarkerAndSpacing() throws {
         let dash = try apply(.enter, to: "- one", at: 5, blockKind: .list)
-        #expect(dash.replacementSource == "- one\n- ")
-        #expect(dash.selection == NSRange(location: 8, length: 0))
+        #expect(dash.replacementSource == "- one")
+        #expect(dash.selection == NSRange(location: 5, length: 0))
+        #expect(dash.boundaryAction == .splitBlockWithPrefix(
+            separator: "\n",
+            rightPrefix: "- "
+        ))
 
         let plus = try apply(.enter, to: "+   item", at: 8, blockKind: .list)
-        #expect(plus.replacementSource == "+   item\n+   ")
-        #expect(plus.selection == NSRange(location: 13, length: 0))
+        #expect(plus.replacementSource == "+   item")
+        #expect(plus.selection == NSRange(location: 8, length: 0))
+        #expect(plus.boundaryAction == .splitBlockWithPrefix(
+            separator: "\n",
+            rightPrefix: "+   "
+        ))
     }
 
     @Test("Enter follows the current draft kind instead of the original block kind")
@@ -66,9 +91,12 @@ struct MarkdownEditingCommandsTests {
         )
 
         #expect(draftKind == .list)
-        #expect(result.replacementSource == "- item\n- ")
-        #expect(result.selection == NSRange(location: 9, length: 0))
-        #expect(result.boundaryAction == nil)
+        #expect(result.replacementSource == "- item")
+        #expect(result.selection == NSRange(location: 6, length: 0))
+        #expect(result.boundaryAction == .splitBlockWithPrefix(
+            separator: "\n",
+            rightPrefix: "- "
+        ))
     }
 
     @Test("draft kind follows the block containing the caret after a multi-block paste")
@@ -88,8 +116,11 @@ struct MarkdownEditingCommandsTests {
         )
 
         #expect(draftKind == .list)
-        #expect(result.replacementSource == draft + "\n- ")
-        #expect(result.boundaryAction == nil)
+        #expect(result.replacementSource == draft)
+        #expect(result.boundaryAction == .splitBlockWithPrefix(
+            separator: "\n",
+            rightPrefix: "- "
+        ))
     }
 
     @Test
@@ -101,10 +132,14 @@ struct MarkdownEditingCommandsTests {
                 at: (source as NSString).length,
                 blockKind: .list
             )
-            #expect(result.replacementSource == source + "\n- [ ] ")
+            #expect(result.replacementSource == source)
             #expect(result.selection == NSRange(
-                location: (result.replacementSource as NSString).length,
+                location: (source as NSString).length,
                 length: 0
+            ))
+            #expect(result.boundaryAction == .splitBlockWithPrefix(
+                separator: "\n",
+                rightPrefix: "- [ ] "
             ))
         }
 
@@ -115,7 +150,11 @@ struct MarkdownEditingCommandsTests {
             at: (ordered as NSString).length,
             blockKind: .list
         )
-        #expect(orderedResult.replacementSource == ordered + "\n  b. [ ] ")
+        #expect(orderedResult.replacementSource == ordered)
+        #expect(orderedResult.boundaryAction == .splitBlockWithPrefix(
+            separator: "\n",
+            rightPrefix: "  b. [ ] "
+        ))
     }
 
     @Test
@@ -157,8 +196,11 @@ struct MarkdownEditingCommandsTests {
             at: (source as NSString).length,
             blockKind: .quote
         )
-        #expect(result.replacementSource == ">   a. child\n>   b. ")
-        #expect(result.boundaryAction == nil)
+        #expect(result.replacementSource == source)
+        #expect(result.boundaryAction == .splitBlockWithPrefix(
+            separator: "\n",
+            rightPrefix: ">   b. "
+        ))
     }
 
     @Test
@@ -169,8 +211,12 @@ struct MarkdownEditingCommandsTests {
             at: 8,
             blockKind: .quote
         )
-        #expect(nested.replacementSource == "> > deep\r\n> > \r\n> tail")
-        #expect(nested.selection == NSRange(location: 14, length: 0))
+        #expect(nested.replacementSource == "> > deep\r\n> tail")
+        #expect(nested.selection == NSRange(location: 8, length: 0))
+        #expect(nested.boundaryAction == .splitBlockWithPrefix(
+            separator: "\r\n\r\n",
+            rightPrefix: "> > "
+        ))
 
         let empty = try apply(
             .enter,
@@ -254,55 +300,6 @@ struct MarkdownEditingCommandsTests {
         let tabOutdented = try apply(.shiftTab, to: "\titem", at: 3)
         #expect(tabOutdented.replacementSource == "item")
         #expect(tabOutdented.selection == NSRange(location: 2, length: 0))
-    }
-
-    @Test
-    func shiftEnterUsesContextSpecificLineAndBlockBehavior() throws {
-        let list = try apply(
-            .shiftEnter,
-            to: "- item",
-            at: 6,
-            blockKind: .list
-        )
-        #expect(list.replacementSource == "- item\n")
-        #expect(list.selection == NSRange(location: 7, length: 0))
-        #expect(list.boundaryAction == nil)
-
-        let quote = try apply(
-            .shiftEnter,
-            to: "> quoted",
-            at: 8,
-            blockKind: .quote
-        )
-        #expect(quote.replacementSource == "> quoted\n> ")
-        #expect(quote.selection == NSRange(location: 11, length: 0))
-        #expect(quote.boundaryAction == nil)
-
-        let emptyQuote = try apply(
-            .shiftEnter,
-            to: "> ",
-            at: 2,
-            blockKind: .quote
-        )
-        #expect(emptyQuote.replacementSource == "> \n> ")
-        #expect(emptyQuote.boundaryAction == nil)
-
-        let paragraph = try apply(.shiftEnter, to: "helloworld", at: 5)
-        #expect(paragraph.replacementSource == "helloworld")
-        #expect(paragraph.selection == NSRange(location: 5, length: 0))
-        #expect(paragraph.boundaryAction == .splitBlock)
-
-        for kind in [MarkdownBlockKind.code, .table] {
-            let literal = try apply(
-                .shiftEnter,
-                to: "left|right",
-                at: 4,
-                blockKind: kind
-            )
-            #expect(literal.replacementSource == "left\n|right")
-            #expect(literal.selection == NSRange(location: 5, length: 0))
-            #expect(literal.boundaryAction == nil)
-        }
     }
 
     @Test
@@ -414,10 +411,14 @@ struct MarkdownEditingCommandsTests {
             at: (source as NSString).length,
             blockKind: .list
         )
-        #expect(result.replacementSource == source + "\n" + marker)
+        #expect(result.replacementSource == source)
         #expect(result.selection == NSRange(
-            location: (result.replacementSource as NSString).length,
+            location: (source as NSString).length,
             length: 0
+        ))
+        #expect(result.boundaryAction == .splitBlockWithPrefix(
+            separator: "\n",
+            rightPrefix: marker
         ))
     }
 

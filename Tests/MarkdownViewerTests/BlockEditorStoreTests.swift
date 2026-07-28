@@ -8,7 +8,7 @@ struct BlockEditorStoreTests {
     @Test("ordinary Return splits paragraph and heading at every caret boundary")
     func ordinaryReturnSplitMatrix() throws {
         for source in ["paragraph", "# Heading"] {
-            for command in [MarkdownEditingCommand.enter, .shiftEnter] {
+            for command in [MarkdownEditingCommand.enter] {
                 let length = (source as NSString).length
                 for offset in [0, length / 2, length] {
                     let document = MarkdownDocument(source: source)
@@ -82,6 +82,69 @@ struct BlockEditorStoreTests {
             #expect(store.activeBlockID == store.document.blocks[1].id)
             #expect(store.activeSelection == NSRange(location: 0, length: 0))
         }
+    }
+
+    @Test("list Return creates one item block and renumbers following siblings")
+    func listReturnCreatesIndependentRenumberedItem() throws {
+        let document = MarkdownDocument(source: "1. first\n2. second\n3. third")
+        let first = document.blocks[0]
+        let secondID = document.blocks[1].id
+        let thirdID = document.blocks[2].id
+        let store = BlockEditorStore(tabID: UUID(), document: document) { _ in }
+        let caret = (first.source as NSString).length
+        let result = try MarkdownEditingCommands.apply(
+            .enter,
+            to: first.source,
+            selection: NSRange(location: caret, length: 0),
+            blockKind: .list
+        )
+
+        store.beginSourceEditing(blockID: first.id)
+        store.updateActiveDraft(result.replacementSource, selection: result.selection)
+        store.handleBoundaryAction(
+            try #require(result.boundaryAction),
+            selection: result.selection
+        )
+
+        #expect(store.document.blocks.map(\.source) == [
+            "1. first",
+            "2. ",
+            "3. second",
+            "4. third",
+        ])
+        #expect(store.document.blocks[0].id == first.id)
+        #expect(store.document.blocks[2].id == secondID)
+        #expect(store.document.blocks[3].id == thirdID)
+        #expect(store.activeBlockID == store.document.blocks[1].id)
+        #expect(store.activeSelection == NSRange(location: 3, length: 0))
+        #expect(store.source == "1. first\n2. \n3. second\n4. third")
+    }
+
+    @Test("Backspace at a list-item boundary merges content and closes numbering")
+    func listBoundaryBackspaceMergesWithoutLeavingAMarker() throws {
+        let document = MarkdownDocument(source: "1. first\n2. second\n3. third")
+        let first = document.blocks[0]
+        let second = document.blocks[1]
+        let thirdID = document.blocks[2].id
+        let store = BlockEditorStore(tabID: UUID(), document: document) { _ in }
+
+        store.beginSourceEditing(blockID: second.id)
+        store.handleBoundaryAction(
+            .mergeWithPrevious,
+            selection: NSRange(location: 0, length: 0)
+        )
+
+        #expect(store.document.blocks.map(\.source) == [
+            "1. firstsecond",
+            "2. third",
+        ])
+        #expect(store.document.blocks[0].id == first.id)
+        #expect(store.document.blocks[1].id == thirdID)
+        #expect(store.activeBlockID == first.id)
+        #expect(store.activeSelection == NSRange(
+            location: (first.source as NSString).length,
+            length: 0
+        ))
     }
 
     @Test("tail Return preserves neighbors when splitting first, middle, and last blocks")
@@ -294,7 +357,10 @@ struct BlockEditorStoreTests {
         let originalSource = try String(contentsOf: fixtureURL, encoding: .utf8)
         let original = MarkdownDocument(source: originalSource)
         let originalBlockCount = original.blocks.count
-        let tableBlock = try #require(original.blocks[safe: 28])
+        let tableIndex = try #require(original.blocks.firstIndex(where: {
+            $0.kind == .table && $0.source.contains("| ⌘B | 加粗 | 全部 |")
+        }))
+        let tableBlock = original.blocks[tableIndex]
         let originalGrid = try original.tableGrid(for: tableBlock.id)
         let firstBodyCell = MarkdownTableCell(row: 0, column: 0)
         let targetRow = "| ⌘B | 加粗 | 全部 |"
@@ -323,8 +389,7 @@ struct BlockEditorStoreTests {
         let committedTable = try store.document.tableGrid(for: tableBlock.id)
         #expect(store.source == expectedSource)
         #expect(store.document.blocks.count == originalBlockCount)
-        #expect(store.document.blocks.count == 37)
-        #expect(store.document.blocks[28].kind == .table)
+        #expect(store.document.blocks[tableIndex].kind == .table)
         #expect(committedTable.columnCount == originalGrid.columnCount)
         #expect(committedTable.rows.count == originalGrid.rows.count)
         #expect(committedTable.alignments == originalGrid.alignments)
@@ -345,7 +410,10 @@ struct BlockEditorStoreTests {
             .appendingPathComponent("ui/格式示例.md")
         let originalSource = try String(contentsOf: fixtureURL, encoding: .utf8)
         let original = MarkdownDocument(source: originalSource)
-        let tableBlock = try #require(original.blocks[safe: 28])
+        let tableIndex = try #require(original.blocks.firstIndex(where: {
+            $0.kind == .table && $0.source.contains("| ⌘B | 加粗 | 全部 |")
+        }))
+        let tableBlock = original.blocks[tableIndex]
         let originalGrid = try original.tableGrid(for: tableBlock.id)
         let store = BlockEditorStore(tabID: UUID(), document: original) { _ in }
 
@@ -373,8 +441,8 @@ struct BlockEditorStoreTests {
         #expect(committed.rows.dropLast() == originalGrid.rows[...])
         #expect(committed.rows.last == ["", "", ""])
         #expect(committed.rows.count == originalGrid.rows.count + 1)
-        #expect(store.document.blocks.count == 37)
-        #expect(store.document.blocks[28].source == tableBlock.source + "\n|  |  |  |")
+        #expect(store.document.blocks.count == original.blocks.count)
+        #expect(store.document.blocks[tableIndex].source == tableBlock.source + "\n|  |  |  |")
         #expect(store.activeTableID == nil)
         #expect(store.activeTableCell == nil)
         #expect(store.localMutationCount == 1)
@@ -429,7 +497,7 @@ struct BlockEditorStoreTests {
         )
         store.commitActiveEditing()
 
-        #expect(store.document.blocks.count == 36)
+        #expect(store.document.blocks.count == original.blocks.count - 1)
         #expect(store.document.blocks[10].kind == .paragraph)
         #expect(store.document.blocks[10].source == merged)
         #expect(store.document.blocks[11].kind == .quote)
@@ -452,23 +520,26 @@ struct BlockEditorStoreTests {
         let originalSource = try String(contentsOf: fixtureURL, encoding: .utf8)
         let original = MarkdownDocument(source: originalSource)
         let originalBlocks = original.blocks
-        let taskBlock = try #require(originalBlocks[safe: 19])
         let before = "- [ ] 协同编辑"
         let after = "- [x] 协同编辑"
+        let taskIndex = try #require(originalBlocks.firstIndex(where: {
+            $0.kind == .list && $0.source == before
+        }))
+        let taskBlock = originalBlocks[taskIndex]
         #expect(originalSource.components(separatedBy: before).count == 2)
         let store = BlockEditorStore(tabID: UUID(), document: original) { _ in }
 
-        store.toggleTask(blockID: taskBlock.id, itemIndex: 2)
+        store.toggleTask(blockID: taskBlock.id, itemIndex: 0)
 
         #expect(store.source == originalSource.replacingOccurrences(
             of: before,
             with: after
         ))
-        #expect(store.document.blocks.count == 37)
-        #expect(store.document.blocks[19].id == taskBlock.id)
-        #expect(store.document.blocks[19].source.contains(after))
+        #expect(store.document.blocks.count == originalBlocks.count)
+        #expect(store.document.blocks[taskIndex].id == taskBlock.id)
+        #expect(store.document.blocks[taskIndex].source == after)
         #expect(store.document.blocks.enumerated().allSatisfy { index, block in
-            index == 19 || block == originalBlocks[index]
+            index == taskIndex || block == originalBlocks[index]
         })
         #expect(store.activeBlockID == nil)
         #expect(store.activeTableID == nil)
@@ -736,16 +807,22 @@ struct BlockEditorStoreTests {
         let source = "- one\r\n- \r\n- three"
         let document = MarkdownDocument(source: source)
         let store = BlockEditorStore(tabID: UUID(), document: document) { _ in }
-        let listID = try #require(document.blocks.first?.id)
-
-        store.beginSourceEditing(blockID: listID)
-        store.updateActiveDraft(
-            "- one\r\n\r\n- three",
-            selection: NSRange(location: 7, length: 0)
+        let emptyItem = document.blocks[1]
+        let result = try MarkdownEditingCommands.apply(
+            .enter,
+            to: emptyItem.source,
+            selection: NSRange(
+                location: (emptyItem.source as NSString).length,
+                length: 0
+            ),
+            blockKind: .list
         )
+
+        store.beginSourceEditing(blockID: emptyItem.id)
+        store.updateActiveDraft(result.replacementSource, selection: result.selection)
         store.handleBoundaryAction(
-            .exitList,
-            selection: NSRange(location: 7, length: 0)
+            try #require(result.boundaryAction),
+            selection: result.selection
         )
 
         #expect(store.source == "- one\r\n\r\n\r\n\r\n- three")
@@ -773,15 +850,24 @@ struct BlockEditorStoreTests {
                 selection: NSRange(location: (container.source as NSString).length, length: 0),
                 blockKind: fixture.kind
             )
-            let second = try MarkdownEditingCommands.apply(
-                .enter,
-                to: first.replacementSource,
-                selection: first.selection,
-                blockKind: fixture.kind
-            )
 
             store.beginSourceEditing(blockID: container.id)
             store.updateActiveDraft(first.replacementSource, selection: first.selection)
+            store.handleBoundaryAction(
+                try #require(first.boundaryAction),
+                selection: first.selection
+            )
+
+            let emptyContainer = try #require(store.activeBlock)
+            let second = try MarkdownEditingCommands.apply(
+                .enter,
+                to: emptyContainer.source,
+                selection: NSRange(
+                    location: (emptyContainer.source as NSString).length,
+                    length: 0
+                ),
+                blockKind: fixture.kind
+            )
             store.updateActiveDraft(second.replacementSource, selection: second.selection)
             store.handleBoundaryAction(try #require(second.boundaryAction), selection: second.selection)
 

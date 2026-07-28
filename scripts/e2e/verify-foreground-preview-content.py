@@ -12,12 +12,7 @@ import pathlib
 
 TASK_BEFORE = "- [ ] 协同编辑"
 TASK_AFTER = "- [x] 协同编辑"
-EXPECTED_TASK_BLOCK = "\n".join([
-    "- [x] 实时渲染",
-    "- [x] 语法即时高亮",
-    "- [x] 协同编辑",
-    "- [ ] 导出 PDF",
-])
+EXPECTED_TASK_BLOCK = "- [x] 协同编辑"
 EXPECTED_FIND = {
     "query": "",
     "display": "",
@@ -96,7 +91,7 @@ def main() -> None:
         fail("fixture tab has no structured Markdown document")
     blocks = markdown.get("blocks")
     if not isinstance(blocks, list) \
-            or len(blocks) != 37 \
+            or len(blocks) != 49 \
             or any(not isinstance(block, dict) for block in blocks):
         fail("fixture block count or structure changed")
     rebuilt = "".join(
@@ -107,8 +102,8 @@ def main() -> None:
     if rebuilt != expected_source \
             or any(not isinstance(block_id, str) or not block_id for block_id in block_ids) \
             or len(set(block_ids)) != len(block_ids) \
-            or blocks[19].get("kind") != "list" \
-            or blocks[19].get("source") != EXPECTED_TASK_BLOCK:
+            or blocks[30].get("kind") != "list" \
+            or blocks[30].get("source") != EXPECTED_TASK_BLOCK:
         fail("task mutation did not preserve the exact structured document")
 
     observed_find = diagnostic.get("find")

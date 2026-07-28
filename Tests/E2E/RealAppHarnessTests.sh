@@ -2411,18 +2411,18 @@ assert [action.get("key") for action in actions if action["kind"] == "key"] == [
 ]
 assert actions[3] == {
     "kind": "element-click",
-    "identifier": "document-block-19-task-2-checkbox",
+    "identifier": "document-block-30-task-0-checkbox",
     "role": "AXButton",
     "waitMs": 80,
 }
 assert actions[5] == {
     "kind": "element-move",
-    "identifier": "document-block-23-code-card",
+    "identifier": "document-block-35-code-card",
     "waitMs": 80,
 }
 assert actions[6] == {
     "kind": "element-click",
-    "identifier": "document-block-23-code-copy",
+    "identifier": "document-block-35-code-copy",
     "role": "AXButton",
     "waitMs": 80,
 }
@@ -2490,13 +2490,13 @@ assert [action.get("key") for action in actions if action["kind"] == "key"] == [
 ]
 assert actions[3] == {
     "kind": "element-move",
-    "identifier": "document-block-35-footnote-reference-1",
+    "identifier": "document-block-47-footnote-reference-1",
     "role": "AXLink",
     "waitMs": 80,
 }
 assert actions[5] == {
     "kind": "element-click",
-    "identifier": "document-block-35-footnote-reference-1",
+    "identifier": "document-block-47-footnote-reference-1",
     "role": "AXLink",
     "waitMs": 80,
 }
@@ -3481,13 +3481,13 @@ assert plan["schemaVersion"] == 1
 assert len(actions) == 18
 assert actions[2] == {
     "kind": "element-move",
-    "identifier": "document-block-28-table-row-0-column-0",
+    "identifier": "document-block-40-table-row-0-column-0",
     "role": "AXButton",
     "waitMs": 80,
 }
 assert actions[4] == {
     "kind": "element-click",
-    "identifier": "document-block-28-table-row-0-column-0",
+    "identifier": "document-block-40-table-row-0-column-0",
     "role": "AXButton",
     "waitMs": 80,
 }
@@ -3572,7 +3572,7 @@ assert plan["schemaVersion"] == 1
 assert len(actions) == 24
 assert actions[1] == {
     "kind": "element-click",
-    "identifier": "document-block-28-table-row-0-column-0",
+    "identifier": "document-block-40-table-row-0-column-0",
     "role": "AXButton",
     "waitMs": 80,
 }
@@ -3639,17 +3639,15 @@ assert plan["schemaVersion"] == 1
 assert len(actions) == 19
 assert actions[1] == {
     "kind": "element-click",
-    "identifier": "document-block-12-quote",
-    "waitMs": 80,
-}
-assert actions[6] == {
-    "kind": "element-click",
     "identifier": "document-block-15-list",
     "waitMs": 80,
 }
+assert actions[13] == {
+    "kind": "element-click",
+    "identifier": "document-block-12-quote",
+    "waitMs": 80,
+}
 assert [action.get("key") for action in actions if action["kind"] == "key"] == [
-    "return",
-    "escape",
     "return",
     "tab",
     "shift+tab",
@@ -3657,14 +3655,16 @@ assert [action.get("key") for action in actions if action["kind"] == "key"] == [
     "escape",
     "command+z",
     "command+shift+z",
+    "return",
+    "escape",
 ]
 assert [action.get("text") for action in actions if action["kind"] == "text"] == [
-    "E2E_QUOTE", "E2E_LIST ", "BOLD",
+    "E2E_LIST ", "BOLD", "E2E_QUOTE",
 ]
 assert screenshots == [
-    "quote-source-edited.png",
     "list-source-edited.png",
     "list-undone.png",
+    "quote-source-edited.png",
     "editor-structure-final.png",
 ]
 assert validation["valid"] is True
@@ -4956,28 +4956,23 @@ import sys
 fixture_path = pathlib.Path(sys.argv[1])
 root = pathlib.Path(sys.argv[2])
 fixture = fixture_path.read_text(encoding="utf-8")
-task_before = "\n".join([
-    "- [x] 实时渲染",
-    "- [x] 语法即时高亮",
-    "- [ ] 协同编辑",
-    "- [ ] 导出 PDF",
-])
-task_after = task_before.replace("- [ ] 协同编辑", "- [x] 协同编辑")
+task_before = "- [ ] 协同编辑"
+task_after = "- [x] 协同编辑"
 assert fixture.count(task_before) == 1
 source = fixture.replace(task_before, task_after, 1)
 prefix, suffix = source.split(task_after, 1)
 blocks = []
-for index in range(37):
+for index in range(49):
     block_source = ""
-    if index == 18:
+    if index == 29:
         block_source = prefix
-    elif index == 19:
+    elif index == 30:
         block_source = task_after
-    elif index == 20:
+    elif index == 31:
         block_source = suffix
     blocks.append({
         "id": f"preview-block-{index}",
-        "kind": "list" if index == 19 else "paragraph",
+        "kind": "list" if index == 30 else "paragraph",
         "leadingTrivia": "",
         "source": block_source,
     })
@@ -5118,7 +5113,7 @@ prefix, remainder = fixture.split(reference, 1)
 between, suffix = remainder.split(definitions, 1)
 assert suffix == ""
 blocks = []
-for index in range(37):
+for index in range(49):
     block = {
         "id": f"preview-footnote-block-{index}",
         "kind": "paragraph",
@@ -5127,9 +5122,9 @@ for index in range(37):
     }
     if index == 0:
         block["source"] = prefix
-    elif index == 35:
+    elif index == 47:
         block["source"] = reference
-    elif index == 36:
+    elif index == 48:
         block["kind"] = "footnotes"
         block["leadingTrivia"] = between
         block["source"] = definitions
@@ -5271,15 +5266,15 @@ root = pathlib.Path(sys.argv[2])
 fixture = fixture_path.read_text(encoding="utf-8")
 target = "## 表格"
 prefix, suffix = fixture.split(target, 1)
-heading_indexes = {0, 2, 3, 4, 5, 6, 7, 8, 9, 13, 20, 24, 27, 31, 34}
+heading_indexes = {0, 2, 3, 4, 5, 6, 7, 8, 9, 13, 32, 36, 39, 43, 46}
 blocks = []
-for index in range(37):
+for index in range(49):
     source = ""
     if index == 0:
         source = prefix
-    elif index == 27:
+    elif index == 39:
         source = target
-    elif index == 28:
+    elif index == 40:
         source = suffix
     blocks.append({
         "id": f"outline-block-{index}",
@@ -5425,7 +5420,7 @@ import sys
 fixture_path = pathlib.Path(sys.argv[1])
 root = pathlib.Path(sys.argv[2])
 fixture = fixture_path.read_text(encoding="utf-8")
-heading_indexes = {0, 2, 3, 4, 5, 6, 7, 8, 9, 13, 20, 24, 27, 31, 34}
+heading_indexes = {0, 2, 3, 4, 5, 6, 7, 8, 9, 13, 32, 36, 39, 43, 46}
 
 
 def element_action(index, kind, identifier, role, width=120):
@@ -5467,7 +5462,7 @@ def completed_action(index, kind):
 
 def fixture_tab():
     blocks = []
-    for index in range(37):
+    for index in range(49):
         blocks.append({
             "id": f"sidebar-fixture-block-{index}",
             "kind": "heading" if index in heading_indexes else "paragraph",
@@ -6037,7 +6032,7 @@ def fixture_blocks(mutated=False):
         "leadingTrivia": "",
         "source": fixture[len(heading_before):],
     }]
-    for index in range(2, 37):
+    for index in range(2, 49):
         blocks.append({
             "id": f"fixture-block-{index}",
             "kind": "paragraph",

@@ -222,28 +222,41 @@ struct AccessibilitySurfaceTests {
         let source = try String(contentsOf: fixtureURL, encoding: .utf8)
         let document = MarkdownDocument(source: source)
 
-        #expect(document.blocks.count == 37)
-        #expect(document.blocks[12].kind == .quote)
-        #expect(document.blocks[12].source.hasSuffix("设计原则：读起来像一页纸，而不是一个应用。"))
-        #expect(document.blocks[15].kind == .list)
-        #expect(document.blocks[15].source.hasSuffix("- 另一个第一层项目"))
-        #expect(document.blocks[19].kind == .list)
-        #expect(document.blocks[19].source.contains("- [ ] 协同编辑"))
-        #expect(document.blocks[23].kind == .code)
-        #expect(document.blocks[23].source == """
+        let quote = try #require(document.blocks.first(where: {
+            $0.kind == .quote
+                && $0.source.hasSuffix("设计原则：读起来像一页纸，而不是一个应用。")
+        }))
+        let listItem = try #require(document.blocks.first(where: {
+            $0.kind == .list && $0.source == "- 另一个第一层项目"
+        }))
+        let task = try #require(document.blocks.first(where: {
+            $0.kind == .list && $0.source == "- [ ] 协同编辑"
+        }))
+        let code = try #require(document.blocks.first(where: {
+            $0.kind == .code && $0.source == """
         ```bash
         # 安装并运行
         npx -y @dev/cli@latest --version
         ```
-        """)
-        #expect(document.blocks[27].kind == .heading)
-        #expect(document.blocks[27].source == "## 表格")
-        #expect(document.blocks.filter { $0.kind == .heading }[12].id == document.blocks[27].id)
-        #expect(document.blocks[28].kind == .table)
-        #expect(document.blocks[28].source.contains("| ⌘B | 加粗 | 全部 |"))
-        #expect(document.blocks[35].kind == .paragraph)
-        #expect(document.blocks[35].source.contains("[^scope]"))
-        #expect(document.blocks[36].kind == .footnotes)
-        #expect(document.blocks[36].source.contains("[^1]:"))
+        """
+        }))
+        let tableHeading = try #require(document.blocks.first(where: {
+            $0.kind == .heading && $0.source == "## 表格"
+        }))
+        let table = try #require(document.blocks.first(where: {
+            $0.kind == .table && $0.source.contains("| ⌘B | 加粗 | 全部 |")
+        }))
+        let footnoteBody = try #require(document.blocks.first(where: {
+            $0.kind == .paragraph && $0.source.contains("[^scope]")
+        }))
+        let footnotes = try #require(document.blocks.first(where: {
+            $0.kind == .footnotes && $0.source.contains("[^1]:")
+        }))
+
+        #expect(quote.id != listItem.id)
+        #expect(listItem.id != task.id)
+        #expect(code.id != tableHeading.id)
+        #expect(tableHeading.id != table.id)
+        #expect(footnoteBody.id != footnotes.id)
     }
 }

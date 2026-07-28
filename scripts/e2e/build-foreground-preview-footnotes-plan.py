@@ -9,7 +9,7 @@ import pathlib
 import tempfile
 
 
-FOOTNOTE_REFERENCE = "document-block-35-footnote-reference-1"
+FOOTNOTE_REFERENCE = "document-block-47-footnote-reference-1"
 FOOTNOTE_BACK = "footnote-back-1"
 
 

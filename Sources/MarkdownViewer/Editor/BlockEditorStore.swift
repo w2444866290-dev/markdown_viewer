@@ -376,6 +376,47 @@ final class BlockEditorStore: ObservableObject {
                 selection: NSRange(location: 0, length: 0)
             )
 
+        case let .splitBlockWithPrefix(separator, rightPrefix):
+            guard let draft = activeDraftSource else { return }
+            var candidate = document
+            let replacementIDs: [UUID]
+            let rightID: UUID
+            do {
+                replacementIDs = try candidate.replaceBlock(id: activeID, with: draft)
+                guard replacementIDs == [activeID],
+                      candidate.block(id: activeID)?.source == draft else {
+                    MVLog.warn("prefixed split rejected an expanded source draft", category: "editor")
+                    return
+                }
+                rightID = try candidate.splitBlock(
+                    id: activeID,
+                    atUTF16Offset: selection.location,
+                    separator: separator,
+                    rightPrefix: rightPrefix
+                )
+            } catch {
+                MVLog.warn("prefixed split failed: \(error)", category: "editor")
+                return
+            }
+            let renumberedIDs = renumberOrderedSiblings(
+                in: &candidate,
+                after: rightID
+            )
+            clearActiveSourceEditingState()
+            mutate(
+                affectedBlockIDs: Set([activeID, rightID] + renumberedIDs),
+                actionName: "拆分块"
+            ) { document in
+                document = candidate
+            }
+            beginSourceEditing(
+                blockID: rightID,
+                selection: NSRange(
+                    location: (rightPrefix as NSString).length,
+                    length: 0
+                )
+            )
+
         case .exitList, .exitQuote:
             exitContainerEditing(
                 action,
@@ -385,8 +426,56 @@ final class BlockEditorStore: ObservableObject {
 
         case .mergeWithPrevious:
             guard oldIndex > 0 else { return }
-            let previousID = document.blocks[oldIndex - 1].id
-            let caret = (document.blocks[oldIndex - 1].source as NSString).length
+            let previous = document.blocks[oldIndex - 1]
+            let previousID = previous.id
+            let caret = (previous.source as NSString).length
+            if previous.kind == .list,
+               document.blocks[oldIndex].kind == .list,
+               let draft = activeDraftSource,
+               let prefix = MarkdownEditingCommands.parseListPrefix(
+                   in: draft,
+                   startingAt: 0
+               ) {
+                let content = (draft as NSString).substring(from: prefix.contentStart)
+                var candidate = document
+                do {
+                    let replacementIDs = try candidate.replaceBlock(
+                        id: activeID,
+                        with: content
+                    )
+                    guard replacementIDs == [activeID] else {
+                        MVLog.warn(
+                            "list merge rejected an expanded source draft",
+                            category: "editor"
+                        )
+                        return
+                    }
+                    _ = try candidate.mergeBlockWithPrevious(id: activeID)
+                } catch {
+                    MVLog.warn("list merge failed: \(error)", category: "editor")
+                    return
+                }
+                let renumberedIDs = renumberOrderedSiblings(
+                    in: &candidate,
+                    after: previousID
+                )
+                clearActiveSourceEditingState()
+                mutate(
+                    affectedBlockIDs: Set(
+                        [previousID, activeID] + renumberedIDs
+                    ),
+                    actionName: "合并块"
+                ) { document in
+                    document = candidate
+                }
+                if document.block(id: previousID) != nil {
+                    beginSourceEditing(
+                        blockID: previousID,
+                        selection: NSRange(location: caret, length: 0)
+                    )
+                }
+                return
+            }
             commitActiveEditing()
             guard document.block(id: activeID) != nil else { return }
             mergeWithPrevious(id: activeID)
@@ -419,6 +508,79 @@ final class BlockEditorStore: ObservableObject {
         }
     }
 
+    private func renumberOrderedSiblings(
+        in document: inout MarkdownDocument,
+        after blockID: UUID
+    ) -> [UUID] {
+        guard let startIndex = document.blocks.firstIndex(where: { $0.id == blockID }),
+              let start = MarkdownEditingCommands.parseListPrefix(
+                  in: document.blocks[startIndex].source,
+                  startingAt: 0
+              ),
+              start.isOrdered else {
+            return []
+        }
+
+        let startWidth = listIndentationWidth(start.indentation)
+        let delimiter = start.marker.last
+        var previousMarker = start.marker
+        var changed: [UUID] = []
+        var index = startIndex + 1
+
+        while document.blocks.indices.contains(index) {
+            let block = document.blocks[index]
+            guard block.kind == .list,
+                  let prefix = MarkdownEditingCommands.parseListPrefix(
+                      in: block.source,
+                      startingAt: 0
+                  ) else {
+                break
+            }
+
+            let width = listIndentationWidth(prefix.indentation)
+            if width > startWidth {
+                index += 1
+                continue
+            }
+            guard width == startWidth,
+                  prefix.isOrdered,
+                  prefix.marker.last == delimiter else {
+                break
+            }
+
+            let expected = MarkdownEditingCommands.nextOrderedMarker(
+                previousMarker,
+                indentation: start.indentation
+            )
+            previousMarker = expected
+            if prefix.marker != expected {
+                let mutable = NSMutableString(string: block.source)
+                mutable.replaceCharacters(
+                    in: NSRange(
+                        location: prefix.start + (prefix.indentation as NSString).length,
+                        length: (prefix.marker as NSString).length
+                    ),
+                    with: expected
+                )
+                do {
+                    _ = try document.replaceBlock(id: block.id, with: mutable as String)
+                    changed.append(block.id)
+                } catch {
+                    MVLog.warn("ordered-list renumber failed: \(error)", category: "editor")
+                    break
+                }
+            }
+            index += 1
+        }
+        return changed
+    }
+
+    private func listIndentationWidth(_ indentation: String) -> Int {
+        indentation.reduce(into: 0) { width, character in
+            width += character == "\t" ? 4 : 1
+        }
+    }
+
     private func exitContainerEditing(
         _ action: MarkdownEditingBoundaryAction,
         blockID: UUID,
@@ -432,10 +594,12 @@ final class BlockEditorStore: ObservableObject {
         mutate(affectedBlockIDs: [blockID], actionName: "退出容器") { document in
             _ = try document.replaceBlock(id: blockID, with: draft)
             let remainsInsideQuote = action == .exitList && original.kind == .quote
-            if !remainsInsideQuote,
-               let retained = document.block(id: blockID),
-               retained.kind != .paragraph {
-                targetID = try document.insertEmptyParagraph(after: blockID)
+            if !remainsInsideQuote, let retained = document.block(id: blockID) {
+                if retained.kind == .paragraph, retained.source.isEmpty {
+                    try document.materializeEmptyParagraphBoundaries(id: blockID)
+                } else if retained.kind != .paragraph {
+                    targetID = try document.insertEmptyParagraph(after: blockID)
+                }
             }
         }
 

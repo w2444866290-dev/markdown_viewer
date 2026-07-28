@@ -145,7 +145,7 @@ def assert_fixture_unchanged(tab: dict[str, object], fixture: str) -> None:
             or tab.get("text") != fixture:
         fail("the fixture tab changed before the relaunch seed stage")
     blocks = structured_blocks(tab)
-    if len(blocks) != 37:
+    if len(blocks) != 49:
         fail("the fixture block count changed")
 
 
@@ -273,7 +273,7 @@ def assert_fixture_mutation(
         fail("fixture relaunch seed source or identity is wrong")
     before_blocks = structured_blocks(previous_fixture_tab)
     after_blocks = structured_blocks(fixture_tab)
-    if len(before_blocks) != 37 or len(after_blocks) != 37:
+    if len(before_blocks) != 49 or len(after_blocks) != 49:
         fail("fixture block count changed while seeding relaunch")
     if after_blocks[0].get("source") != HEADING_AFTER \
             or before_blocks[0].get("source") != HEADING_BEFORE:
@@ -298,7 +298,7 @@ def assert_seeded_fixture(tab: dict[str, object], fixture: str) -> None:
             or tab.get("text") != expected_source:
         fail("relaunch did not preserve the seeded fixture source")
     blocks = structured_blocks(tab)
-    if len(blocks) != 37 or blocks[0].get("source") != HEADING_AFTER:
+    if len(blocks) != 49 or blocks[0].get("source") != HEADING_AFTER:
         fail("relaunch did not preserve the seeded fixture block model")
 
 
