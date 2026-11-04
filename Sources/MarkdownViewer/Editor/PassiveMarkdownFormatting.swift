@@ -467,7 +467,7 @@ enum PassiveMarkdownInlineRenderer {
                 attributes[.baselineOffset] = -style.font.pointSize * 0.16
             }
             if let destination = state.link {
-                attributes[.link] = URL(string: destination) ?? destination
+                attributes[.link] = destination
                 if state.role != "footnote-reference" {
                     let underline = NSUnderlineStyle.single.union(.patternDash)
                     attributes[.foregroundColor] = PassiveMarkdownInlineRenderer.linkColor
@@ -789,7 +789,9 @@ final class PassiveInlineLinkTrackingView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        return linkDestination(at: point) == nil ? nil : self
+        let localPoint = convert(point, from: superview)
+        guard !isHidden, bounds.contains(localPoint) else { return nil }
+        return linkDestination(at: localPoint) == nil ? nil : self
     }
 
     override func accessibilityChildren() -> [Any]? {
@@ -841,6 +843,15 @@ final class PassiveInlineLinkTrackingView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         guard let destination = linkDestination(at: point) else { return }
         onOpenURL(destination)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        // AppKit routes Control-click through the secondary-click path.
+        guard event.modifierFlags.contains(.control) else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        mouseDown(with: event)
     }
 
     override func otherMouseDown(with event: NSEvent) {

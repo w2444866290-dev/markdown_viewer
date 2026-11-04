@@ -8,6 +8,15 @@ struct MarkdownBlockInteractionPolicy: Equatable {
     var allowsEditingActions: Bool { !previewMode }
     var allowsTaskToggle: Bool { true }
 
+    static func allowsPointerEditing(event: NSEvent? = NSApp.currentEvent) -> Bool {
+        guard let event else { return true }
+        guard !event.modifierFlags.contains(.control) else { return false }
+        // Opening a link can switch apps before SwiftUI delivers its parent tap.
+        // Use the click's target and modifiers, rather than the current key state.
+        let target = event.window?.contentView?.hitTest(event.locationInWindow)
+        return !(target is PassiveInlineLinkTrackingView)
+    }
+
     func showsEditHoverCue(hovered: Bool) -> Bool {
         allowsEditingActions && hovered
     }
@@ -223,7 +232,8 @@ struct MarkdownBlockRenderer: View, Equatable {
     }
 
     private func activateFromPointer() {
-        guard block.kind != .table else { return }
+        guard block.kind != .table,
+              MarkdownBlockInteractionPolicy.allowsPointerEditing() else { return }
         DebugPointerTrace.shared.recordSemantic(
             "block-pointer-activate",
             blockIndex: diagnosticIndex,
@@ -1370,6 +1380,7 @@ private struct MarkdownTableBlock: View {
         if interactionPolicy.allowsEditingActions {
             Button(action: {
                 interactionPolicy.performEditingAction {
+                    guard MarkdownBlockInteractionPolicy.allowsPointerEditing() else { return }
                     onCell(MarkdownTableCell(row: row, column: column))
                 }
             }) {
