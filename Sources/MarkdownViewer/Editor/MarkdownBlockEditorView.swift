@@ -494,22 +494,16 @@ struct MarkdownBlockEditorView: View {
             jumpToFootnoteDefinition(id)
             return
         }
-        let resolved: URL?
-        if let absolute = URL(string: destination), absolute.scheme != nil {
-            resolved = absolute
-        } else if let documentURL = docManager.activeTab?.url {
-            resolved = URL(
-                string: destination,
-                relativeTo: documentURL.deletingLastPathComponent()
-            )?.absoluteURL
-        } else {
-            resolved = nil
-        }
-        guard let resolved else {
+        guard let resolved = MarkdownLinkResolver.resolve(
+            destination,
+            documentURL: docManager.activeTab?.url
+        ) else {
             Toaster.shared.flash("无法打开链接")
             return
         }
-        NSWorkspace.shared.open(resolved)
+        if !NSWorkspace.shared.open(resolved) {
+            Toaster.shared.flash("无法打开链接")
+        }
     }
 
     private var footnoteDefinitions: [String: String] {
